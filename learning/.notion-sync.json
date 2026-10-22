@@ -1,0 +1,35 @@
+{
+  "parent": {
+    "title": "Learning · data-platform",
+    "page_id": "400ed6f2-40ac-814d-a861-ee39d9ca2e63",
+    "url": "https://app.notion.com/p/400ed6f240ac814da861ee39d9ca2e63"
+  },
+  "pages": {
+    "s1-01.md": {
+      "page_id": "400ed6f2-40ac-81be-a585-c5460a9036f2",
+      "url": "https://app.notion.com/p/400ed6f240ac81bea585c5460a9036f2",
+      "synced": "2026-10-21"
+    },
+    "s1-02.md": {
+      "page_id": "400ed6f2-40ac-8167-b332-c4fcea0835cc",
+      "url": "https://app.notion.com/p/400ed6f240ac8167b332c4fcea0835cc",
+      "synced": "2026-10-21"
+    },
+    "card-60.md": {
+      "page_id": "400ed6f2-40ac-8115-9544-f21f1bfa3c5d",
+      "url": "https://app.notion.com/p/400ed6f240ac81159544f21f1bfa3c5d",
+      "synced": "2026-10-21"
+    },
+    "py-s1.md": {
+      "page_id": "400ed6f2-40ac-8112-8b8a-ff90a784f5ab",
+      "url": "https://app.notion.com/p/400ed6f240ac81128b8aff90a784f5ab",
+      "synced": "2026-10-21"
+    },
+    "s1-03.md": {
+      "page_id": "401ed6f2-40ac-81e0-a1f5-c415de4b631a",
+      "url": "https://app.notion.com/p/401ed6f240ac81e0a1f5c415de4b631a",
+      "synced": "2026-10-22"
+    }
+  },
+  "rules": "Source de vérité = les .md. Sync = conversion md -> Notion markdown (frontmatter -> callout, '### [ ]' -> '### ☐', indentation 2 espaces -> tab) puis update-page replace_content sur page_id ; fichier sans entrée -> create-pages sous parent puis ajout ici."
+}
