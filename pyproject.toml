@@ -1,0 +1,32 @@
+[project]
+name = "data-platform"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "dp-common",
+]
+
+[tool.uv.workspace]
+members = ["packages/*", "lambdas/*", "jobs/*"]
+
+[tool.uv.sources]
+dp-common = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.7.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["packages/*/src", "lambdas/*/src", "jobs/*/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages", "lambdas", "jobs"]
+addopts = "-q --import-mode=importlib"

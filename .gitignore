@@ -267,4 +267,6 @@ terraform.rc
 .env*
 .envrc
 .DS_Store
+tfplan
+*.tfplan
 !*.auto.tfvars.example
