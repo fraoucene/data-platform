@@ -34,6 +34,11 @@
       "page_id": "401ed6f2-40ac-8189-b433-ea7b816d7611",
       "url": "https://app.notion.com/p/401ed6f240ac8189b433ea7b816d7611",
       "synced": "2026-10-22"
+    },
+    "s1-05.md": {
+      "page_id": "402ed6f2-40ac-81e7-9c44-c3b411b527cc",
+      "url": "https://app.notion.com/p/402ed6f240ac81e79c44c3b411b527cc",
+      "synced": "2026-10-23"
     }
   },
   "rules": "Source de vérité = les .md. Sync = conversion md -> Notion markdown (frontmatter -> callout, '### [ ]' -> '### ☐', indentation 2 espaces -> tab) puis update-page replace_content sur page_id ; fichier sans entrée -> create-pages sous parent puis ajout ici."
