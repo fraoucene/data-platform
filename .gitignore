@@ -269,4 +269,9 @@ terraform.rc
 .DS_Store
 tfplan
 *.tfplan
+backend.hcl
+# config par environnement : <env>.tfvars commité, local.tfvars jamais
+!infra/envs/*/*.tfvars
+infra/envs/*/local.tfvars
+!*.tfvars.example
 !*.auto.tfvars.example

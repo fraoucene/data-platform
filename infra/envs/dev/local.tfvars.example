@@ -1,0 +1,5 @@
+# Copier en local.tfvars (gitignoré) et renseigner.
+# En CI, ces valeurs arrivent par TF_VAR_<nom> depuis les variables protégées.
+profile     = "data-platform"
+account_id  = "123456789012"
+alert_email = "prenom.nom@example.com"

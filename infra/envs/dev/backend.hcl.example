@@ -1,0 +1,7 @@
+# Copier en backend.hcl (gitignoré), remplacer <account_id>.
+# bucket : terraform -chdir=infra/bootstrap output -raw state_bucket
+bucket       = "data-platform-tfstate-<account_id>"
+key          = "dev/terraform.tfstate"
+region       = "eu-west-3"
+profile      = "data-platform"
+use_lockfile = true
