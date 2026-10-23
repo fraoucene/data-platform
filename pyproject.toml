@@ -3,6 +3,7 @@ name = "data-platform"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "bodacc-client",
     "dp-common",
 ]
 
@@ -11,11 +12,14 @@ members = ["packages/*", "lambdas/*", "jobs/*"]
 
 [tool.uv.sources]
 dp-common = { workspace = true }
+bodacc-client = { workspace = true }
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.7.0",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
     "ruff>=0.17.1",
 ]
 
@@ -24,11 +28,13 @@ line-length = 120
 target-version = "py312"
 src = ["packages/*/src", "lambdas/*/src", "jobs/*/src"]
 # Scripts de génération des schémas Excalidraw : outillage de documentation, hors lint.
-extend-exclude = ["docs/**/*_gen.py"]
+# learning/ : supports de cours ; les exemples alignent leurs commentaires `# →` pour la lecture mobile.
+extend-exclude = ["docs/**/*_gen.py", "learning/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "lambdas", "jobs"]
-addopts = "-q --import-mode=importlib"
+addopts = "-q --import-mode=importlib -m 'not integration'"
+markers = ["integration: appelle la vraie API BODACC (lent, réseau) ; lancer avec make test-integration"]

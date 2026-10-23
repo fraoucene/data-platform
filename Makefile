@@ -1,4 +1,4 @@
-.PHONY: sync lint fmt test check tf-init tf-fmt tf-validate plan up down
+.PHONY: sync lint fmt test test-integration cov check tf-init tf-fmt tf-validate plan up down
 
 # ---------- Python ----------
 
@@ -15,6 +15,14 @@ fmt:
 
 test:
 	uv run pytest
+
+# Appelle la vraie API BODACC (~10 s) : exclu de `make test` par le marqueur `integration`.
+test-integration:
+	uv run pytest -m integration -v
+
+# Couverture lignes + branches de bodacc-client, sans le test d'intégration ; échoue sous 80 %.
+cov:
+	uv run pytest packages/bodacc-client --cov=bodacc_client --cov-branch --cov-report=term-missing --cov-fail-under=80
 
 check: lint test
 
