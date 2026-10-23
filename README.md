@@ -29,6 +29,15 @@ uv run pre-commit run --all-files     # tous les hooks sur tous les fichiers sui
 
 `make fmt` corrige le formatage et les imports. `make check` enchaîne `lint` puis `test`.
 
+Infrastructure (voir [infra/README.md](infra/README.md) pour le bootstrap et la reconstruction de zéro) :
+
+```bash
+make plan                 # init backend S3 + plan + audit des tags (ENV=dev par défaut)
+make up                   # apply
+make down                 # destroy (dev uniquement)
+make plan ENV=prod        # même code, config infra/envs/prod/
+```
+
 ## Prérequis
 
 - Python 3.12 (`.python-version`), `uv`, `make`.

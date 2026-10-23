@@ -10,6 +10,16 @@ variable "profile" {
   default     = null
 }
 
+variable "account_id" {
+  description = "Account AWS cible (12 chiffres). Garde-fou allowed_account_ids. Pas de défaut : dans local.auto.tfvars, jamais commité."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.account_id))
+    error_message = "account_id doit être un identifiant de compte AWS à 12 chiffres."
+  }
+}
+
 variable "environment" {
   description = "Environnement cible (dev, prod)."
   type        = string
