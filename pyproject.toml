@@ -23,6 +23,8 @@ dev = [
 line-length = 120
 target-version = "py312"
 src = ["packages/*/src", "lambdas/*/src", "jobs/*/src"]
+# Scripts de génération des schémas Excalidraw : outillage de documentation, hors lint.
+extend-exclude = ["docs/**/*_gen.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
