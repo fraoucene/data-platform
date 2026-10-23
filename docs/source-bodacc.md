@@ -123,7 +123,8 @@ Mapping vers les colonnes cibles de `events` :
 | Colonne `events` | Chemin source | Cas absent |
 | --- | --- | --- |
 | `siren` | `listepersonnes.personne.numeroImmatriculation.numeroIdentification`, espaces retirés | artisan : `personne.inscriptionRM.numeroIdentificationRM` (13 sur la journée) ; `personne.nonInscrit = "N"` : aucun SIREN (74 sur la journée, surtout `collective`) |
-| `siren` (contrôle) | `registre[0]` | liste vide pour les artisans et les non-inscrits |
+| `siren` (plusieurs) | une valeur par personne de `listepersonnes.personne`, qui peut être une liste | 2 annonces le 2026-10-20 visent deux sociétés d'un même groupe : un événement par SIREN |
+| à ne pas utiliser | `registre` | mélange l'entreprise visée et l'ancien propriétaire ou exploitant du fonds (272 ventes et immatriculations le 2026-10-20) ; contient parfois seulement le vendeur quand l'acquéreur n'est pas inscrit (10 annonces) ; vide pour les artisans |
 | `nom` | `personne.denomination` (pm), `personne.prenom` + `personne.nom` (pp) | |
 | `type_evenement` | `familleavis`, précisé par `jugement.nature` pour `collective` | |
 | `date_evenement` | `jugement.date` pour `collective`, `acte.dateCommencementActivite` pour `creation` | absent pour `radiation` : retomber sur `dateparution` |
