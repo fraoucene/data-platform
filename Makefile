@@ -1,4 +1,4 @@
-.PHONY: sync lint fmt test test-integration cov check tf-init tf-fmt tf-validate plan up down
+.PHONY: sync lint fmt test test-integration cov check tf-init tf-fmt tf-validate plan up down cards-validate cards-publish
 
 # ---------- Python ----------
 
@@ -53,3 +53,22 @@ up: tf-init
 
 down: tf-init
 	$(TF) destroy -input=false -auto-approve $(TF_VARS)
+
+# ---------- Cartes de révision (consommées par revision-pwa) ----------
+# learning/cartes-*.md → s3://<content>/sources/data-platform/ ; la Lambda de revision-pwa
+# reconstruit le catalogue, l'app l'affiche à l'ouverture suivante (pas de redéploiement).
+# Format : ../revision-pwa/spec/cartes.md. Écrites par l'agent /cartes.
+REVISION_PWA    ?= ../revision-pwa
+PUBLISH_PROFILE ?= revision-publish-data-platform
+CARDS_BUCKET    ?= $(shell terraform -chdir=$(REVISION_PWA)/infra output -raw content_bucket)
+
+# Parser + exécution de chaque exemple Python, avec le code de revision-pwa (cloné à côté).
+cards-validate:
+	$(MAKE) -C $(REVISION_PWA) cards-validate PRODUCER=$(CURDIR)
+
+# Rien n'est envoyé si une carte est invalide. Rôle limité à sources/data-platform/* :
+# --delete ne peut retirer que nos propres cartes. sync n'envoie que les fichiers modifiés.
+cards-publish: cards-validate
+	aws s3 sync learning/ s3://$(CARDS_BUCKET)/sources/data-platform/ \
+	  --exclude "*" --include "cartes-*.md" --delete \
+	  --profile $(PUBLISH_PROFILE) --region eu-west-3
