@@ -9,9 +9,11 @@ lint:
 	uv run ruff check .
 	uv run ruff format --check .
 
+# check --fix d'abord : retirer un import peut laisser une ligne vide que seul format nettoie
+# (dans l'autre ordre, `make lint` échoue juste après). Même ordre que le hook pre-commit.
 fmt:
-	uv run ruff format .
 	uv run ruff check --fix .
+	uv run ruff format .
 
 test:
 	uv run pytest
