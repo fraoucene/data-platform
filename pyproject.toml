@@ -36,6 +36,6 @@ extend-exclude = ["docs/**/*_gen.py", "learning/**"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
-testpaths = ["packages", "lambdas", "jobs"]
+testpaths = ["packages", "lambdas", "jobs", "infra/scripts"]
 addopts = "-q --import-mode=importlib -m 'not integration'"
 markers = ["integration: appelle la vraie API BODACC (lent, réseau) ; lancer avec make test-integration"]

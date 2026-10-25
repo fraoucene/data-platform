@@ -1448,7 +1448,33 @@ shasum -a 256 run.gz rejeu.gz
 - [ ] Impossible sans versioning
 - Réponse : hasher avant puis après : sans versions, l'ancien contenu disparaît à l'écrasement ; son empreinte doit être prise avant.
 
-## 42. retry en flux : jamais après le premier yield
+## 42. retry ou rejeu : choisir l'horizon
+- Sous-thème : fiabilité
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Les retries automatiques couvrent une panne de quelques minutes ; au-delà, une alarme et un rejeu explicite rattrapent la journée.
+- Contexte : Des heures de tentatives (6 h par défaut pour l'asynchrone Lambda, 24 h pour Scheduler) cachent la panne : personne n'est prévenu, l'API source est martelée, et la journée arrive en retard sans trace. Borner les retries à l'horizon d'un raté réseau (1 h ici), puis alarmer sur l'échec et rejouer la date quand la source est revenue. L'idempotence rend le rejeu sans danger.
+- Usage : ✅ ingestion quotidienne : retries courts, alarme sur `Errors`, `make replay` · ❌ monter les retries au maximum pour « ne rien rater » : la panne devient silencieuse.
+
+```bash
+# Exemple 1 : la chaîne de rattrapage
+# 06:00  échec (API BODACC en panne)
+# 06:01, 06:03  retries Lambda : échec
+# 06:05  alarme Errors → mail
+# 10:00  API revenue :
+make replay FROM=2026-10-26 TO=2026-10-26
+# → 2026-10-26  count=…  (même clés,
+#   aucun doublon)
+```
+
+- Quiz : L'API source tombe 3 h chaque nuit. Quel réglage évite un rejeu manuel quotidien sans cacher les vraies pannes ?
+- [ ] `maximum_event_age_in_seconds` à 21 600
+- [x] Planifier après la fenêtre de panne
+- [ ] `maximum_retry_attempts` à 10
+- [ ] Désactiver l'alarme la nuit
+- Réponse : planifier après la fenêtre : une panne récurrente et connue se contourne par l'horaire, les retries restent courts et l'alarme garde son sens.
+
+## 43. retry en flux : jamais après le premier yield
 - Sous-thème : fiabilité
 - Niveau : 3
 - Source : data-platform · S1-06
@@ -1505,7 +1531,7 @@ list(sur())  # ❌ RuntimeError
 - [ ] `[]`
 - Réponse : `["A1", "A2"]` : rien n'a encore été rendu (`started` faux), le nouvel essai est sans risque de doublon.
 
-## 43. empreinte : détecter un changement
+## 44. empreinte : détecter un changement
 - Sous-thème : idempotence
 - Niveau : 3
 - Définition : Un hash SHA-256 du contenu sérialisé détecte qu'un enregistrement a changé entre deux ingestions, sans comparer champ par champ.
@@ -1547,7 +1573,7 @@ apres = {"A1": {"v": 1}, "A2": {"v": 2}}
 - [ ] `TypeError`
 - Réponse : `False` : `dumps` suit l'ordre d'insertion du dict ; même contenu, autre chaîne, autre hash.
 
-## 44. annulation : corriger l'annonce visée
+## 45. annulation : corriger l'annonce visée
 - Sous-thème : idempotence
 - Niveau : 3
 - Source : data-platform · S1-05
@@ -1591,7 +1617,7 @@ p = json.loads(
 - [x] 2
 - Réponse : 2 : l'annulation `B20260201284` s'ajoute à côté de la radiation `B20260002157`, qui reste en table comme si elle avait eu lieu.
 
-## 45. checkpoint : reprendre au dernier lot écrit
+## 46. checkpoint : reprendre au dernier lot écrit
 - Sous-thème : rejeux
 - Niveau : 3
 - Définition : Un job long écrit par lots numérotés et note le dernier lot validé : après un crash, il repart du suivant sans tout refaire.
@@ -1620,7 +1646,7 @@ list(ecrits), checkpoint
 - [x] Le lot 2 est sauté, jamais écrit
 - Réponse : le lot 2 est sauté : le checkpoint dit 2 alors que rien n'est écrit ; le trou est silencieux.
 
-## 46. deux fuseaux, deux rôles
+## 47. deux fuseaux, deux rôles
 - Sous-thème : planification
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1649,7 +1675,7 @@ rec["ingested_at"]  # → "2026-10-24T22:30:00+00:00"
 - [ ] Aucun
 - Réponse : le 13 juillet : l'été Paris est à UTC+2, il est 23:30 UTC le 13 ; grouper par `dt` (jour de la source) donne le 14.
 
-## 47. tri : à la source, pas en mémoire
+## 48. tri : à la source, pas en mémoire
 - Sous-thème : flux
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1684,7 +1710,7 @@ list(fusion)   # → ["A2", "A3", "A4"]
 - [ ] `max` : tout le flux, `sorted` : constante
 - Réponse : `max` : constante, `sorted` : tout le flux : `max` ne garde que le plus grand vu, `sorted` doit stocker chaque ligne pour rendre une liste (mesuré : 0,5 Ko contre 12 Mo sur 200 000 ids).
 
-## 48. ordre naturel ou lexical : seule la stabilité compte
+## 49. ordre naturel ou lexical : seule la stabilité compte
 - Sous-thème : idempotence
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1719,7 +1745,7 @@ sorted(ids, key=naturel)
 - [ ] `TypeError`
 - Réponse : `"A2026020110"` : la comparaison se fait caractère par caractère ; au 10e, `"1"` passe avant `"2"`, quelle que soit la longueur.
 
-## 49. tri : départager les ex aequo
+## 50. tri : départager les ex aequo
 - Sous-thème : idempotence
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1753,7 +1779,7 @@ sorted(r1, key=cle) == sorted(r2, key=cle)
 - [ ] Non : il faut ajouter `DESC`
 - Réponse : Non : il faut finir par une colonne unique : deux lignes égales sur toutes les colonnes triées restent dans un ordre libre ; `…, id` les départage.
 
-## 50. octets reproductibles : les sources de variation
+## 51. octets reproductibles : les sources de variation
 - Sous-thème : idempotence
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1794,7 +1820,7 @@ octets(0, "a") == octets(0, "")   # → False
 - [ ] Les deux
 - Réponse : Celle du `.gz`, pas celle du brut : une autre version de zlib peut compresser autrement ; le JSONL brut ne dépend que de `json.dumps`.
 
-## 51. rejeu : l'ancien manifest décrit le nouveau fichier
+## 52. rejeu : l'ancien manifest décrit le nouveau fichier
 - Sous-thème : rejeux
 - Niveau : 3
 - Source : data-platform · S1-07

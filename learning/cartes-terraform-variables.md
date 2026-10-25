@@ -4,7 +4,7 @@ type: cartes
 langage: Terraform
 cours: Variables
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Variables Terraform
@@ -583,7 +583,45 @@ terraform -chdir=infra plan \
 - [x] `Error: No value for required variable`
 - Réponse : `No value for required variable` : seuls `terraform.tfvars` et `*.auto.tfvars` sont chargés d'office ; sinon `-var-file=local.tfvars`.
 
-## 20. null dans une condition
+## 20. validation : aux limites du service
+- Sous-thème : validation
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Un bloc `validation` qui reprend les limites de l'API AWS arrête une valeur impossible au `plan`, avant tout appel à AWS.
+- Contexte : Sans lui, `maximum_retry_attempts = 3` passe le `plan` et échoue pendant l'`apply`, parfois après la création d'autres ressources. Sur une variable `object`, la condition lit chaque attribut (`var.async_retry.max_attempts`) ; un attribut absent est refusé avant même la validation (`attribute "max_event_age" is required`), sauf `optional()`. Une chaîne `"2"` est convertie en nombre sans erreur.
+- Usage : ✅ variables de module qui finissent dans un argument AWS borné (retries, rétention, mémoire) · ❌ recopier toutes les règles d'AWS : seulement celles qu'on risque de dépasser.
+
+```hcl
+# Exemple 1 : borner un attribut d'objet
+variable "async_retry" {
+  type = object({
+    max_attempts  = number
+    max_event_age = number
+  })
+  validation {
+    condition = (var.async_retry.max_attempts >= 0
+      && var.async_retry.max_attempts <= 2)
+    error_message = "max_attempts entre 0 et 2."
+  }
+}
+```
+
+```bash
+# Exemple 2 : refusé au plan
+terraform plan -var \
+  'async_retry={max_attempts=3,max_event_age=60}'
+# → Error: Invalid value for variable
+#   var.async_retry.max_attempts is 3
+```
+
+- Quiz : Même variable, `-var 'async_retry={max_attempts=1}'` : que répond `terraform plan` ?
+- [ ] OK : `max_event_age` vaut `null`
+- [ ] OK : `max_event_age` vaut `0`
+- [x] Erreur : `attribute "max_event_age" is required`
+- [ ] Erreur de la validation sur `max_event_age`
+- Réponse : erreur de type (mesuré) : un attribut d'`object` sans `optional()` est obligatoire ; la validation ne s'exécute même pas.
+
+## 21. null dans une condition
 - Sous-thème : validation
 - Niveau : 3
 - Définition : Une variable `default = null` doit être testée avant tout appel de fonction ; `||` court-circuite et protège le reste.
@@ -611,7 +649,7 @@ variable "sirens" {
 - [ ] OK : la validation est sautée pour `null`
 - Réponse : `Error: Invalid function argument` : `length(null)` échoue avant même que `error_message` puisse s'afficher.
 
-## 21. validation croisée
+## 22. validation croisée
 - Sous-thème : validation
 - Niveau : 3
 - Définition : La `condition` d'une validation peut lire d'autres variables pour imposer une règle entre plusieurs entrées.
@@ -640,7 +678,7 @@ variable "retention" {
 - [ ] Oui, mais seulement à l'apply
 - Réponse : Oui : depuis 1.9, une validation peut citer d'autres objets du module ; une valeur connue au plan est vérifiée dès le plan.
 
-## 22. postcondition : après coup
+## 23. postcondition : après coup
 - Sous-thème : conditions
 - Niveau : 3
 - Définition : `postcondition` vérifie le résultat d'une ressource via `self` ; si la valeur n'est connue qu'après création, le contrôle a lieu à l'apply.
@@ -671,7 +709,7 @@ resource "terraform_data" "raw" {
 - [ ] Oui, mais hors du state
 - Réponse : Oui : elle est créée et enregistrée dans le state ; la postcondition échoue après coup, elle n'annule rien.
 
-## 23. check : avertir sans bloquer
+## 24. check : avertir sans bloquer
 - Sous-thème : conditions
 - Niveau : 3
 - Définition : Un bloc `check` porte des `assert` évalués à chaque plan et apply, hors de tout cycle de vie de ressource.

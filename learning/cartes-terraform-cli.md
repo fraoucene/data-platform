@@ -4,7 +4,7 @@ type: cartes
 langage: Terraform
 cours: CLI
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · CLI Terraform
@@ -497,7 +497,48 @@ terraform show -json tfplan | jq -r \
 - [ ] La liste des adresses à modifier
 - Réponse : une archive zip (mesuré, `unzip -l` : `tfplan`, `tfstate`, `tfconfig/`, `.terraform.lock.hcl`) : d'où un plan rejouable seul, et des secrets dedans.
 
-## 18. -target : les dépendances suivent
+## 18. providers schema : lister ressources et attributs
+- Sous-thème : init
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `terraform providers schema -json` sort le schéma des providers installés : toutes les ressources, data sources et attributs, sans aller sur le registre.
+- Contexte : Pratique pour retrouver un nom (`grep '^aws_lambda_'`), vérifier qu'un attribut existe dans **la version installée** du provider, ou lire ses descriptions. Le schéma vient du dossier `.terraform/` : sans `terraform init`, la commande ne plante pas, elle renvoie un schéma vide. Sortie volumineuse (plusieurs Mo pour AWS) : toujours la filtrer avec `jq`.
+- Usage : ✅ chercher une ressource ou un attribut, vérifier un argument avant de l'écrire · ❌ lire la sortie brute : `jq` sur `.provider_schemas[].resource_schemas`.
+
+```bash
+# Exemple 1 : les ressources Lambda
+terraform -chdir=infra providers \
+  schema -json | jq -r \
+  '.provider_schemas[].resource_schemas
+   | keys[]' | grep '^aws_lambda_'
+# → aws_lambda_alias
+#   aws_lambda_event_source_mapping
+#   aws_lambda_function
+#   aws_lambda_function_event_invoke_config
+#   … (16 au total)
+```
+
+```bash
+# Exemple 2 : les attributs d'une ressource
+terraform -chdir=infra providers \
+  schema -json | jq -r '.provider_schemas[]
+  .resource_schemas
+  .aws_lambda_function_event_invoke_config
+  .block.attributes | keys[]'
+# → function_name, id,
+#   maximum_event_age_in_seconds,
+#   maximum_retry_attempts, qualifier,
+#   region
+```
+
+- Quiz : Dans un dossier jamais initialisé, que renvoie `terraform providers schema -json` ?
+- [ ] Une erreur : `terraform init` requis
+- [x] `{"format_version":"1.0"}` : un schéma vide
+- [ ] Le schéma téléchargé depuis le registre
+- [ ] Le schéma de la dernière version d'AWS
+- Réponse : un schéma vide (mesuré) : sans provider installé dans `.terraform/`, il n'y a rien à décrire, et aucune erreur n'avertit.
+
+## 19. -target : les dépendances suivent
 - Sous-thème : plan
 - Niveau : 3
 - Définition : `plan -target=adresse` limite le plan à cette ressource et à tout ce dont elle dépend ; le reste est ignoré, avec un avertissement.
@@ -520,7 +561,7 @@ terraform plan -target=terraform_data.raw
 - [ ] Rien : une cible ne peut pas avoir de dépendants
 - Réponse : `kms` seulement (mesuré, `1 to add`) : `-target` ajoute ce dont la cible dépend, jamais ce qui dépend d'elle.
 
-## 19. providers lock : hashes multi-plateformes
+## 20. providers lock : hashes multi-plateformes
 - Sous-thème : init
 - Niveau : 3
 - Définition : `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64` ajoute au lock les hashes `h1:` de chaque plateforme, sans rien installer.
@@ -546,7 +587,7 @@ grep -c 'h1:' .terraform.lock.hcl
 - [ ] Refusé : la plateforme courante manque
 - Réponse : gardés (mesuré : 2 → 4 `h1:`) : `providers lock` fusionne avec le lock existant pour la même version.
 
-## 20. TF_LOG : journal de débogage
+## 21. TF_LOG : journal de débogage
 - Sous-thème : global
 - Niveau : 3
 - Définition : `TF_LOG=DEBUG` (ou `TRACE`, `INFO`…) fait écrire à Terraform son journal interne sur stderr ; `TF_LOG_PATH` l'envoie dans un fichier.

@@ -409,7 +409,32 @@ jsondecode("")
 - [ ] `"true"`
 - Réponse : `false` (vérifié dans `terraform console`) : `==` compare aussi les types, sans conversion ; un booléen n'est jamais égal à la chaîne `"true"`.
 
-## 13. Types : conversion automatique
+## 13. type de ressource : le nom de l'API AWS
+- Sous-thème : blocs
+- Niveau : 1
+- Source : data-platform · S1-08
+- Définition : Le type d'une ressource AWS reprend l'objet de l'API en snake_case, préfixé du service : `PutFunctionEventInvokeConfig` → `aws_lambda_function_event_invoke_config`.
+- Contexte : On ne mémorise pas ces noms : on part du besoin (« retries d'une Lambda asynchrone »), la doc AWS donne la commande (`aws lambda put-function-event-invoke-config`), le registre ou le schéma local donne la ressource. Les attributs suivent la même règle (`MaximumRetryAttempts` → `maximum_retry_attempts`). Exceptions fréquentes : un objet de l'API éclaté en plusieurs ressources (bucket S3 : `aws_s3_bucket_versioning`, `…_lifecycle_configuration`).
+- Usage : ✅ deviner puis vérifier un nom dans le registre ou `providers schema` · ❌ inventer un nom au hasard, ou chercher un réglage S3 en argument de `aws_s3_bucket` : il a souvent sa ressource.
+
+```bash
+# Exemple 1 : de la CLI AWS à Terraform
+# aws lambda put-function-event-invoke-config
+#   --maximum-retry-attempts 2
+# → resource "aws_lambda_function_event_invoke_config"
+#     maximum_retry_attempts = 2
+# aws scheduler create-schedule
+# → resource "aws_scheduler_schedule"
+```
+
+- Quiz : Quelle ressource règle le versioning d'un bucket avec le provider AWS v5 ?
+- [ ] Argument `versioning` de `aws_s3_bucket`
+- [x] `aws_s3_bucket_versioning`
+- [ ] `aws_s3_versioning_config`
+- [ ] `aws_s3_bucket_policy`
+- Réponse : `aws_s3_bucket_versioning` : depuis la v4, les réglages du bucket sont des ressources séparées, nommées d'après l'API `PutBucketVersioning`.
+
+## 14. Types : conversion automatique
 - Sous-thème : expressions
 - Niveau : 2
 - Définition : Terraform convertit automatiquement entre chaîne, nombre et booléen selon le type attendu (`"5"` accepté pour un argument `number`).
@@ -441,7 +466,7 @@ locals {
 - [ ] `null`
 - Réponse : `false` : `==` compare type et valeur sans conversion (≈ `===` en TS) ; écrire `tostring(x) == "5"`.
 
-## 14. Condition : un type commun
+## 15. Condition : un type commun
 - Sous-thème : expressions
 - Niveau : 2
 - Définition : `cond ? a : b` choisit une valeur (≈ ternaire TS) ; Terraform convertit les deux branches vers un type commun, ou échoue.
@@ -474,7 +499,7 @@ resource "aws_s3_bucket" "logs" {
 - [x] `Error: Inconsistent conditional result types`
 - Réponse : `Error: Inconsistent conditional result types` : un tuple vide et un objet vide n'ont aucun type commun.
 
-## 15. merge : fusionner des tags
+## 16. merge : fusionner des tags
 - Sous-thème : expressions
 - Niveau : 2
 - Définition : `merge` fusionne plusieurs maps ou objets en un seul (≈ `{ ...a, ...b }`), pratique pour compléter des tags communs.
@@ -500,7 +525,7 @@ locals {
 - [ ] `Error: Duplicate object key`
 - Réponse : `{ t = { b = 2 } }` : `merge` est superficiel, la valeur entière de `t` est remplacée, sans fusion en profondeur.
 
-## 16. can : une erreur en booléen
+## 17. can : une erreur en booléen
 - Sous-thème : expressions
 - Niveau : 2
 - Définition : `can(expr)` renvoie `true` si l'expression s'évalue sans erreur, sinon `false` : la forme idéale d'une condition de `validation`.
@@ -535,7 +560,7 @@ variable "account_id" {
 - [ ] `null`
 - Réponse : `Error: Reference to undeclared input variable` : `can` ne rattrape que les erreurs d'évaluation, pas une référence invalide, vérifiée avant.
 
-## 17. for : construire une map
+## 18. for : construire une map
 - Sous-thème : boucles
 - Niveau : 2
 - Définition : `{for x in coll : clé => valeur}` construit une map à partir d'une collection (≈ `Object.fromEntries`).
@@ -574,7 +599,7 @@ locals {
 - [ ] `{ "4" = ["4a", "4b"] }`
 - Réponse : `Error: Duplicate object key` : deux éléments donnent la clé `"4"` ; `=> s...` (avec `...`) les regroupe en liste.
 
-## 18. count : instances indexées
+## 19. count : instances indexées
 - Sous-thème : boucles
 - Niveau : 2
 - Définition : `count = n` crée n instances d'une ressource, adressées `res[0]`, `res[1]`… et distinguées par `count.index`.
@@ -610,7 +635,7 @@ resource "aws_s3_object" "export" {
 - [ ] Tout détruire puis tout recréer
 - Réponse : Changer `export[1]` en `mer` et détruire `export[2]` : les index se décalent ; `for_each` éviterait de toucher `mer`.
 
-## 19. for_each : instances par clé
+## 20. for_each : instances par clé
 - Sous-thème : boucles
 - Niveau : 2
 - Définition : `for_each` crée une instance par clé d'une map ou d'un set, adressée `res["clé"]` : retirer un élément ne touche que lui.
@@ -660,7 +685,7 @@ resource "aws_s3_bucket_versioning" "this" {
 - [ ] Un `Warning`, puis la conversion en set
 - Réponse : `Error: Invalid for_each argument` : `for_each` exige une map ou un set de chaînes ; une liste peut contenir des doublons, d'où `toset()`.
 
-## 20. default_tags : taguer tout le root
+## 21. default_tags : taguer tout le root
 - Sous-thème : provider
 - Niveau : 2
 - Définition : `default_tags` dans le provider pose des tags sur toutes les ressources taggables, sans les répéter dans chaque `resource`.
@@ -703,7 +728,7 @@ resource "aws_s3_bucket" "this" {
 - [ ] `Error: duplicate tag`
 - Réponse : `"etat"` : le tag de la ressource l'emporte sur `default_tags` ; `tags_all` est la fusion des deux.
 
-## 21. allowed_account_ids : le bon compte
+## 22. allowed_account_ids : le bon compte
 - Sous-thème : provider
 - Niveau : 2
 - Définition : `allowed_account_ids` dans le provider fait échouer Terraform si les credentials pointent sur un compte absent de la liste.
@@ -739,7 +764,7 @@ variable "account_id" {
 - [ ] Il affiche un avertissement et continue
 - Réponse : il échoue tout de suite (`AWS account ID not allowed`) : le provider vérifie le compte dès sa configuration, avant toute data source ou ressource.
 
-## 22. output -raw : la valeur brute
+## 23. output -raw : la valeur brute
 - Sous-thème : blocs
 - Niveau : 2
 - Définition : `terraform output -raw nom` affiche la valeur d'une sortie sans guillemets, prête pour une variable shell ou un Makefile.
@@ -769,7 +794,7 @@ SITE_BUCKET ?= $(shell $(TF) output -raw site_bucket)
 - [ ] Le JSON `{"value": …}`
 - Réponse : la valeur avec ses guillemets : sans option, `output` affiche du HCL ; `s3://$B` désignerait alors un bucket au nom invalide.
 
-## 23. required_version : la version de la CLI
+## 24. required_version : la version de la CLI
 - Sous-thème : blocs
 - Niveau : 2
 - Source : data-platform · S1-01
@@ -803,7 +828,7 @@ terraform init
 - [ ] Il télécharge une 1.9.x
 - Réponse : erreur `Unsupported Terraform Core version` : `~> 1.9.0` n'autorise que le dernier chiffre (1.9.x), et Terraform ne télécharge jamais sa propre CLI.
 
-## 24. filebase64sha256 : l'empreinte d'un binaire
+## 25. filebase64sha256 : l'empreinte d'un binaire
 - Sous-thème : expressions
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -836,7 +861,7 @@ base64.b64encode(d).decode()
 - [ ] L'hexadécimal, inchangé
 - Réponse : 88 caractères, différente (mesuré) : c'est la base64 du **texte** hexadécimal (64 caractères), pas des 32 octets de l'empreinte.
 
-## 25. data source : lu au plan
+## 26. data source : lu au plan
 - Sous-thème : blocs
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -859,7 +884,7 @@ deploy: lambdas-publish up
 - [ ] Le plan passe, l'`apply` échoue
 - Réponse : tout le plan échoue : une seule lecture de data source en erreur arrête le plan entier, même pour les ressources qui n'en dépendent pas.
 
-## 26. data source : relu à chaque plan
+## 27. data source : relu à chaque plan
 - Sous-thème : blocs
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -885,7 +910,7 @@ make plan
 - [ ] Les deux, en deux versions
 - Réponse : celui lu au plan : un plan sauvé fige les valeurs des data sources ; l'`apply` exécute ce plan sans relire le pointeur.
 
-## 27. for + jsondecode : décoder une seule fois
+## 28. for + jsondecode : décoder une seule fois
 - Sous-thème : boucles
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -919,7 +944,7 @@ locals {
 - [ ] Une map, comme avec `{ }`
 - Réponse : erreur `Key expression is not valid when building a tuple` (vérifié dans `terraform console`) : `[for …]` construit un tuple, `k =>` n'est permis qu'entre `{ }`.
 
-## 28. for_each : lire une instance, ou toutes
+## 29. for_each : lire une instance, ou toutes
 - Sous-thème : boucles
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -944,7 +969,7 @@ output "o" {
 - [ ] `res.key`
 - Réponse : `values(res)[*].key` : le splat n'itère que sur une liste ; sur la map d'instances, `[*]` l'enveloppe telle quelle et `.key` échoue (`Unsupported attribute`, vérifié en console).
 
-## 29. for_each : une map de config qui choisit
+## 30. for_each : une map de config qui choisit
 - Sous-thème : boucles
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -975,7 +1000,7 @@ output "noms" {
 - [ ] Un avertissement, puis il continue
 - Réponse : `Invalid index` (mesuré sur une map de locals, même message) : la clé n'existe pas dans la map des instances, le plan s'arrête.
 
-## 30. cycle : sortir la politique de la ressource
+## 31. cycle : sortir la politique de la ressource
 - Sous-thème : blocs
 - Niveau : 3
 - Définition : Terraform refuse deux ressources qui se référencent mutuellement (`Error: Cycle`) ; on casse la boucle en sortant l'attribut fautif dans une ressource à part.
@@ -1019,7 +1044,7 @@ resource "terraform_data" "cdn" {
 - [ ] Aucune : il crée les deux en deux passes
 - Réponse : `terraform validate` (mesuré, Terraform 1.14) : le graphe des références est construit hors ligne ; un cycle bloque avant tout appel à AWS.
 
-## 31. dynamic : zéro ou un bloc
+## 32. dynamic : zéro ou un bloc
 - Sous-thème : boucles
 - Niveau : 3
 - Source : data-platform · S1-04
@@ -1060,7 +1085,7 @@ dynamic "rule" {
 - [ ] Aucun : `Error: Unsupported attribute`
 - Réponse : 1 : `rule.value` est l'élément de la liste, ici `1` ; mesuré au `plan` (`days = 1`), `raw` expirerait en un jour.
 
-## 32. try : ne rattrape pas un data source
+## 33. try : ne rattrape pas un data source
 - Sous-thème : expressions
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1085,7 +1110,7 @@ try(jsondecode("").key, "absent")
 - [ ] Non : `for_each` refuse un filtre
 - Réponse : oui : le filtre retire la clé avant le `for_each`, donc l'instance du data source n'existe pas et rien n'est lu.
 
-## 33. data source : son résultat dans l'état
+## 34. data source : son résultat dans l'état
 - Sous-thème : blocs
 - Niveau : 3
 - Source : data-platform · S1-07

@@ -1474,7 +1474,41 @@ aws lambda get-policy \
 - [ ] Dans un rôle endossé par S3
 - Réponse : politique de ressource (`aws_lambda_permission`, principal `s3.amazonaws.com`) : S3 appelle en son nom, sans endosser de rôle de ton compte.
 
-## 47. concurrence réservée : une exécution à la fois
+## 47. event_invoke_config : régler l'asynchrone
+- Sous-thème : invocation
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `aws_lambda_function_event_invoke_config` fixe, pour une fonction, les retries et l'âge maximal des invocations asynchrones (défaut : 2 tentatives, 6 h).
+- Contexte : Ne touche que l'asynchrone : Scheduler, S3, SNS, `--invocation-type Event`. Un appel synchrone (`aws lambda invoke`, un script de rejeu) n'est jamais réessayé par Lambda, et un mapping SQS suit les règles de la file. Écrire la ressource même avec les valeurs par défaut rend le comportement visible dans le code au lieu de dépendre d'un réglage implicite.
+- Usage : ✅ toute Lambda déclenchée par Scheduler, S3 ou SNS, réglée dans le module commun · ❌ croire qu'elle borne un `invoke` synchrone ou un mapping SQS : rien ne change pour eux.
+
+```hcl
+# Exemple 1 : borné à 2 essais, 1 h
+resource "aws_lambda_function_event_invoke_config" "this" {
+  function_name                = aws_lambda_function.this.function_name
+  maximum_retry_attempts       = 2
+  maximum_event_age_in_seconds = 3600
+}
+```
+
+```bash
+# Exemple 2 : relire le réglage appliqué
+aws lambda get-function-event-invoke-config \
+  --function-name "$F" \
+  --query '[MaximumRetryAttempts,
+    MaximumEventAgeInSeconds]' \
+  --output text
+# → 2  3600
+```
+
+- Quiz : Avec `maximum_retry_attempts = 0`, `make replay` invoque en synchrone et le handler lève : combien de nouvelles tentatives Lambda fait-elle ?
+- [ ] `2`, le défaut de l'asynchrone
+- [x] `0`, mais pas à cause du réglage
+- [ ] `0`, grâce au réglage
+- [ ] `1`
+- Réponse : `0`, mais pas à cause du réglage : un appel synchrone n'est jamais réessayé par Lambda ; c'est l'appelant qui décide.
+
+## 48. concurrence réservée : une exécution à la fois
 - Sous-thème : invocation
 - Niveau : 3
 - Source : revision-pwa · pwa-revision
@@ -1507,7 +1541,7 @@ aws lambda get-function-concurrency \
 - [ ] Envoyés aussitôt en destination d'échec
 - Réponse : gardés et rejoués : l'appel S3 est asynchrone, Lambda retente les événements limités (throttling) jusqu'à `maximum_event_age` (6 h par défaut), hors des 2 retries d'erreur.
 
-## 48. versions et alias : figer le code
+## 49. versions et alias : figer le code
 - Sous-thème : déploiement
 - Niveau : 3
 - Définition : `publish = true` crée une version immuable à chaque changement ; un alias (`live`) pointe vers une version et donne aux appelants un ARN stable.
@@ -1534,7 +1568,7 @@ resource "aws_lambda_alias" "live" {
 - [ ] Aucun : l'`apply` est refusé
 - Réponse : l'ancien : une version fige aussi les variables ; seule `$LATEST` et les versions publiées ensuite voient le nouveau bucket.
 
-## 49. concurrence provisionnée : pas de démarrage à froid
+## 50. concurrence provisionnée : pas de démarrage à froid
 - Sous-thème : invocation
 - Niveau : 3
 - Définition : La concurrence provisionnée garde N environnements initialisés en permanence sur une version ou un alias : aucun démarrage à froid jusqu'à N appels simultanés.
@@ -1558,7 +1592,7 @@ resource "aws_lambda_provisioned_concurrency_config" "p" {
 - [ ] Accepté, appliqué à toutes les versions
 - Réponse : refusé : la concurrence provisionnée prépare un code figé ; `$LATEST`, modifiable, n'est pas accepté.
 
-## 50. destinations ou DLQ : garder l'erreur
+## 51. destinations ou DLQ : garder l'erreur
 - Sous-thème : invocation
 - Niveau : 3
 - Définition : En asynchrone, une destination `on_failure` reçoit l'événement et l'erreur ; la DLQ de la fonction (`dead_letter_config`) ne reçoit que l'événement d'origine.
@@ -1598,7 +1632,7 @@ resource "aws_lambda_function_event_invoke_config" "c" {
 - [ ] Non : un mapping SQS ne réessaie jamais
 - Réponse : non : la DLQ de fonction ne sert qu'à l'asynchrone ; avec un mapping, c'est la redrive policy de la file source qui isole le message.
 
-## 51. init : 10 secondes au plus
+## 52. init : 10 secondes au plus
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1634,7 +1668,7 @@ handler({"code": "7501"}, None)  # → "Paris"
 - [ ] Lambda désactive la fonction jusqu'au prochain déploiement
 - Réponse : l'init est retentée à chaque fois (doc AWS) : un environnement sans init réussie n'est jamais réutilisé ; tant que le code plante à l'import, chaque appel échoue.
 
-## 52. get_remaining_time_in_millis : s'arrêter avant le timeout
+## 53. get_remaining_time_in_millis : s'arrêter avant le timeout
 - Sous-thème : invocation
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1667,7 +1701,7 @@ handler({}, Ctx(900))  # ❌ TimeoutError
 - [ ] Seulement s'il est dans un `with`
 - Réponse : non (doc AWS) : Lambda interrompt le processus, sans lever d'exception dans le code ; ni `finally` ni `__exit__` ne tournent, d'où la marge à prendre soi-même.
 
-## 53. .so : la version de Python dans le nom
+## 54. .so : la version de Python dans le nom
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1701,7 +1735,7 @@ importlib.import_module("demo_core")  # ❌ ModuleNotFoundError
 - [ ] Oui, mais en `x86_64` seulement
 - Réponse : oui : une roue `abi3` n'utilise que l'API stable de CPython ; son fichier `.abi3.so` est dans les suffixes de toutes les versions à partir de la minimale.
 
-## 54. manylinux2014 : la version de glibc
+## 55. manylinux2014 : la version de glibc
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1727,7 +1761,7 @@ sorted(t.platform for t in tags)
 - [x] Il échoue : aucune roue compatible
 - Réponse : il échoue : la cible déclarée est glibc 2.17, une roue qui exige 2.28 est incompatible ; et `--only-binary` interdit de compiler.
 
-## 55. architecture : roues et fonction alignées
+## 56. architecture : roues et fonction alignées
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1751,7 +1785,7 @@ unzip -l $Z | grep -c macosx
 - [ ] Ça marche, mais 20 % plus cher
 - Réponse : ça marche : `httpx` et ses dépendances sont `py3-none-any` ; l'erreur ne sort qu'au premier import d'un module natif, ce qui la cache longtemps.
 
-## 56. CodeSha256 : vérifier le code déployé
+## 57. CodeSha256 : vérifier le code déployé
 - Sous-thème : déploiement
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1786,7 +1820,7 @@ aws lambda get-function-configuration \
 - [ ] 32
 - Réponse : 88 : on encode en base64 les 64 caractères hexadécimaux, pas les 32 octets bruts ; c'est l'erreur qui rend `CodeSha256` « différent ».
 
-## 57. s3_object_version : clé fixe, version qui change
+## 58. s3_object_version : clé fixe, version qui change
 - Sous-thème : déploiement
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1813,7 +1847,7 @@ resource "aws_lambda_function" "this" {
 - [ ] Erreur : version déjà déployée
 - Réponse : mise à jour sur place : chaque `PUT` crée un nouveau `version_id`, même pour des octets identiques ; Terraform voit l'argument changer et redéploie.
 
-## 58. allowed_triggers : les permissions générées
+## 59. allowed_triggers : les permissions générées
 - Sous-thème : sécurité
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -1845,3 +1879,53 @@ variable "allowed_triggers" {
 - [ ] Personne : S3 exige `source_arn`
 - [ ] Seul le bucket créé dans le même module
 - Réponse : tout bucket configuré vers la fonction : le principal désigne le service S3 entier ; `source_arn` et `source_account` sont la seule borne.
+
+## 60. retries empilés : compter les exécutions
+- Sous-thème : invocation
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : Scheduler réessaie la livraison, Lambda réessaie le handler : les deux couches ne se multiplient pas, car un appel livré ne revient jamais à Scheduler.
+- Contexte : Scheduler appelle en asynchrone : dès le `202`, l'appel est livré et Scheduler a fini, même si le handler échoue ensuite. Ses tentatives ne servent qu'aux échecs de dépôt (droits, limitation). Un handler qui échoue toujours tourne donc 1 + `maximum_retry_attempts` fois, quel que soit `retry_policy`. Compter ainsi avant de choisir les chiffres, et parce que chaque exécution réappelle l'API source.
+- Usage : ✅ dimensionner retries et charge sur l'API source, expliquer un nombre d'exécutions dans les logs · ❌ multiplier les deux couches : elles couvrent des pannes différentes.
+
+```bash
+# Exemple 1 : une journée qui échoue toujours
+# Scheduler : retry_policy 3 essais
+#   → livraison OK au 1er essai (202)
+# Lambda : maximum_retry_attempts = 2
+#   → exécutions du handler :
+#     1 (06:00) + 2 retries = 3
+aws logs tail /aws/lambda/"$F" \
+  --since 1h --filter-pattern START
+# → 3 lignes START
+```
+
+- Quiz : Livraison OK, handler qui lève toujours, `retry_policy` 3 essais, `maximum_retry_attempts = 2` : combien d'exécutions du handler ?
+- [ ] `12` : 4 livraisons × 3 exécutions
+- [ ] `4` : celles de Scheduler
+- [x] `3`
+- [ ] `6`
+- Réponse : `3` : Scheduler s'arrête au `202` ; seules comptent l'exécution initiale et les 2 retries de Lambda.
+
+## 61. event_invoke_config : la première limite gagne
+- Sous-thème : invocation
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : Lambda abandonne un événement asynchrone dès que l'une des deux limites est atteinte : nombre de tentatives ou âge maximal de l'événement.
+- Contexte : Les retries partent environ 1 minute puis 2 minutes après l'échec, mais l'événement peut aussi attendre dans la file interne (fonction limitée en concurrence, throttling) : son âge court pendant ce temps. Un âge maximal trop court fait sauter des retries sans le dire. Bornes de Lambda : 0 à 2 tentatives, 60 à 21 600 secondes.
+- Usage : ✅ âge maximal d'au moins quelques minutes pour laisser passer les 2 retries, borné à l'horizon voulu (1 h ici) · ❌ `maximum_event_age_in_seconds = 60` avec 2 retries : le second ne partira pas.
+
+```hcl
+# Exemple 1 : 2 retries, horizon 1 h
+maximum_retry_attempts       = 2
+maximum_event_age_in_seconds = 3600
+# retry 1 vers +1 min, retry 2 vers +3 min
+# → les deux passent avant 1 h
+```
+
+- Quiz : Que répond l'API à `maximum_retry_attempts = 3` ?
+- [ ] OK : 3 nouvelles tentatives
+- [x] Refus : 2 au maximum
+- [ ] OK, ramené à 2 sans erreur
+- [ ] OK si `maximum_event_age_in_seconds` ≥ 3600
+- Réponse : refus : l'API n'accepte que 0 à 2 nouvelles tentatives ; d'où le bloc `validation` qui l'arrête dès le `plan`.
