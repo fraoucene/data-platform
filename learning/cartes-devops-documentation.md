@@ -189,7 +189,58 @@ aws s3 ls "s3://$B/bodacc/" \
 - [ ] Dans `docs/architecture.md`
 - Réponse : `AGENTS.md` : c'est le fichier que les agents chargent pour leurs règles ; le README décrit le projet aux humains.
 
-## 8. git ls-files --ignored : ce qui n'existe que chez toi
+## 8. architecture : un schéma texte dans le README
+- Sous-thème : readme
+- Niveau : 1
+- Source : data-platform · S1-09
+- Définition : L'architecture du README racine tient en un schéma texte d'une dizaine de lignes, dans un bloc de code, à côté des commandes.
+- Contexte : Un schéma en texte se relit dans la MR, se corrige dans le même commit que le code et s'affiche partout (GitHub, terminal, IDE). Une image exportée vieillit sans que personne le voie, et son diff est illisible. Le bloc de code est obligatoire : hors bloc, Markdown fusionne les lignes et écrase les espaces. Le détail (diagramme complet, ADR) vit dans `docs/`, relié par un lien.
+- Usage : ✅ flux principal en 10 lignes (déclencheur → calcul → stockage → alerte) · ❌ coller un PNG d'Excalidraw comme seule description : le garder dans `docs/`, en plus du texte.
+
+```text
+# Exemple 1 : le flux de data-platform
+Scheduler 06:00 Europe/Paris, event {}
+   │ endosse le rôle …-scheduler
+   ▼
+Lambda ingest-bodacc ── API BODACC
+   ▼
+S3 raw : part-0001.jsonl.gz
+         puis _MANIFEST.json
+   │ échec → Errors → alarme → mail
+   ▼
+(S2) Step Functions → PySpark
+```
+
+- Quiz : Même schéma collé dans le README **sans** bloc de code : comment s'affiche-t-il sur GitHub ?
+- [ ] Identique, au caractère près
+- [x] Lignes fusionnées en un paragraphe, alignement perdu
+- [ ] En image, générée par GitHub
+- [ ] Erreur de rendu Markdown
+- Réponse : lignes fusionnées : hors bloc de code, un retour à la ligne simple ne coupe pas le paragraphe et les espaces multiples sont réduits ; seul le bloc garde le texte tel quel.
+
+## 9. lien relatif : le même partout
+- Sous-thème : readme
+- Niveau : 1
+- Source : data-platform · S1-09
+- Définition : Un lien Markdown relatif (`[infra/README.md](infra/README.md)`) pointe le fichier de la même branche, sur GitHub comme dans un clone ou un IDE.
+- Contexte : Le chemin est résolu depuis le fichier qui contient le lien. Une URL absolue (`https://github.com/<compte>/<dépôt>/blob/main/…`) vise toujours `main` du dépôt d'origine : sur une branche, un fork ou après un renommage, elle affiche une autre version, ou rien. Le relatif suit le dépôt où qu'il soit cloné, et un script de CI peut vérifier que la cible existe.
+- Usage : ✅ tout lien d'un README vers un autre fichier du dépôt · ❌ URL GitHub absolue vers son propre dépôt : chemin relatif.
+
+```markdown
+# Exemple 1 : depuis le README racine
+détail : [lambdas/ingest_bodacc/README.md]
+         (lambdas/ingest_bodacc/README.md)
+source : [docs/source-bodacc.md]
+         (docs/source-bodacc.md)
+```
+
+- Quiz : Sur la branche `feature/x`, le README modifié pointe `https://github.com/…/blob/main/infra/README.md`. Quelle version s'ouvre ?
+- [ ] Celle de `feature/x`
+- [x] Celle de `main`
+- [ ] La dernière modifiée, toutes branches confondues
+- Réponse : celle de `main` : l'URL absolue fige la branche ; un lien relatif ouvrirait le fichier de `feature/x`.
+
+## 10. git ls-files --ignored : ce qui n'existe que chez toi
 - Sous-thème : tester
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -215,7 +266,7 @@ git ls-files --others --ignored \
 - [ ] L'ignorer : un inconnu n'en a pas besoin
 - Réponse : produit par l'`apply` du bootstrap : un état ne se copie pas d'un modèle, il naît de la création des ressources (et un état local perdu se reconstruit par `import`).
 
-## 9. README racine : lier, ne pas recopier
+## 11. README racine : lier, ne pas recopier
 - Sous-thème : readme
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -237,7 +288,7 @@ git ls-files --others --ignored \
 - [ ] Aucun : la doc ne décrit pas les buckets
 - Réponse : deux : chaque copie doit être mise à jour, et celle qu'on oublie devient fausse ; d'où un seul endroit et un lien.
 
-## 10. ordre de démarrage : les dépendances réelles
+## 12. ordre de démarrage : les dépendances réelles
 - Sous-thème : readme
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -260,7 +311,7 @@ make up
 - [ ] Non : l'ordre ne compte pas pour Make
 - Réponse : oui : `deploy` n'exprime pas le bootstrap préalable, et chaque étape seule a un résultat attendu à vérifier ; la doc nomme `deploy` comme raccourci.
 
-## 11. prérequis : outils et versions minimales
+## 13. prérequis : outils et versions minimales
 - Sous-thème : readme
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -284,7 +335,7 @@ grep -c jq Makefile   # outil caché
 - [ ] La dernière disponible
 - Réponse : `>= 1.10` : le démarrage passe par le bootstrap ; la contrainte la plus forte de la procédure gagne.
 
-## 12. CLAUDE.md : importer AGENTS.md
+## 14. CLAUDE.md : importer AGENTS.md
 - Sous-thème : agents
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -303,7 +354,7 @@ grep -c jq Makefile   # outil caché
 - [ ] Oui, via le hook git
 - Réponse : non : `~/.claude/CLAUDE.md` est personnel et propre à Claude Code ; une règle d'équipe va dans `AGENTS.md`, commité (ou dans un hook `commit-msg`, qui l'impose à tous).
 
-## 13. numéro de compte : grep avant commit
+## 15. numéro de compte : grep avant commit
 - Sous-thème : sécurité
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -332,7 +383,7 @@ trouve   # → ['999988887777']
 - [ ] `['999988887777', 'role']`
 - Réponse : `['999988887777']` : `:` n'est pas un caractère de mot, `\b` sépare donc bien le numéro dans un ARN.
 
-## 14. relecteur sans contexte : trouver les implicites
+## 16. relecteur sans contexte : trouver les implicites
 - Sous-thème : tester
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -355,7 +406,7 @@ Rendu : chaque blocage = fichier, ligne,
 - [ ] Il refuse la consigne
 - Réponse : il confirme la liste : un relecteur qui reçoit l'hypothèse de l'auteur la valide au lieu de chercher ce que l'auteur n'a pas vu.
 
-## 15. interdit : une règle, sa raison
+## 17. interdit : une règle, sa raison
 - Sous-thème : agents
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -378,7 +429,7 @@ Rendu : chaque blocage = fichier, ligne,
 - [ ] « Expliquer le contexte avant le code »
 - Réponse : les 120 caractères : `ruff` le vérifie à chaque commit ; une règle qu'un outil peut contrôler va dans l'outil, pas dans une consigne.
 
-## 16. capture console : le numéro en haut à droite
+## 18. capture console : le numéro en haut à droite
 - Sous-thème : sécurité
 - Niveau : 2
 - Source : data-platform · S1-09
@@ -404,7 +455,79 @@ grep -cE '[0-9]{12}' \
 - [ ] `arn:aws:iam::<account_id>`
 - Réponse : `arn:aws:iam::<account_id>:role/x` (mesuré) : `-E` active les quantificateurs `{12}`, seule la suite de 12 chiffres est remplacée.
 
-## 17. doc qui dérive : la vérifier en CI
+## 19. chiffre dans la doc : daté, avec sa commande
+- Sous-thème : readme
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : Un chiffre de la doc (ressources, buckets, rôles) porte sa date et la commande qui le recalcule ; sinon il devient faux en silence.
+- Contexte : Vu en S1-09 : « 43 ressources », « 5 buckets », « 3 rôles » dans `infra/README.md`, vrais en S1-04, faux en S1-08 (60 ressources, 4 buckets, 5 rôles). Un nombre nu ne dit ni quand il était vrai, ni comment le vérifier. Avec la date et la commande, le lecteur sait s'il doit le recalculer, et le recalcule en une ligne. Mieux encore : ne pas écrire de nombre quand la liste suffit.
+- Usage : ✅ « 60 ressources gérées au 2026-10-25 (`state list | grep -vc '^data\.'`) » · ❌ « 43 ressources » nu, ou un compte qui inclut les data sources.
+
+```bash
+# Exemple 1 : le chiffre et sa commande
+terraform -chdir=infra state list \
+  | grep -vc '^data\.'
+# → 60   (ressources gérées, 2026-10-25)
+terraform -chdir=infra state list \
+  | wc -l
+# → inclut aussi les data sources
+```
+
+- Quiz : Le README dit « `make down` détruit 43 ressources » ; `make down` affiche `Resources: 60 destroyed.` Que corriger ?
+- [ ] Rien : Terraform compte aussi les data sources
+- [x] Le chiffre, et lui ajouter date et commande
+- [ ] Le Makefile, qui détruit trop
+- [ ] Rien : l'écart vient de `force_destroy`
+- Réponse : le chiffre, daté et recalculable : le code a grandi (Lambda, planification, alarmes) ; `destroy` ne compte que les ressources gérées, sans les data sources.
+
+## 20. version sans contrainte : écrire la version testée
+- Sous-thème : readme
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : Pour un outil dont aucun fichier du dépôt n'exige de version, le prérequis indique la version réellement testée, pas un minimum deviné.
+- Contexte : Terraform et Python ont une contrainte dans le code (`required_version`, `requires-python`) : on la recopie. DuckDB, jq, l'AWS CLI n'en ont pas. Écrire « DuckDB ≥ 1.1 » invente une garantie que personne n'a vérifiée ; « testé en 2.0.0 » dit un fait. Le lecteur sait d'où partir, et un écart de comportement se rattache à une version connue.
+- Usage : ✅ « testé en 2.0.0 » pour un outil facultatif ou sans contrainte · ❌ un minimum « au jugé » : il sera faux dans un sens ou dans l'autre.
+
+```markdown
+# Exemple 1 : contrainte ou fait mesuré
+| Terraform | ≥ 1.10 (bootstrap)   |
+| Python    | 3.12 (.python-version)|
+| DuckDB    | testé en 2.0.0       |
+```
+
+- Quiz : DuckDB n'a aucune contrainte dans le dépôt et marche en 2.0.0 sur ton poste. Que gagne « testé en 2.0.0 » sur « ≥ 1.1 » ?
+- [ ] Rien : les deux disent la même chose
+- [x] C'est un fait vérifié, pas une limite inventée
+- [ ] DuckDB refuse de démarrer sous 2.0.0
+- [ ] `uv` installe alors la bonne version
+- Réponse : un fait vérifié : personne n'a testé 1.1 ; la version testée donne un point de départ sûr sans promettre ce qui n'a pas été mesuré.
+
+## 21. mise en garde : au pas qui piège, pas en annexe
+- Sous-thème : readme
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : La raison d'un ordre ou d'une exception s'écrit en commentaire sur la ligne concernée, pas dans une section « Remarques » plus bas.
+- Contexte : On suit une procédure en copiant les commandes une à une ; une note placée après est lue trop tard, ou jamais. Le commentaire sur la ligne dit le piège au moment où on va y tomber : `make sync` (pas `uv sync` seul), `make lambdas-publish` avant le premier `make up`, les mails SNS à confirmer. Une ligne, le pourquoi, rien de plus.
+- Usage : ✅ commentaire `# AVANT … : parce que …` dans le bloc de commandes · ❌ « Attention » en fin de document, après la commande qui échoue.
+
+```bash
+# Exemple 1 : le piège sur sa ligne
+# pas `uv sync` seul : il n'installe
+# pas les Lambdas et les packages
+make sync
+# AVANT le premier `make up` :
+# Terraform lit le pointeur current.json
+make lambdas-publish
+make up
+```
+
+- Quiz : La procédure liste `make up`, et une section « Remarques » en bas dit « publier les zips d'abord ». Que fait un lecteur qui copie les commandes ?
+- [x] `make up` échoue sur `current.json`, avant d'avoir lu la remarque
+- [ ] Il lit la remarque avant : elle est dans le même fichier
+- [ ] `make up` publie les zips tout seul
+- Réponse : `make up` échoue : la remarque est lue après la commande ; la mise en garde doit précéder la ligne qui piège.
+
+## 22. doc qui dérive : la vérifier en CI
 - Sous-thème : tester
 - Niveau : 3
 - Source : data-platform · S1-09
@@ -429,3 +552,31 @@ sorted(citees - reelles)   # → ['replay']
 - [ ] `ENV`
 - [ ] Aucune
 - Réponse : `plan` : `\w[\w-]*` s'arrête à l'espace ; les variables qui suivent ne sont pas des cibles.
+
+## 23. make help : la liste vient du Makefile
+- Sous-thème : tester
+- Niveau : 3
+- Source : data-platform · S1-09
+- Définition : Une cible `help` qui lit les commentaires `## …` des cibles affiche la liste à jour des commandes, générée depuis le Makefile lui-même.
+- Contexte : Un tableau des cibles dans le README dérive à chaque ajout. Avec `cible: ## texte` et un `grep | awk` sur `$(MAKEFILE_LIST)`, la description vit sur la ligne de la cible : impossible de l'oublier en la renommant. Une cible sans `##` n'apparaît pas, ce qui cache les cibles internes (`tf-init`). Placée en premier, `help` devient la cible par défaut de `make` seul.
+- Usage : ✅ dépôt à nombreuses cibles, README qui renvoie à `make help` · ❌ recopier la sortie de `make help` dans le README : la référence reste le Makefile.
+
+```make
+# Exemple 1 : documenter sur la ligne
+help: ## liste des cibles
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) \
+	| awk -F ':.*## ' \
+	  '{printf "%-16s %s\n", $$1, $$2}'
+sync: ## installe tout le workspace
+	uv sync --all-packages
+tf-init:
+	@echo init
+# make help → help, sync (pas tf-init)
+```
+
+- Quiz : Avec ce Makefile, que lance `make` sans argument ?
+- [ ] Rien : il faut nommer une cible
+- [x] `help`
+- [ ] `sync`
+- [ ] Toutes les cibles commentées
+- Réponse : `help` (mesuré) : `make` seul lance la première cible du fichier ; d'où `help` placée en tête.
