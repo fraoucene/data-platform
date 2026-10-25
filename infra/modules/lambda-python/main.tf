@@ -83,3 +83,15 @@ resource "aws_lambda_function" "this" {
   # Les droits doivent exister avant la première invocation, sinon les premiers logs sont perdus.
   depends_on = [aws_iam_role_policy.logs, aws_iam_role_policy.app]
 }
+
+# ---------------------------------------------------------------------------
+# Invocations asynchrones : retries après une erreur du handler.
+# ---------------------------------------------------------------------------
+
+# Écrit explicitement plutôt que laissé au défaut (2 tentatives, 6 h) : une panne longue se rattrape
+# par l'alarme puis `make replay`, pas par des heures de tentatives automatiques.
+resource "aws_lambda_function_event_invoke_config" "this" {
+  function_name                = aws_lambda_function.this.function_name
+  maximum_retry_attempts       = var.async_retry.max_attempts
+  maximum_event_age_in_seconds = var.async_retry.max_event_age
+}

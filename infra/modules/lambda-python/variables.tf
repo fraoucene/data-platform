@@ -62,3 +62,25 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "async_retry" {
+  description = "Invocations asynchrones (Scheduler, S3, SNS…) : nouvelles tentatives après une erreur du handler (0 à 2) et âge maximal d'un événement en attente, en secondes (60 à 21600)."
+  type = object({
+    max_attempts  = number
+    max_event_age = number
+  })
+  default = {
+    max_attempts  = 2
+    max_event_age = 3600
+  }
+
+  validation {
+    condition     = var.async_retry.max_attempts >= 0 && var.async_retry.max_attempts <= 2
+    error_message = "async_retry.max_attempts doit être entre 0 et 2 (limite Lambda)."
+  }
+
+  validation {
+    condition     = var.async_retry.max_event_age >= 60 && var.async_retry.max_event_age <= 21600
+    error_message = "async_retry.max_event_age doit être entre 60 et 21600 secondes (limite Lambda)."
+  }
+}

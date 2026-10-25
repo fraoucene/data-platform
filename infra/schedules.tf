@@ -89,5 +89,13 @@ resource "aws_scheduler_schedule" "this" {
     arn      = module.lambda[each.key].function_arn
     role_arn = aws_iam_role.scheduler[each.key].arn
     input    = each.value.input
+
+    # Retries de *livraison* seulement (droits, throttling) : les erreurs du handler, Scheduler ne les
+    # voit pas (appel asynchrone, accepté dès le 202). Défaut : 185 tentatives sur 24 h ; ici, une
+    # livraison qui échoue 3 fois en 1 h doit se voir, pas se répéter toute la journée.
+    retry_policy {
+      maximum_retry_attempts       = 3
+      maximum_event_age_in_seconds = 3600
+    }
   }
 }

@@ -238,7 +238,39 @@ aws events put-events --entries \
 - [ ] Un succès, l'entrée refusée est retentée seule
 - Réponse : un succès avec `FailedEntryCount: 1` : l'appel ne lève rien ; il faut lire `Entries` et renvoyer soi-même les entrées en `ErrorCode`.
 
-## 8. SQS : DLQ et maxReceiveCount
+## 8. state : suspendre sans détruire
+- Sous-thème : eventbridge
+- Niveau : 1
+- Source : data-platform · S1-08
+- Définition : `state = "DISABLED"` met une planification Scheduler en pause sans la supprimer ; `"ENABLED"` la relance à sa prochaine occurrence.
+- Contexte : Pendant une panne de la source ou une migration, couper le déclencheur sans perdre sa configuration (expression, fuseau, rôle, cible). En Terraform, c'est une modification sur place, pas une recréation. La planification ne rattrape pas seule les jours sautés : c'est le rôle d'un rejeu explicite (`make replay`).
+- Usage : ✅ couper l'ingestion pendant un incident ou une maintenance de la source · ❌ `make down` ou supprimer la ressource pour une pause : on perd l'historique et il faut tout réappliquer.
+
+```hcl
+# Exemple 1 : la pause, en variable
+resource "aws_scheduler_schedule" "j" {
+  name  = "data-platform-dev-ingest-bodacc"
+  state = var.ingestion_active ? "ENABLED" : "DISABLED"
+  # … expression, fuseau, cible inchangés
+}
+```
+
+```bash
+# Exemple 2 : vérifier l'état
+aws scheduler get-schedule \
+  --name data-platform-dev-ingest-bodacc \
+  --query State
+# → "ENABLED"
+```
+
+- Quiz : Planification `DISABLED` pendant 3 jours puis repassée `ENABLED` : que deviennent les 3 matins sautés ?
+- [ ] Rejoués aussitôt, l'un après l'autre
+- [x] Perdus : à rejouer soi-même
+- [ ] Rejoués à 06:00 les jours suivants
+- [ ] Rejoués dans la fenêtre flexible
+- Réponse : perdus : une planification désactivée n'invoque rien, et rien n'est mis en attente ; le rattrapage passe par un rejeu explicite de ces dates.
+
+## 9. SQS : DLQ et maxReceiveCount
 - Sous-thème : sqs
 - Niveau : 2
 - Définition : Une redrive policy déplace un message vers une DLQ après `maxReceiveCount` réceptions sans suppression, pour l'isoler et l'analyser.
@@ -272,7 +304,7 @@ aws sqs start-message-move-task \
 - [ ] Supprimé sans passer par la DLQ
 - Réponse : en DLQ au premier échec : une seule réception autorisée, donc aucun retry ; garder plusieurs réceptions pour absorber les erreurs transitoires.
 
-## 9. EventBridge : règle ou Scheduler
+## 10. EventBridge : règle ou Scheduler
 - Sous-thème : eventbridge
 - Niveau : 2
 - Définition : EventBridge route des événements vers des cibles selon des règles sur leur contenu, et planifie des tâches (Scheduler, ≈ cron managé).
@@ -298,7 +330,7 @@ aws sqs start-message-move-task \
 - [ ] SQS avec un délai de 24 h
 - Réponse : Scheduler : il n'y a pas d'événement source, juste une heure ; il gère aussi le fuseau horaire et les retries de la cible.
 
-## 10. flux continu : Firehose ou Kinesis
+## 11. flux continu : Firehose ou Kinesis
 - Sous-thème : choisir
 - Niveau : 2
 - Définition : Data Firehose pose un flux dans S3 par lots, sans code ; Kinesis Data Streams garde le flux pour plusieurs lecteurs, qui peuvent le relire.
@@ -324,7 +356,7 @@ Pourquoi: zéro code, zéro shard,
 - [ ] S3 avec notifications
 - Réponse : Kinesis Data Streams : rétention rejouable (24 h par défaut, jusqu'à 365 jours) et plusieurs consommateurs ; Firehose livre puis oublie, SQS ne donne chaque message qu'à un lecteur.
 
-## 11. jsonencode : le motif en HCL
+## 12. jsonencode : le motif en HCL
 - Sous-thème : eventbridge
 - Niveau : 2
 - Définition : `jsonencode` convertit un objet HCL en chaîne JSON : le motif s'écrit en HCL lisible plutôt qu'en JSON échappé dans une chaîne.
@@ -353,7 +385,7 @@ event_pattern = jsonencode({
 - [x] Tous les dépôts CodeCommit du compte et de la région
 - Réponse : tous les dépôts CodeCommit du compte et de la région : seul l'ARN dans `resources` désigne `revision-pwa`.
 
-## 12. rôle EventBridge : StartBuild seulement
+## 13. rôle EventBridge : StartBuild seulement
 - Sous-thème : eventbridge
 - Niveau : 2
 - Définition : Pour lancer CodeBuild, EventBridge endosse son propre rôle, qui n'a qu'un droit : `codebuild:StartBuild` sur ce projet.
@@ -380,7 +412,7 @@ data "aws_iam_policy_document" "events" {
 - [ ] Les deux rôles doivent être dans deux régions
 - Réponse : sa trust policy n'accepte que CodeBuild, et il porte des droits S3 inutiles à EventBridge : un rôle par service, un droit chacun.
 
-## 13. event_target : relier règle et projet
+## 14. event_target : relier règle et projet
 - Sous-thème : eventbridge
 - Niveau : 2
 - Définition : `aws_cloudwatch_event_target` branche la règle sur le projet CodeBuild et indique le rôle qu'EventBridge endosse pour le lancer.
@@ -403,7 +435,7 @@ resource "aws_cloudwatch_event_target" "deploy" {
 - [ ] Le build part, mais sans logs
 - Réponse : la cible est refusée : pour une cible CodeBuild, EventBridge a besoin d'un rôle autorisé à `StartBuild` ; il n'emprunte aucun autre rôle.
 
-## 14. long polling : attendre 20 s
+## 15. long polling : attendre 20 s
 - Sous-thème : sqs
 - Niveau : 2
 - Définition : Le long polling fait attendre `ReceiveMessage` jusqu'à 20 s qu'un message arrive, au lieu de répondre vide aussitôt : moins d'appels facturés.
@@ -433,7 +465,7 @@ int(short), int(long_)  # → (864000, 4320)
 - [x] Pas forcément : seule une partie des serveurs a été interrogée
 - Réponse : pas forcément : en short polling, SQS n'interroge qu'un échantillon de ses serveurs ; le long polling les interroge tous.
 
-## 15. mapping SQS : lot et fenêtre
+## 16. mapping SQS : lot et fenêtre
 - Sous-thème : sqs
 - Niveau : 2
 - Définition : `batch_size` fixe le nombre maximal de messages par invocation ; `maximum_batching_window_in_seconds` attend jusqu'à N secondes pour remplir le lot.
@@ -458,7 +490,7 @@ resource "aws_lambda_event_source_mapping" "m" {
 - [ ] Une fenêtre de 30 s par défaut
 - Réponse : refusé par l'API (le `plan` passe, mesuré) : un `batch_size` au-delà de 10 exige une fenêtre d'au moins 1 s (doc AWS).
 
-## 16. politique de file : qui peut écrire
+## 17. politique de file : qui peut écrire
 - Sous-thème : sqs
 - Niveau : 2
 - Définition : `aws_sqs_queue_policy` autorise un service (EventBridge, SNS, S3) à déposer dans la file ; pour une cible SQS, EventBridge n'endosse pas de rôle.
@@ -491,7 +523,7 @@ data "aws_iam_policy_document" "q" {
 - [ ] Une erreur dans les logs du consommateur
 - Réponse : `FailedInvocations` : la règle a matché mais la livraison est refusée ; la file ne reçoit rien, sa DLQ et son consommateur non plus.
 
-## 17. cible : retries et DLQ
+## 18. cible : retries et DLQ
 - Sous-thème : eventbridge
 - Niveau : 2
 - Définition : Si la livraison à une cible échoue, EventBridge réessaie 24 h et 185 fois au plus par défaut, puis jette l'événement, sauf DLQ.
@@ -513,6 +545,16 @@ resource "aws_cloudwatch_event_target" "q" {
 }
 ```
 
+```bash
+# Exemple 2 : le défaut sur Scheduler
+aws scheduler get-schedule \
+  --name data-platform-dev-ingest-bodacc \
+  --query Target.RetryPolicy
+# → {"MaximumEventAgeInSeconds": 86400,
+#    "MaximumRetryAttempts": 185}
+#   (mesuré, retry_policy absent)
+```
+
 - Quiz : La cible est une Lambda ; elle est bien appelée, mais son code lève une exception : l'événement va-t-il dans la DLQ de la cible ?
 - [ ] Oui, après 185 essais
 - [ ] Oui, immédiatement
@@ -520,7 +562,7 @@ resource "aws_cloudwatch_event_target" "q" {
 - [ ] Non : une cible Lambda n'accepte pas de DLQ
 - Réponse : non : EventBridge a livré (appel asynchrone accepté) ; l'échec du code relève des 2 retries et de la destination `on_failure` de la Lambda.
 
-## 18. schedule group : default si rien
+## 19. schedule group : default si rien
 - Sous-thème : eventbridge
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -541,7 +583,148 @@ aws scheduler list-schedule-groups \
 - [ ] Toutes les planifications de ce nom
 - Réponse : `ResourceNotFoundException` : sans `--group-name`, la recherche se fait dans `default`, où ce nom n'existe pas.
 
-## 19. SQS : visibility timeout
+## 20. fuseau : 06:00 Paris, deux heures UTC
+- Sous-thème : eventbridge
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Avec `schedule_expression_timezone = "Europe/Paris"`, `cron(0 6 * * ? *)` tombe à 04:00 UTC l'été et 05:00 UTC l'hiver, sans rien changer.
+- Contexte : Scheduler évalue l'expression dans le fuseau IANA donné et suit seul les changements d'heure. Les logs et métriques AWS restent en UTC : une invocation lue à 05:00 dans CloudWatch est bien celle de 06:00 Paris en hiver. Sans fuseau, l'expression est en UTC et l'heure locale glisse d'une heure deux fois par an.
+- Usage : ✅ fuseau de la source ou des utilisateurs pour toute planification à heure fixe · ❌ convertir soi-même en UTC dans l'expression : faux six mois sur douze.
+
+```python
+# Exemple 1 : la même heure Paris en UTC
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+P, U = ZoneInfo("Europe/Paris"), ZoneInfo("UTC")
+ete = datetime(2026, 10, 24, 6, tzinfo=P)
+hiver = datetime(2026, 10, 26, 6, tzinfo=P)
+ete.astimezone(U).hour    # → 4
+hiver.astimezone(U).hour  # → 5
+```
+
+- Quiz : Le lundi 30 mars 2026 (après le passage à l'heure d'été), à quelle heure UTC part `cron(0 6 * * ? *)` en `Europe/Paris` ?
+- [ ] 05:00
+- [x] 04:00
+- [ ] 06:00
+- [ ] 07:00
+- Réponse : 04:00 (calculé avec `zoneinfo`) : l'heure d'été met Paris à UTC+2, donc 06:00 Paris = 04:00 UTC.
+
+## 21. flexible_time_window : partir dans les N minutes
+- Sous-thème : eventbridge
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `mode = "FLEXIBLE"` avec `maximum_window_in_minutes = N` laisse Scheduler invoquer la cible n'importe quand dans les N minutes **après** l'heure prévue.
+- Contexte : Sert à disperser beaucoup de planifications calées sur la même heure (des milliers de tâches à minuit), pour ne pas saturer la cible. Le bloc est obligatoire : `OFF` si on n'en veut pas. Même en `OFF`, la précision est la minute : `06:00` part entre 06:00:00 et 06:00:59 (doc).
+- Usage : ✅ nombreuses tâches sans heure stricte, cible fragile à protéger des pics · ❌ ingestion attendue à heure fixe par l'étape suivante : `OFF`.
+
+```hcl
+# Exemple 1 : entre 06:00 et 06:15
+flexible_time_window {
+  mode                      = "FLEXIBLE"
+  maximum_window_in_minutes = 15
+}
+```
+
+```hcl
+# Exemple 2 : à l'heure (à la minute près)
+flexible_time_window {
+  mode = "OFF"
+}
+```
+
+- Quiz : Avec l'exemple 1 sur `cron(0 6 * * ? *)`, quel départ est possible ?
+- [ ] 05:52
+- [x] 06:11
+- [ ] 06:22
+- [ ] 05:45 à 06:15, au hasard
+- Réponse : 06:11 : la fenêtre s'ouvre à l'heure prévue et dure 15 minutes ; jamais avant 06:00 ni après 06:15.
+
+## 22. input : pas de date figée dans la planification
+- Sous-thème : eventbridge
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : L'`input` d'une planification quotidienne ne porte pas le jour à traiter : la cible le calcule à l'exécution, ici la veille à Paris.
+- Contexte : `input` est un texte fixe, envoyé tel quel à chaque déclenchement : `{"date":"2026-10-25"}` ingérerait le 25 tous les matins. Avec `{}`, le handler résout le jour lui-même (`resolve_day`) ; un départ en retard ou une livraison réessayée vise toujours la bonne journée, et le même handler accepte `{"date": …}` pour un rejeu.
+- Usage : ✅ `input = "{}"`, date calculée par la cible ; date explicite seulement pour un appel ponctuel (rejeu, `at()`) · ❌ date écrite dans l'`input` d'une planification récurrente.
+
+```python
+# Exemple 1 : même event, jour différent
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+def resolve_day(event, now):
+    if "date" in event:
+        return date.fromisoformat(event["date"])
+    paris = now.astimezone(ZoneInfo("Europe/Paris"))
+    return paris.date() - timedelta(days=1)
+
+U = ZoneInfo("UTC")
+resolve_day({}, datetime(2026, 10, 26, 5, tzinfo=U))
+# → date(2026, 10, 25)
+resolve_day({}, datetime(2026, 10, 27, 5, tzinfo=U))
+# → date(2026, 10, 26)
+```
+
+- Quiz : `input = jsonencode({ date = "2026-10-25" })` dans la planification quotidienne : qu'ingère la Lambda le 28 octobre ?
+- [ ] La journée du 27
+- [x] La journée du 25, encore
+- [ ] Rien : date passée refusée
+- [ ] Les journées du 25 au 27
+- Réponse : le 25 : l'`input` est un texte constant, rejoué tel quel chaque matin ; la date doit être calculée à l'exécution.
+
+## 23. rate() : un intervalle, pas une heure
+- Sous-thème : eventbridge
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `rate(valeur unité)` (`minutes`, `hours`, `days`) répète la cible à intervalle fixe, à partir de `start_date`, ou tout de suite sans `start_date`.
+- Contexte : Un `rate` ne vise aucune heure de l'horloge : `rate(1 days)` part 24 h après la dernière invocation, même un jour de 23 ou 25 h au changement d'heure (doc). Créée à 14:37, la planification part donc vers 14:37, pas à 06:00. Pour une heure fixe, `cron` avec fuseau.
+- Usage : ✅ tâche périodique sans heure imposée (toutes les 15 min, toutes les 2 h) · ❌ « chaque jour à 6 h » : `cron(0 6 * * ? *)` + `schedule_expression_timezone`.
+
+```bash
+# Exemple 1 : rate ou cron
+# rate(15 minutes) → toutes les 15 min
+# rate(1 days)     → toutes les 24 h,
+#   depuis la création ou start_date
+# cron(0 6 * * ? *) + Europe/Paris
+#   → 06:00 Paris, été comme hiver
+```
+
+- Quiz : `rate(1 days)` sans `start_date`, appliquée à 14:37 : quand part la première invocation ?
+- [ ] Le lendemain à 00:00 UTC
+- [ ] Le lendemain à 14:37
+- [x] Tout de suite
+- [ ] À 06:00 le lendemain
+- Réponse : tout de suite : sans `start_date`, une planification `rate` commence à invoquer dès sa création et son activation (doc Scheduler).
+
+## 24. at() : une seule fois, puis à supprimer
+- Sous-thème : eventbridge
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `at(aaaa-mm-jjThh:mm:ss)` invoque la cible une seule fois, dans le fuseau donné ; `action_after_completion = "DELETE"` supprime la planification ensuite.
+- Contexte : Une planification `at()` terminée reste en place et compte dans le quota du compte (doc) : sans suppression, des milliers de tâches ponctuelles finissent par bloquer les créations. `start_date` et `end_date` sont ignorés. Usage typique : un rejeu ou une relance programmés, créés par du code plutôt que par Terraform.
+- Usage : ✅ tâche ponctuelle programmée (relance à 22:00, fin d'essai), avec `DELETE` · ❌ ressource Terraform `at()` pérenne : Terraform la recréerait ou verrait un écart après sa suppression.
+
+```hcl
+# Exemple 1 : un rejeu, une fois
+resource "aws_scheduler_schedule" "r" {
+  name                         = "rejeu-2026-10-20"
+  schedule_expression          = "at(2026-10-31T22:00:00)"
+  schedule_expression_timezone = "Europe/Paris"
+  action_after_completion      = "DELETE"
+  flexible_time_window { mode = "OFF" }
+  # target { … input = "{\"date\":\"2026-10-20\"}" }
+}
+```
+
+- Quiz : Planification `at()` exécutée hier, sans `action_after_completion` : qu'en reste-t-il ?
+- [ ] Rien : supprimée après l'exécution
+- [x] Elle existe encore et compte dans le quota
+- [ ] Elle se relance l'année suivante
+- [ ] Elle passe en `DISABLED` et sort du quota
+- Réponse : elle existe encore : la doc précise qu'une planification ponctuelle terminée compte toujours dans le quota ; `DELETE` ou une suppression explicite.
+
+## 25. SQS : visibility timeout
 - Sous-thème : sqs
 - Niveau : 3
 - Définition : Le visibility timeout cache un message lu aux autres consommateurs ; s'il n'est pas supprimé à temps, il redevient visible et sera relu.
@@ -577,7 +760,7 @@ relu  # → True : traité deux fois
 - [x] Il échoue : visibility < timeout Lambda
 - Réponse : il échoue avec `InvalidParameterValueException` : le visibility timeout de la file doit être au moins égal au timeout de la fonction.
 
-## 20. SQS : échec partiel d'un lot
+## 26. SQS : échec partiel d'un lot
 - Sous-thème : sqs
 - Niveau : 3
 - Définition : Avec `ReportBatchItemFailures`, le handler renvoie les `messageId` en échec ; seuls ceux-là reviennent dans la file, les autres sont supprimés.
@@ -619,7 +802,7 @@ resource "aws_lambda_event_source_mapping" "m" {
 - [ ] Le lot entier revient dans la file
 - Réponse : supprimé comme réussi : sans ce réglage, la valeur renvoyée est ignorée ; une invocation sans exception vaut succès de tout le lot.
 
-## 21. input_transformer : remodeler l'événement
+## 27. input_transformer : remodeler l'événement
 - Sous-thème : eventbridge
 - Niveau : 3
 - Définition : `input_transformer` extrait des champs de l'événement (`input_paths`) et les place dans un gabarit (`input_template`) : la cible reçoit ce JSON au lieu de l'événement.
@@ -648,7 +831,7 @@ input_transformer {
 - [x] La variable n'est pas créée et disparaît de la sortie
 - Réponse : elle disparaît : un chemin absent ne crée pas de variable et rien n'est validé (doc AWS) ; vérifier le JSON produit avant de s'y fier.
 
-## 22. archive et replay : rejouer des événements
+## 28. archive et replay : rejouer des événements
 - Sous-thème : eventbridge
 - Niveau : 3
 - Définition : Une archive garde les événements d'un bus (tous ou filtrés) N jours ; un replay les renvoie sur ce bus pour une plage de dates.
@@ -681,7 +864,7 @@ aws events start-replay \
 - [ ] Le défaut de 30 jours
 - Réponse : sans limite : `0` signifie une rétention indéfinie (doc AWS) ; fixer une durée pour borner le coût de stockage.
 
-## 23. motifs : anything-but, numeric, exists
+## 29. motifs : anything-but, numeric, exists
 - Sous-thème : eventbridge
 - Niveau : 3
 - Définition : Les opérateurs de motif filtrent au-delà de l'égalité : `anything-but` (tout sauf), `numeric` (comparaisons), `exists` (présence d'un champ), `prefix`.
@@ -711,3 +894,30 @@ procol, 150000, sans siren → false
 - [ ] Oui : `anything-but` ignore les champs absents
 - [ ] Erreur : motif invalide sans le champ
 - Réponse : non (mesuré) : comme toute condition sur une valeur, `anything-but` ne matche qu'un champ présent.
+
+## 30. heure d'été : l'heure sautée n'est pas rattrapée
+- Sous-thème : eventbridge
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : Une planification calée dans l'heure qui n'existe pas au printemps est sautée ce jour-là ; dans l'heure doublée à l'automne, elle ne part qu'une fois.
+- Contexte : À Paris, la nuit du passage à l'heure d'été, 02:00 devient 03:00 : `cron(30 2 * * ? *)` ne part pas ce jour-là, puis reprend le lendemain (doc). À l'automne, 02:00-02:59 existe deux fois : une seule invocation. D'où la règle : jamais d'ingestion quotidienne entre 02:00 et 03:00 heure locale. 06:00 est hors de danger.
+- Usage : ✅ heures de planification hors de 02:00-03:00 dans un fuseau à heure d'été · ❌ `cron(30 2 * * ? *)` en `Europe/Paris` pour un traitement qui doit tourner chaque jour.
+
+```python
+# Exemple 1 : l'heure qui n'existe pas
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+P, U = ZoneInfo("Europe/Paris"), ZoneInfo("UTC")
+avant = datetime(2026, 3, 29, 0, 59, tzinfo=U)
+apres = avant + timedelta(minutes=1)
+avant.astimezone(P).strftime("%H:%M")  # → '01:59'
+apres.astimezone(P).strftime("%H:%M")  # → '03:00'
+```
+
+- Quiz : `cron(30 2 * * ? *)` en `Europe/Paris` : que se passe-t-il le dimanche 29 mars 2026 ?
+- [ ] Invocation à 03:30, décalée d'une heure
+- [ ] Invocation à 01:30
+- [x] Aucune invocation ce jour-là
+- [ ] Deux invocations à 03:00
+- Réponse : aucune : 02:30 n'existe pas ce jour-là à Paris ; Scheduler saute l'invocation et reprend le lendemain (doc Scheduler, heure d'été).
