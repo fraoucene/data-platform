@@ -43,7 +43,7 @@ make plan     # si un .tf a changé : plan + audit des tags ; lire le diff, 0 vi
   `<account_id>` ; avant tout commit, `git diff --cached | grep -E '[0-9]{12}'` doit être vide (hors comptes
   d'exemple de la doc AWS comme `123456789012`).
 - **Jamais `terraform apply` / `destroy`, `make up` / `make down`, ni commande AWS qui écrit** (`invoke`, `put-*`,
-  `delete-*`, `set-alarm-state`…) sans accord explicite de l'humain : le compte de dev est partagé et réel.
+  `delete-*`, `set-alarm-state`…) sans accord explicite de l'humain : le compte de dev est réel (ressources facturées, données ingérées).
 - Ne pas modifier ni commiter : `*.tfstate*`, `infra/envs/*/backend.hcl`, `infra/envs/*/local.tfvars`,
   `infra/bootstrap/local.auto.tfvars` (gitignorés, propres à chaque poste) ; les `.example` servent de modèle.
 - Ne pas éditer `uv.lock` à la main : `uv add` / `uv lock`. Ne pas éditer `build/` (généré).
@@ -54,8 +54,9 @@ make plan     # si un .tf a changé : plan + audit des tags ; lire le diff, 0 vi
 
 ## Contexte AWS
 
-- Profil CLI `data-platform`, région `eu-west-3`, un seul environnement déployé (`dev`) dans un compte partagé
-  avec d'autres projets : ne toucher qu'aux ressources préfixées `data-platform-`.
+- Profil CLI `data-platform`, région `eu-west-3`, un seul environnement déployé (`dev`). Le compte de l'auteur
+  héberge aussi d'autres projets : ne toucher qu'aux ressources préfixées `data-platform-` (règle valable aussi sur
+  un compte dédié).
 - Noms réels toujours lus dans les outputs : `terraform -chdir=infra output -json bucket_names | jq -r .raw`,
   `… output -json lambda_functions`. Dans un exemple ou une doc : `$RAW_BUCKET`, `<account_id>`.
 

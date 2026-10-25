@@ -16,7 +16,8 @@ infra/
 ├── modules/
 │   ├── kms/            # clé symétrique du projet + alias, rotation annuelle
 │   ├── s3-buckets/     # 4 buckets chiffrés KMS, versionnés, privés, lifecycle, logs d'accès
-│   └── iam/            # rôles lambda / emr / sfn, moindre privilège
+│   ├── iam/            # rôles lambda / emr / sfn, moindre privilège
+│   └── lambda-python/  # une Lambda : rôle, log group, fonction, retries asynchrones
 ├── envs/
 │   └── dev/            # dev.tfvars (commité), backend.hcl + local.tfvars (gitignorés, .example commités)
 └── scripts/
@@ -49,6 +50,9 @@ Aucun `-migrate-state` : sur une machine vierge, le backend S3 est configuré d�
 (la migration n'a servi qu'une fois, pour passer l'état local historique vers S3).
 
 Ajouter un environnement = créer `envs/<env>/` sur le même modèle et lancer `make plan ENV=<env>`.
+Dans le **même** compte, deux ressources entreraient en conflit, car leur nom n'a pas d'environnement : le budget
+`data-platform-monthly-cost` et le topic `data-platform-budget-alerts` (un par compte, S1-02). Recommandé : un
+compte AWS par environnement ; sinon, les préfixer par `local.prefix` avant de créer le second env.
 Si l'env vit dans un autre compte AWS : appliquer `bootstrap/` sur ce compte d'abord.
 
 ## Où est l'état

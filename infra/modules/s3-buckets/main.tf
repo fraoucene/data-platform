@@ -1,4 +1,4 @@
-# Cinq buckets identiques dans leur configuration, différents par leur nom :
+# Quatre buckets identiques dans leur configuration, différents par leur nom :
 # une seule déclaration par ressource, `for_each` sur le set des noms,
 # `each.key` = le nom logique ("raw", "processed", ...).
 # Provider AWS 6 : un bucket = plusieurs ressources (bucket, accès public,

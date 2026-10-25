@@ -34,13 +34,30 @@ infrastructure : [infra/README.md](infra/README.md) ; source : [docs/source-boda
 | jq | | lit les outputs Terraform (`make replay`, `make duckdb`) |
 | [DuckDB](https://duckdb.org/docs/installation/) | testé en 2.0.0, facultatif | interroger le bucket raw (`make duckdb`) |
 
-Un compte AWS, et un profil CLI nommé `data-platform` en région `eu-west-3` :
-`aws configure --profile data-platform` (ou `aws configure sso --profile data-platform`), puis
-`aws sts get-caller-identity --profile data-platform` → le numéro de compte, à reporter dans les fichiers de l'étape 3.
+### Compte AWS et identité
+
+Un compte AWS dédié (ou de bac à sable) et une identité qui peut créer des ressources S3, KMS, IAM, Lambda,
+CloudWatch, SNS, EventBridge Scheduler et Budgets. Sur un compte neuf, ne pas travailler avec le root :
+
+1. Console, en root : IAM Identity Center → activer → créer un utilisateur → lui attribuer le compte avec le
+   permission set `AdministratorAccess` (compte personnel de développement ; en entreprise, un rôle plus étroit).
+2. Poste : `aws configure sso --profile data-platform` (région `eu-west-3`), puis
+   `aws sso login --profile data-platform` (à refaire quand la session expire).
+3. `aws sts get-caller-identity --profile data-platform` → le numéro de compte, à reporter dans les fichiers des
+   étapes 2 et 3 du démarrage (`account_id`). Ne jamais le commiter.
+
+Si `make up` échoue sur `aws_budgets_budget` avec `AccessDenied` alors que l'identité est administrateur : en root,
+Compte → « IAM user and role access to Billing information » → activer.
+
+Coût : quelques dollars par mois en dev (clé KMS ~1 USD, le reste à l'usage) ; un budget de 35 USD (`dev.tfvars`)
+envoie un mail d'alerte avant dépassement.
 
 ## Démarrer de zéro
 
 ```bash
+# 0. Le dépôt (un clone git, pas une archive : le build des Lambdas lit `git rev-parse HEAD`)
+git clone https://github.com/fraoucene/data-platform.git && cd data-platform
+
 # 1. Dépendances de tout le workspace (pas `uv sync` seul : il n'installe pas les Lambdas et les packages)
 make sync
 uv run pre-commit install          # hooks git (ruff, uv-lock, gros fichiers)
@@ -60,7 +77,7 @@ make lambdas-publish
 
 # 5. Déployer
 make plan                          # → Plan: N to add, 0 violation(s) de tags
-make up
+make up                            # apply -auto-approve : pas de confirmation, relire le plan avant
 
 # 6. Confirmer les 2 mails « AWS Notification - Subscription Confirmation » (budget, alertes) :
 #    sans le clic, les alarmes ne livrent rien.
