@@ -10,7 +10,9 @@ infra/
 ├── providers.tf        # provider AWS, allowed_account_ids, default_tags (project, environment, managed_by)
 ├── variables.tf        # region, profile, account_id, environment, tags, alert_email, budget_limit_usd
 ├── outputs.tf          # ARN et noms exposés aux cartes suivantes (Lambda, Step Functions, jobs)
-├── alerts.tf budget.tf # socle S1-02 : budget mensuel + topic SNS
+├── alerts.tf budget.tf # budget mensuel + topic SNS (S1-02) ; topic d'alertes par env + alarmes Lambda (S1-08)
+├── lambdas.tf          # local.lambdas : une entrée = une Lambda (module lambda-python)
+├── schedules.tf        # local.schedules : planifications EventBridge Scheduler + rôle d'invocation
 ├── modules/
 │   ├── kms/            # clé symétrique du projet + alias, rotation annuelle
 │   ├── s3-buckets/     # 5 buckets chiffrés KMS, versionnés, privés, lifecycle, logs d'accès
@@ -18,7 +20,9 @@ infra/
 ├── envs/
 │   └── dev/            # dev.tfvars (commité), backend.hcl + local.tfvars (gitignorés, .example commités)
 └── scripts/
-    └── check_tags.py   # audit des tags sur le plan JSON (make plan)
+    ├── check_tags.py   # audit des tags sur le plan JSON (make plan)
+    ├── build_lambda.py # zip reproductible + publication (make lambdas-publish)
+    └── replay.py       # rejeu d'une plage de jours (make replay)
 ```
 
 ## Reconstruire de zéro sur une machine vierge
@@ -99,6 +103,21 @@ make deploy           # lambdas-publish puis up : ce que lancera la CI
 ```
 
 `make up` seul déploie la version désignée par le pointeur ; il échoue si une Lambda n'a jamais été publiée.
+
+### Planification, alertes, rejeu (S1-08)
+
+| Fichier | Contenu |
+|---|---|
+| `schedules.tf` | `local.schedules` (expression, fuseau, event) ; par entrée : un rôle `…-<lambda>-scheduler` limité à `lambda:InvokeFunction` sur sa fonction, et une `aws_scheduler_schedule` avec `retry_policy` (3 tentatives, 1 h) |
+| `modules/lambda-python` | `async_retry` (2 tentatives, 1 h) → `aws_lambda_function_event_invoke_config` pour toute Lambda |
+| `alerts.tf` | topic `data-platform-<env>-alerts` + abonnement email + politique `cloudwatch.amazonaws.com` ; une alarme `Errors` (15 min, `notBreaching`) par entrée de `local.lambdas` |
+
+```bash
+make replay FROM=2026-10-01 TO=2026-10-19             # une invocation synchrone par jour, bilan, code 1 si échec
+make replay FROM=2026-10-20 TO=2026-10-20 LAMBDA=…    # une autre Lambda de local.lambdas
+```
+
+Après `make down` puis `make up` : l'abonnement email est recréé, donc à reconfirmer (sinon alarmes muettes).
 
 ## Rôles IAM
 

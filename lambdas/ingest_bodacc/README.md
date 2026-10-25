@@ -42,6 +42,34 @@ Vérifier un rejeu : comparer le `sha256` des deux manifests, ou télécharger l
 même pour des octets identiques. Le versioning garde l'ancienne version, supprimée après 30 jours
 (`expire-noncurrent`).
 
+## Exploitation
+
+**Planification** : EventBridge Scheduler, `cron(0 6 * * ? *)` en `Europe/Paris` (heure d'été suivie seule),
+event `{}` : la Lambda ingère la veille à Paris (`infra/schedules.tf`). Appel asynchrone : Scheduler voit un succès
+dès que Lambda accepte l'événement ; les erreurs du handler ne se voient que dans les métriques et les logs.
+
+**Retries** : livraison par Scheduler 3 fois en 1 h au plus ; erreur du handler, 2 nouvelles tentatives
+(~1 puis ~2 min), événement abandonné après 1 h (`async_retry` du module). Une panne plus longue se rattrape à la main.
+
+**Calendrier de la source** : 5 bulletins par semaine (lundi-mardi, mercredi, jeudi, vendredi, samedi-dimanche),
+datés du mardi et du dimanche pour les bulletins doubles. Une partition à `count` 0 le **samedi** ou le **lundi** est
+normale (manifest présent) ; un 0 un autre jour est suspect. Détail : `docs/source-bodacc.md` §4.
+
+**Alarme** : `data-platform-<env>-ingest-bodacc-errors` passe en `ALARM` dès qu'une invocation échoue sur 15 min,
+mail sur le topic `data-platform-<env>-alerts` (abonnement email à confirmer après un `make up` qui le recrée),
+puis `OK` 15 min sans erreur. Le mail ne contient pas l'erreur elle-même : la lire dans les logs.
+
+Quand le mail ALARM arrive :
+
+```
+aws logs tail /aws/lambda/data-platform-dev-ingest-bodacc --since 1h --profile data-platform   # quelle erreur, quel jour
+make replay FROM=YYYY-MM-DD TO=YYYY-MM-DD                                                    # une fois la cause réglée
+```
+
+**Rejeu** : `make replay FROM=… TO=…` invoque la fonction en synchrone, un jour à la fois, bornes incluses,
+puis affiche `N/M jours ingérés` ; code de sortie 1 si un jour a échoué (`infra/scripts/replay.py`). Sans danger sur
+des jours déjà ingérés (idempotence).
+
 ## Développer
 
 ```
