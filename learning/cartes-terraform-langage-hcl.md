@@ -877,6 +877,15 @@ deploy: lambdas-publish up
 # 3. apply : la fonction copie le zip
 ```
 
+```bash
+# Exemple 2 : l'erreur, mesurée (S1-09)
+terraform plan   # pointeur jamais publié
+# → Error: reading S3 Bucket
+#   (data-platform-artifacts-<account_id>)
+#   Object (lambdas/nope/current.json):
+#   couldn't find resource
+```
+
 - Quiz : Une nouvelle Lambda est ajoutée à `local.lambdas` sans être publiée ; `make plan` : résultat ?
 - [ ] Un plan sans la nouvelle Lambda
 - [x] Tout le plan échoue

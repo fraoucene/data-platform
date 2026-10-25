@@ -329,7 +329,40 @@ locals {
 - [ ] Un, recopié dans chaque compte
 - Réponse : deux, cloisonnés : un bootstrap par compte ; la prod ne lit le zip de dev que si une politique de bucket l'ouvre à son compte, sinon on copie le zip.
 
-## 11. accès public : tout bloquer
+## 11. backend.hcl absent : Failed to read file
+- Sous-thème : backend
+- Niveau : 1
+- Source : data-platform · S1-09
+- Définition : Dans un clone neuf, `init -backend-config=envs/dev/backend.hcl` échoue : le fichier est gitignoré, il faut d'abord le créer depuis son `.example`.
+- Contexte : Le backend partiel lit bucket, key, région et profil dans `backend.hcl`, qui contient le numéro de compte : il n'est jamais commité. Toute cible qui dépend de `tf-init` échoue donc, `make tf-validate` compris, avant même de lire le code. C'est l'un des implicites d'un README écrit depuis son poste : la doc de démarrage doit dire `cp backend.hcl.example backend.hcl` et quoi y remplir.
+- Usage : ✅ étape écrite « créer `backend.hcl` » avant le premier `make plan` · ❌ en CI, un fichier : y passer `-backend-config="bucket=…"` depuis les variables protégées.
+
+```bash
+# Exemple 1 : mesuré dans un clone neuf
+terraform -chdir=infra init \
+  -backend-config=envs/dev/backend.hcl
+# → Error: Failed to read file
+#   The file "envs/dev/backend.hcl"
+#   could not be read.
+```
+
+```bash
+# Exemple 2 : le correctif documenté
+cp infra/envs/dev/backend.hcl.example \
+   infra/envs/dev/backend.hcl
+# bucket = sortie du bootstrap :
+terraform -chdir=infra/bootstrap \
+  output -raw state_bucket
+```
+
+- Quiz : Dans ce clone neuf, quelle commande passe sans `backend.hcl` ?
+- [ ] `make tf-validate`
+- [ ] `make plan`
+- [x] `terraform -chdir=infra init -backend=false`
+- [ ] `terraform -chdir=infra init` sans option
+- Réponse : `init -backend=false` : il installe providers et modules sans backend ; `make tf-validate` passe par `tf-init`, qui lit `backend.hcl` (mesuré : `Failed to read file`).
+
+## 12. accès public : tout bloquer
 - Sous-thème : bucket
 - Niveau : 2
 - Définition : `aws_s3_bucket_public_access_block` interdit tout accès public au bucket, quelles que soient ses ACL ou sa politique.
@@ -361,7 +394,7 @@ aws s3api get-public-access-block \
 - [ ] Non, seulement si le bucket a une ACL privée
 - Réponse : non : un principal de service restreint à un ARN précis n'est pas public ; seul un `Principal: "*"` sans condition restrictive est bloqué.
 
-## 12. backend : ni variable ni local
+## 13. backend : ni variable ni local
 - Sous-thème : backend
 - Niveau : 2
 - Définition : Le bloc `backend` est lu avant les variables : il n'accepte que des valeurs littérales, jamais `var.` ni `local.`.
@@ -396,7 +429,7 @@ terraform -chdir=infra init \
 - [ ] `Error: Unsupported attribute`
 - Réponse : `Variables not allowed` : même une `local` littérale est une expression, évaluée après le backend ; seul un littéral passe.
 
-## 13. init -reconfigure : changer d'environnement
+## 14. init -reconfigure : changer d'environnement
 - Sous-thème : backend
 - Niveau : 2
 - Définition : `init -reconfigure` réinitialise le backend avec une nouvelle configuration sans copier l'état : indispensable pour passer d'un environnement à l'autre.
@@ -422,7 +455,7 @@ tf-init:
 - [x] `Error: Backend configuration changed`
 - Réponse : `Backend configuration changed` : Terraform exige de choisir entre `-reconfigure` (oublier l'ancienne config) et `-migrate-state` (copier l'état).
 
-## 14. init -backend=false : valider hors AWS
+## 15. init -backend=false : valider hors AWS
 - Sous-thème : backend
 - Niveau : 2
 - Source : revision-pwa · pwa-revision
@@ -448,7 +481,7 @@ terraform init   # backend "s3" {}
 - [ ] Planifie sans rafraîchir les ressources
 - Réponse : il échoue (mesuré) : le bloc `backend "s3"` exige un `init` complet ; Terraform refuse plutôt que de planifier contre un état vide, qui recréerait tout.
 
-## 15. terraform_remote_state : lire les outputs d'un autre root
+## 16. terraform_remote_state : lire les outputs d'un autre root
 - Sous-thème : state
 - Niveau : 2
 - Définition : La data source `terraform_remote_state` lit les `output` de l'état d'un autre root (bootstrap, réseau), sans gérer ses ressources.
@@ -488,7 +521,7 @@ data "terraform_remote_state" "net" {
 - [ ] L'ARN du bucket, lu dans l'état
 - Réponse : `Unsupported attribute` (mesuré) : les outputs ne sont accessibles que sous l'attribut `outputs` de la data source.
 
-## 16. state pull : sauvegarder avant d'opérer
+## 17. state pull : sauvegarder avant d'opérer
 - Sous-thème : state
 - Niveau : 2
 - Définition : `terraform state pull` affiche l'état courant en JSON, quel que soit le backend : la sauvegarde à faire avant toute commande `state`.
@@ -510,7 +543,7 @@ jq -c '{serial, n: (.resources|length)}' \
 - [ ] Accepté, avec une confirmation `yes`
 - Réponse : refusé (`cannot import state with serial 1 over newer state`, mesuré) : `push` protège les écritures récentes ; seul `-force` écraserait.
 
-## 17. workspace : plusieurs états, un seul backend
+## 18. workspace : plusieurs états, un seul backend
 - Sous-thème : backend
 - Niveau : 2
 - Définition : `terraform workspace new prod` crée un état séparé sous le même backend ; `terraform.workspace` donne son nom dans le code.
@@ -536,7 +569,7 @@ find . -name '*.tfstate'
 - [ ] De détruire les ressources de `prod`
 - Réponse : de tout créer (mesuré) : `default` a son propre état, vide ; les ressources de `prod` lui sont invisibles.
 
-## 18. états séparés : destroy ne traverse pas
+## 19. états séparés : destroy ne traverse pas
 - Sous-thème : state
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -561,7 +594,7 @@ terraform -chdir=infra/bootstrap \
 - [ ] Non, mais il est vidé de ses objets
 - Réponse : non : un data source est seulement lu ; `destroy` ne supprime que les blocs `resource` de son état, la lecture disparaît sans toucher au bucket.
 
-## 19. dépendance : jamais vers une couche plus courte
+## 20. dépendance : jamais vers une couche plus courte
 - Sous-thème : principe
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -588,7 +621,7 @@ rule {
 - [ ] Non : un bucket refuse les ARN de rôle
 - Réponse : non : IAM enregistre l'identifiant interne du rôle (`AROA…`) ; le rôle recréé en a un autre, et la politique affiche l'ancien identifiant à la place de l'ARN.
 
-## 20. make down : le test de la couche
+## 21. make down : le test de la couche
 - Sous-thème : principe
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -613,7 +646,7 @@ rule {
 - [ ] Dans `raw`, sous un préfixe `refs/`
 - Réponse : hors de l'environnement jetable (bootstrap ou root de données durable) : `make up` recréerait un bucket vide, et ces corrections ne se rejouent pas comme BODACC.
 
-## 21. for_each : grouper par forme, le piège
+## 22. for_each : grouper par forme, le piège
 - Sous-thème : principe
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -643,7 +676,7 @@ resource "aws_s3_bucket" "this" {
 - [ ] Ignoré sans erreur ni effet
 - Réponse : `Variables not allowed` (vérifié avec `terraform validate`) : les arguments de `lifecycle` doivent être des littéraux ; la ressource à protéger sort de la boucle.
 
-## 22. couches : se retrouver par convention
+## 23. couches : se retrouver par convention
 - Sous-thème : principe
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -669,7 +702,7 @@ grep artifacts_bucket infra/lambdas.tf
 - [ ] Il recréerait le bucket du bootstrap
 - Réponse : l'état du bootstrap est local, sur le poste qui l'a appliqué : la CI ne peut pas le lire ; la convention de nom ne dépend d'aucun fichier.
 
-## 23. moved : renommer sans recréer
+## 24. moved : renommer sans recréer
 - Sous-thème : state
 - Niveau : 3
 - Définition : Un bloc `moved` déclare qu'une adresse a changé (`from` → `to`) : Terraform déplace l'objet dans le state au lieu de le recréer.
@@ -705,7 +738,7 @@ moved {
 - [ ] Un second bucket `raw[0]`
 - Réponse : `raw has moved to raw[0]` : Terraform déduit seul ce déplacement entre l'adresse sans index et l'index `[0]`.
 
-## 24. state rm : oublier sans détruire
+## 25. state rm : oublier sans détruire
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform state rm` retire une ressource du state sans la toucher dans AWS : Terraform cesse simplement de la gérer.
@@ -739,7 +772,7 @@ removed {
 - [ ] `aws_s3_bucket.raw will be imported`
 - Réponse : `will be created` : Terraform ne connaît plus le bucket ; l'apply échouera car le nom existe déjà dans AWS (`import` pour le reprendre).
 
-## 25. verrou : use_lockfile natif S3
+## 26. verrou : use_lockfile natif S3
 - Sous-thème : backend
 - Niveau : 3
 - Définition : `use_lockfile = true` pose un objet `<key>.tflock` à côté de l'état pendant `plan` et `apply`, pour qu'une seule exécution l'écrive à la fois.
@@ -770,7 +803,7 @@ terraform -chdir=infra \
 - [ ] Il lit l'ancien état et continue
 - Réponse : il échoue (`Error acquiring the state lock`) : `plan` verrouille aussi, et l'attente par défaut est nulle ; `-lock-timeout=60s` attendrait.
 
-## 26. prevent_destroy : ce qu'il protège
+## 27. prevent_destroy : ce qu'il protège
 - Sous-thème : garde-fous
 - Niveau : 3
 - Définition : `lifecycle { prevent_destroy = true }` fait échouer tout plan qui détruirait la ressource, `destroy` compris.
@@ -809,7 +842,7 @@ resource "aws_s3_bucket" "tfstate" {
 - [ ] `No changes.`
 - Réponse : il propose la destruction, sans erreur : avec le bloc disparaît son `lifecycle` ; pour oublier sans détruire, un bloc `removed` avec `destroy = false`.
 
-## 27. import : rattacher l'existant
+## 28. import : rattacher l'existant
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform import adresse id` rattache une ressource AWS existante à l'état sans la recréer : la parade à un état local perdu.
@@ -845,7 +878,7 @@ import {
 - [ ] L'état est écrit, puis `plan` veut détruire
 - Réponse : erreur `resource address … does not exist in the configuration` : `import` remplit un bloc existant ; écrire le code d'abord, ou `plan -generate-config-out` avec un bloc `import`.
 
-## 28. init -migrate-state : déplacer un état
+## 29. init -migrate-state : déplacer un état
 - Sous-thème : backend
 - Niveau : 3
 - Définition : `init -migrate-state` copie l'état de l'ancien backend vers le nouveau, pour déplacer un état sans réimporter les ressources.
@@ -870,7 +903,7 @@ terraform -chdir=infra plan
 - [ ] Remplacé par un renvoi vers le bucket
 - Réponse : vidé : Terraform efface l'état local migré mais laisse `terraform.tfstate.backup`, l'état complet en clair, à mettre à la corbeille ; entre deux backends (changement de `key`), la source reste intacte (mesuré, Terraform 1.14).
 
-## 29. state mv : déplacer tout de suite
+## 30. state mv : déplacer tout de suite
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform state mv A B` change l'adresse d'un objet dans l'état immédiatement, sans plan : la version impérative du bloc `moved`.
@@ -897,7 +930,7 @@ terraform state mv -dry-run \
 - [ ] Modifier `brut` en place
 - Réponse : détruire `brut`, créer `raw` (mesuré) : le code déclare toujours `raw` ; l'état a bougé, pas la configuration.
 
-## 30. changer de couche : moved ne traverse pas
+## 31. changer de couche : moved ne traverse pas
 - Sous-thème : state
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -927,7 +960,7 @@ import {
 - [ ] Il le retire de l'état sans le détruire
 - Réponse : il le détruit : les deux états le référencent, chacun se croit propriétaire ; `prevent_destroy` du bootstrap ne joue que dans le bootstrap. Une ressource, un seul état.
 
-## 31. couches : au-delà de deux
+## 32. couches : au-delà de deux
 - Sous-thème : principe
 - Niveau : 3
 - Source : data-platform · S1-07
