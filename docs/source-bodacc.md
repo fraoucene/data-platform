@@ -96,6 +96,20 @@ Conséquences pour le scheduler (S1-08) :
 - Planifier en UTC fixe, au plus tôt vers 07:00 UTC, pour ne pas dépendre du changement d'heure.
 - La mise à jour n'est pas quotidienne : le 23 octobre, le dernier traitement datait du 22. Une journée sans parution est normale, `fetch_day` peut renvoyer zéro ligne sans erreur.
 
+Calendrier des parutions, mesuré le 2026-10-25 avec `count_day` sur 8 semaines (31/08 → 24/10), selon la `dateparution` de la source :
+
+| Jour | Jours avec parution | Volume typique |
+|---|---|---|
+| lundi | 1 / 8 | 0 (sauf le 31/08 : 15 480) |
+| mardi | 7 / 8 | 22 000 à 33 000 |
+| mercredi | 8 / 8 | 5 000 à 31 000 |
+| jeudi | 8 / 8 | 16 000 à 25 000 |
+| vendredi | 8 / 8 | 9 000 à 15 000 |
+| samedi | 0 / 8 | 0 |
+| dimanche | 7 / 7 | 12 000 à 18 000 |
+
+Cinq parutions par semaine, datées du dimanche et du mardi au vendredi ; l'exception du 31/08 (lundi avec parution, mardi 01/09 sans) montre que le calendrier peut glisser d'un jour. Ne jamais déduire « pas de parution » du jour de la semaine : un `count` à 0 se constate, il ne se prévoit pas. La parution datée du dimanche 25/10 comptait déjà 14 157 annonces le jour même à 17:38 (heure de Paris) : l'ingestion de J-1 à 06:00 lit une journée complète.
+
 ## 5. Champs clés et champs imbriqués
 
 Le schéma ODS déclare 26 champs `text`, 1 `date` (`dateparution`) et 3 `int` (`numeroannonce`, `region_code`, `pdf_parution_subfolder`). Onze champs `text` contiennent en réalité du JSON sérialisé : il faut un second `json.loads` sur leur valeur.

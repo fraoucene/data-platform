@@ -4,7 +4,7 @@ type: cartes
 langage: Python
 cours: Générateurs
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Générateurs Python
@@ -517,7 +517,37 @@ list(g)   # → ["A1", "A2"]
 - [ ] `SyntaxError` à l'import
 - Réponse : Un générateur : les annotations ne sont pas vérifiées à l'exécution ; seul un vérificateur de types (mypy, pyright) signale l'erreur.
 
-## 16. close et finally
+## 16. Plage de dates : bornes incluses
+- Sous-thème : bases
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Un générateur `while day <= end: yield day; day += timedelta(days=1)` produit chaque jour d'une plage, fin incluse.
+- Contexte : `range` ne connaît pas les dates. Le générateur ne garde qu'un jour à la fois et s'arrête à `end` compris : du 1er au 19, 19 jours. Valider `start <= end` avant la boucle évite une plage vide silencieuse. Le nombre de jours vaut `(end - start).days + 1`, pas `.days`.
+- Usage : ✅ rejeu, backfill, partitions à parcourir · ❌ `range((end - start).days)` : oublie le dernier jour.
+
+```python
+# Exemple 1 : du 1er au 19 octobre
+from datetime import date, timedelta
+
+def days(start, end):
+    day = start
+    while day <= end:
+        yield day
+        day += timedelta(days=1)
+
+j = list(days(date(2026, 10, 1),
+              date(2026, 10, 19)))
+len(j)           # → 19
+j[-1]            # → date(2026, 10, 19)
+```
+
+- Quiz : Que vaut `(date(2026, 10, 19) - date(2026, 10, 1)).days` ?
+- [ ] `19`
+- [x] `18`
+- [ ] `20`
+- Réponse : `18` : c'est l'écart entre les deux dates ; le nombre de jours de la plage, bornes incluses, est `18 + 1`.
+
+## 17. close et finally
 - Sous-thème : composer
 - Niveau : 3
 - Définition : `g.close()` arrête un générateur en cours et exécute ses blocs `finally` : le moyen de libérer un fichier ou une connexion.
@@ -552,7 +582,7 @@ list(lire())   # → ["A1"]
 - [x] `StopIteration`
 - Réponse : `StopIteration` : un générateur fermé est épuisé pour de bon, il ne reprend pas à `"A2"`.
 
-## 17. Évaluation tardive de la condition
+## 18. Évaluation tardive de la condition
 - Sous-thème : pièges
 - Niveau : 3
 - Définition : Dans `(x for x in it if cond)`, seul `it` est évalué à la création ; `cond` est évaluée pendant la consommation.
@@ -584,7 +614,7 @@ l   # → ["483609327"]
 - [ ] `NameError`
 - Réponse : `["483609327"]` : le premier itérable est capturé dès la création, la réaffectation de `sirens` n'y change rien.
 
-## 18. Itérable ou itérateur ?
+## 19. Itérable ou itérateur ?
 - Sous-thème : pièges
 - Niveau : 3
 - Définition : Un itérable (liste) fournit un itérateur via `iter()` ; seul un itérateur (générateur) accepte `next()` et s'épuise.
@@ -621,7 +651,7 @@ list(j)   # → ["A1", "A2"]  (relu)
 - [ ] `AttributeError`
 - Réponse : `TypeError` ('list' object is not an iterator) : une liste est itérable, pas itérateur ; passer par `iter()`.
 
-## 19. send : envoyer une valeur au générateur
+## 20. send : envoyer une valeur au générateur
 - Sous-thème : composer
 - Niveau : 3
 - Définition : `g.send(v)` reprend le générateur comme `next`, mais `v` devient la valeur de l'expression `yield` en cours ; `next(g)` équivaut à `g.send(None)`.
@@ -662,7 +692,7 @@ next(g)        # → ["A1", None]
 - [ ] Lève `StopIteration`
 - Réponse : `TypeError` (can't send non-None value to a just-started generator) : aucun `yield` n'attend encore de valeur ; il faut amorcer par `next(g)`.
 
-## 20. StopIteration dans un générateur
+## 21. StopIteration dans un générateur
 - Sous-thème : pièges
 - Niveau : 3
 - Définition : Une `StopIteration` qui s'échappe du corps d'un générateur, par un `next()` interne sur un itérateur vide, devient `RuntimeError` (PEP 479).

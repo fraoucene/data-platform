@@ -1439,7 +1439,43 @@ s3_client.cache_info().currsize  # → 0
 - [ ] `None`
 - Réponse : le client du test précédent : le cache garde l'objet créé dans la fixture, éventuellement sous un `mock_aws` déjà arrêté.
 
-## 45. couverture : lignes ou branches
+## 45. faux client Lambda : un Payload qui se lit
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Le faux `invoke` rend la forme exacte de boto3 : `StatusCode`, `Payload` en `io.BytesIO`, et `FunctionError` seulement en cas d'échec.
+- Contexte : Un faux qui rend `Payload` sous forme de dictionnaire fait passer un code qui ne fait jamais `.read()`, puis plante sur AWS. `BytesIO` reproduit le flux lu une fois ; une clé `FunctionError` présente seulement en échec reproduit le test `"FunctionError" in resp`. Le faux enregistre aussi les payloads envoyés, pour vérifier l'ordre des jours.
+- Usage : ✅ tester un script qui invoque une Lambda, sans AWS ni moto · ❌ `Payload` en `dict` ou `str` : le code de production n'est pas exercé.
+
+```python
+# Exemple 1 : succès ou échec par date
+import io, json
+
+class FakeLambda:
+    def __init__(self, failing=()):
+        self.failing, self.sent = failing, []
+    def invoke(self, FunctionName, Payload):
+        ev = json.loads(Payload)
+        self.sent.append(ev["date"])
+        ok = ev["date"] not in self.failing
+        r = {"StatusCode": 200, "Payload":
+             io.BytesIO(b'{"count": 3}')}
+        return r if ok else {**r,
+            "FunctionError": "Unhandled"}
+
+f = FakeLambda(failing={"2026-10-02"})
+"FunctionError" in f.invoke("f", b'{"date": "2026-10-02"}')
+# → True
+f.sent           # → ['2026-10-02']
+```
+
+- Quiz : Le faux rend `"Payload": {"count": 3}` (un dict). Que fait `json.loads(resp["Payload"].read())` ?
+- [ ] Rend `{"count": 3}`
+- [x] `AttributeError` : un dict n'a pas `.read`
+- [ ] `TypeError` dans `json.loads`
+- Réponse : `AttributeError` : seul un objet fichier a `.read()` ; le faux doit rendre un flux, comme boto3.
+
+## 46. couverture : lignes ou branches
 - Sous-thème : couverture
 - Niveau : 3
 - Source : data-platform · S1-06
@@ -1483,7 +1519,7 @@ fetch_day(0)   # ❌ ValueError
 - [ ] `50%`
 - Réponse : `100%` : les 3 lignes sont exécutées par `fetch_day()` ; seule la mesure des branches voit la sortie de boucle jamais prise.
 
-## 46. scope : partager une fixture coûteuse
+## 47. scope : partager une fixture coûteuse
 - Sous-thème : fixtures
 - Niveau : 3
 - Définition : `scope="module"` ou `"session"` crée la fixture une seule fois pour plusieurs tests, au lieu d'une fois par test (`function`).
@@ -1511,7 +1547,7 @@ def test_2(client):
 - [ ] Avertissement, puis le test passe
 - Réponse : `ScopeMismatch` : une fixture large ne peut pas dépendre d'une plus étroite, qui serait détruite avant elle.
 
-## 47. fixture paramétrée : params et request.param
+## 48. fixture paramétrée : params et request.param
 - Sous-thème : fixtures
 - Niveau : 3
 - Définition : `@pytest.fixture(params=[...])` rejoue chaque test qui l'utilise une fois par valeur, lue dans la fixture par `request.param`.
@@ -1537,7 +1573,7 @@ def test_bulletin(bulletin):
 - [ ] `TypeError` à la collecte
 - Réponse : `AttributeError` (`'SubRequest' object has no attribute 'param'`) : `param` n'existe que pour une fixture paramétrée.
 
-## 48. autouse : une fixture pour tous
+## 49. autouse : une fixture pour tous
 - Sous-thème : fixtures
 - Niveau : 3
 - Définition : `@pytest.fixture(autouse=True)` s'applique à tous les tests de sa portée sans qu'ils la demandent : un `beforeEach` global.
@@ -1567,7 +1603,7 @@ def test_lambda():   # sans paramètre
 - [ ] Non, et `test_a.py` lève une erreur
 - Réponse : non : une fixture `autouse` a la portée de l'endroit où elle est définie ; pour tout un dossier, la mettre dans son `conftest.py`.
 
-## 49. parametrize sur une classe
+## 50. parametrize sur une classe
 - Sous-thème : marqueurs
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1594,7 +1630,7 @@ class TestVeille:
 - [ ] 2
 - Réponse : 8 : chaque méthode est lancée une fois par valeur, soit 2 × 4.
 
-## 50. parametrize indirect : passer par une fixture
+## 51. parametrize indirect : passer par une fixture
 - Sous-thème : fixtures
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1623,7 +1659,7 @@ def test_jour(jour):
 - [ ] `request.param`
 - Réponse : la chaîne : la valeur de `parametrize` remplace la fixture de même nom ; le test échoue alors sur `==`.
 
-## 51. parametrize : un objet partagé entre cas
+## 52. parametrize : un objet partagé entre cas
 - Sous-thème : marqueurs
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1650,7 +1686,7 @@ def test_ajout(lot):
 - [ ] Erreur à la collecte
 - Réponse : 1 passed, 1 failed : `[[]] * 2` répète la même liste ; le second cas la reçoit déjà remplie.
 
-## 52. moto : les droits du rôle ne sont pas vérifiés
+## 53. moto : les droits du rôle ne sont pas vérifiés
 - Sous-thème : mocks
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1683,7 +1719,7 @@ m.stop()
 - [ ] `MalformedPolicy` : `"*"` interdit
 - Réponse : refusée en 403 (mesuré avec moto 5.2) : moto applique un `Deny` de politique de bucket, mais pas les politiques IAM de l'appelant.
 
-## 53. moto : start et stop sans with
+## 54. moto : start et stop sans with
 - Sous-thème : mocks
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1712,7 +1748,7 @@ m.stop()
 - [ ] Il n'est pas mocké : le décorateur ne sert qu'une fois
 - Réponse : il réussit (mesuré) : chaque appel de la fonction décorée démarre et arrête le mock, donc repart d'un compte vide.
 
-## 54. Stubber : des réponses écrites d'avance
+## 55. Stubber : des réponses écrites d'avance
 - Sous-thème : mocks
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1756,7 +1792,7 @@ s3.put_object(Bucket="dp-raw", Key="k",
 - [ ] `UnStubbedResponseError`
 - Réponse : `StubAssertionError` (mesuré) : les paramètres attendus sont comparés à l'appel ; `UnStubbedResponseError` arrive quand la file de réponses est vide.
 
-## 55. raises(KeyError, match=…) : les guillemets du message
+## 56. raises(KeyError, match=…) : les guillemets du message
 - Sous-thème : assertions
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1787,7 +1823,7 @@ re.search("^RAW_BUCKET$", "'RAW_BUCKET'") is None
 - [ ] Non : `os.environ` lève une autre exception
 - Réponse : oui : `str(exc)` contient les guillemets, le motif aussi ; `os.environ[...]` lève bien une `KeyError`.
 
-## 56. SyncByteStream : couper le flux en plein milieu
+## 57. SyncByteStream : couper le flux en plein milieu
 - Sous-thème : mocks
 - Niveau : 3
 - Source : data-platform · S1-07

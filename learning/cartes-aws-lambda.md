@@ -1508,7 +1508,64 @@ aws lambda get-function-event-invoke-config \
 - [ ] `1`
 - Réponse : `0`, mais pas à cause du réglage : un appel synchrone n'est jamais réessayé par Lambda ; c'est l'appelant qui décide.
 
-## 48. concurrence réservée : une exécution à la fois
+## 48. boto3 invoke : l'erreur du handler n'est pas une exception
+- Sous-thème : invocation
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : En Python, `client.invoke(...)` ne lève rien quand le handler échoue : la réponse porte `FunctionError`, et le détail est dans `Payload`.
+- Contexte : `StatusCode` 200 dit seulement que Lambda a exécuté l'appel. Un `try/except ClientError` n'attrape que les erreurs du service (droits, fonction absente, throttling), jamais une exception du handler. Le code appelant doit donc tester `"FunctionError" in response`, lire `errorType` et `errorMessage`, et en faire sa propre exception.
+- Usage : ✅ tout appel synchrone dont on exploite le résultat (`replay.py`, tests d'intégration) · ❌ conclure au succès sur `StatusCode == 200`.
+
+```python
+# Exemple 1 : succès apparent, échec réel
+import io, json
+
+body = {"errorType": "ConnectError",
+        "errorMessage": "coupé"}
+resp = {"StatusCode": 200,
+        "FunctionError": "Unhandled",
+        "Payload": io.BytesIO(
+            json.dumps(body).encode())}
+resp["StatusCode"] == 200    # → True
+"FunctionError" in resp      # → True
+json.loads(resp["Payload"].read())["errorType"]
+# → 'ConnectError'
+```
+
+- Quiz : Le handler lève `ValueError`. Que fait `try: client.invoke(...) except ClientError: ...` ?
+- [ ] Attrape l'erreur dans `except`
+- [x] Rien : la réponse revient avec `FunctionError`
+- [ ] Lève `ValueError` côté appelant
+- [ ] Lève `botocore.exceptions.FunctionError`
+- Réponse : rien : l'appel au service a réussi ; l'échec du handler est une donnée de la réponse, à tester soi-même.
+
+## 49. Payload : un flux lu une seule fois
+- Sous-thème : invocation
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Le `Payload` d'une réponse `invoke` est un `StreamingBody` : `.read()` rend les octets une fois, puis `b""` (≈ `response.body` d'un `fetch`).
+- Contexte : Lire le flux pour journaliser, puis le relire pour décoder, donne une chaîne vide et un `json.loads` qui échoue (`JSONDecodeError`). Lire une fois dans une variable, puis travailler sur la variable. Même règle pour `get_object()["Body"]` de S3.
+- Usage : ✅ `body = json.loads(resp["Payload"].read())` une fois, en tête · ❌ deux `.read()` sur la même réponse.
+
+```python
+# Exemple 1 : deuxième lecture vide
+import io
+from botocore.response import StreamingBody
+
+raw = b'{"count": 3}'
+p = StreamingBody(io.BytesIO(raw), len(raw))
+p.read()         # → b'{"count": 3}'
+p.read()         # → b''
+```
+
+- Quiz : Après un premier `.read()`, que fait `json.loads(resp["Payload"].read())` ?
+- [ ] Rend le même dictionnaire
+- [ ] Rend `None`
+- [x] `JSONDecodeError` sur une chaîne vide
+- [ ] `ValueError: stream closed`
+- Réponse : `JSONDecodeError` : le flux est épuisé, `.read()` rend `b""`, qui n'est pas du JSON.
+
+## 50. concurrence réservée : une exécution à la fois
 - Sous-thème : invocation
 - Niveau : 3
 - Source : revision-pwa · pwa-revision
@@ -1541,7 +1598,7 @@ aws lambda get-function-concurrency \
 - [ ] Envoyés aussitôt en destination d'échec
 - Réponse : gardés et rejoués : l'appel S3 est asynchrone, Lambda retente les événements limités (throttling) jusqu'à `maximum_event_age` (6 h par défaut), hors des 2 retries d'erreur.
 
-## 49. versions et alias : figer le code
+## 51. versions et alias : figer le code
 - Sous-thème : déploiement
 - Niveau : 3
 - Définition : `publish = true` crée une version immuable à chaque changement ; un alias (`live`) pointe vers une version et donne aux appelants un ARN stable.
@@ -1568,7 +1625,7 @@ resource "aws_lambda_alias" "live" {
 - [ ] Aucun : l'`apply` est refusé
 - Réponse : l'ancien : une version fige aussi les variables ; seule `$LATEST` et les versions publiées ensuite voient le nouveau bucket.
 
-## 50. concurrence provisionnée : pas de démarrage à froid
+## 52. concurrence provisionnée : pas de démarrage à froid
 - Sous-thème : invocation
 - Niveau : 3
 - Définition : La concurrence provisionnée garde N environnements initialisés en permanence sur une version ou un alias : aucun démarrage à froid jusqu'à N appels simultanés.
@@ -1592,7 +1649,7 @@ resource "aws_lambda_provisioned_concurrency_config" "p" {
 - [ ] Accepté, appliqué à toutes les versions
 - Réponse : refusé : la concurrence provisionnée prépare un code figé ; `$LATEST`, modifiable, n'est pas accepté.
 
-## 51. destinations ou DLQ : garder l'erreur
+## 53. destinations ou DLQ : garder l'erreur
 - Sous-thème : invocation
 - Niveau : 3
 - Définition : En asynchrone, une destination `on_failure` reçoit l'événement et l'erreur ; la DLQ de la fonction (`dead_letter_config`) ne reçoit que l'événement d'origine.
@@ -1632,7 +1689,7 @@ resource "aws_lambda_function_event_invoke_config" "c" {
 - [ ] Non : un mapping SQS ne réessaie jamais
 - Réponse : non : la DLQ de fonction ne sert qu'à l'asynchrone ; avec un mapping, c'est la redrive policy de la file source qui isole le message.
 
-## 52. init : 10 secondes au plus
+## 54. init : 10 secondes au plus
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1668,7 +1725,7 @@ handler({"code": "7501"}, None)  # → "Paris"
 - [ ] Lambda désactive la fonction jusqu'au prochain déploiement
 - Réponse : l'init est retentée à chaque fois (doc AWS) : un environnement sans init réussie n'est jamais réutilisé ; tant que le code plante à l'import, chaque appel échoue.
 
-## 53. get_remaining_time_in_millis : s'arrêter avant le timeout
+## 55. get_remaining_time_in_millis : s'arrêter avant le timeout
 - Sous-thème : invocation
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1701,7 +1758,7 @@ handler({}, Ctx(900))  # ❌ TimeoutError
 - [ ] Seulement s'il est dans un `with`
 - Réponse : non (doc AWS) : Lambda interrompt le processus, sans lever d'exception dans le code ; ni `finally` ni `__exit__` ne tournent, d'où la marge à prendre soi-même.
 
-## 54. .so : la version de Python dans le nom
+## 56. .so : la version de Python dans le nom
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1735,7 +1792,7 @@ importlib.import_module("demo_core")  # ❌ ModuleNotFoundError
 - [ ] Oui, mais en `x86_64` seulement
 - Réponse : oui : une roue `abi3` n'utilise que l'API stable de CPython ; son fichier `.abi3.so` est dans les suffixes de toutes les versions à partir de la minimale.
 
-## 55. manylinux2014 : la version de glibc
+## 57. manylinux2014 : la version de glibc
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1761,7 +1818,7 @@ sorted(t.platform for t in tags)
 - [x] Il échoue : aucune roue compatible
 - Réponse : il échoue : la cible déclarée est glibc 2.17, une roue qui exige 2.28 est incompatible ; et `--only-binary` interdit de compiler.
 
-## 56. architecture : roues et fonction alignées
+## 58. architecture : roues et fonction alignées
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1785,7 +1842,7 @@ unzip -l $Z | grep -c macosx
 - [ ] Ça marche, mais 20 % plus cher
 - Réponse : ça marche : `httpx` et ses dépendances sont `py3-none-any` ; l'erreur ne sort qu'au premier import d'un module natif, ce qui la cache longtemps.
 
-## 57. CodeSha256 : vérifier le code déployé
+## 59. CodeSha256 : vérifier le code déployé
 - Sous-thème : déploiement
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1820,7 +1877,7 @@ aws lambda get-function-configuration \
 - [ ] 32
 - Réponse : 88 : on encode en base64 les 64 caractères hexadécimaux, pas les 32 octets bruts ; c'est l'erreur qui rend `CodeSha256` « différent ».
 
-## 58. s3_object_version : clé fixe, version qui change
+## 60. s3_object_version : clé fixe, version qui change
 - Sous-thème : déploiement
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1847,7 +1904,7 @@ resource "aws_lambda_function" "this" {
 - [ ] Erreur : version déjà déployée
 - Réponse : mise à jour sur place : chaque `PUT` crée un nouveau `version_id`, même pour des octets identiques ; Terraform voit l'argument changer et redéploie.
 
-## 59. allowed_triggers : les permissions générées
+## 61. allowed_triggers : les permissions générées
 - Sous-thème : sécurité
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -1880,7 +1937,7 @@ variable "allowed_triggers" {
 - [ ] Seul le bucket créé dans le même module
 - Réponse : tout bucket configuré vers la fonction : le principal désigne le service S3 entier ; `source_arn` et `source_account` sont la seule borne.
 
-## 60. retries empilés : compter les exécutions
+## 62. retries empilés : compter les exécutions
 - Sous-thème : invocation
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -1907,7 +1964,7 @@ aws logs tail /aws/lambda/"$F" \
 - [ ] `6`
 - Réponse : `3` : Scheduler s'arrête au `202` ; seules comptent l'exécution initiale et les 2 retries de Lambda.
 
-## 61. event_invoke_config : la première limite gagne
+## 63. event_invoke_config : la première limite gagne
 - Sous-thème : invocation
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -1929,3 +1986,32 @@ maximum_event_age_in_seconds = 3600
 - [ ] OK, ramené à 2 sans erreur
 - [ ] OK si `maximum_event_age_in_seconds` ≥ 3600
 - Réponse : refus : l'API n'accepte que 0 à 2 nouvelles tentatives ; d'où le bloc `validation` qui l'arrête dès le `plan`.
+
+## 64. Config : read_timeout et retries pour un invoke long
+- Sous-thème : invocation
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : `botocore.config.Config(read_timeout=…, retries=…)` règle combien de temps le client attend la réponse et combien de fois il renvoie l'appel.
+- Contexte : Par défaut, le client attend 60 s (mesuré) ; une Lambda de 300 s fait expirer la lecture alors que l'invocation continue côté AWS. En mode `legacy`, botocore fait jusqu'à 5 tentatives (`_retry.json`) : il relance l'invocation, qui s'exécute alors deux fois. Pour un invoke synchrone long : `read_timeout` au-delà du timeout de la fonction, `total_max_attempts: 1`.
+- Usage : ✅ script de rejeu, appel synchrone d'une Lambda lente · ❌ client par défaut pour un handler qui peut dépasser 60 s.
+
+```python
+# Exemple 1 : défaut puis réglé
+import boto3
+from botocore.config import Config
+
+s = boto3.Session(region_name="eu-west-3")
+s.client("lambda").meta.config.read_timeout
+# → 60
+c = s.client("lambda", config=Config(
+    read_timeout=330,
+    retries={"total_max_attempts": 1}))
+c.meta.config.read_timeout   # → 330
+```
+
+- Quiz : Client par défaut, handler de 90 s : que se passe-t-il côté AWS ?
+- [ ] Une exécution, le client attend
+- [x] Plusieurs exécutions : le client relance après 60 s
+- [ ] Le handler est interrompu à 60 s
+- [ ] Rien : l'appel est refusé
+- Réponse : plusieurs exécutions : la lecture expire à 60 s, botocore réessaie, et chaque tentative lance une nouvelle invocation.

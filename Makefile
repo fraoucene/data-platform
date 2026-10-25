@@ -1,4 +1,4 @@
-.PHONY: sync lint fmt test test-integration cov check tf-init tf-fmt tf-validate plan up down lambdas-build lambdas-publish deploy duckdb cards-validate cards-publish
+.PHONY: sync lint fmt test test-integration cov check tf-init tf-fmt tf-validate plan up down lambdas-build lambdas-publish deploy replay duckdb cards-validate cards-publish
 
 # ---------- Python ----------
 
@@ -46,6 +46,18 @@ lambdas-publish:
 	uv run infra/scripts/build_lambda.py --publish $(if $(PROFILE),--profile $(PROFILE)) $(LAMBDA)
 
 deploy: lambdas-publish up
+
+# Rejouer une plage de jours : une invocation synchrone par jour, bornes incluses (infra/scripts/replay.py).
+# Nom de la fonction lu dans les outputs Terraform : le même appel vise dev ou prod selon l'état courant.
+#   make replay FROM=2026-10-01 TO=2026-10-19
+#   make replay FROM=2026-10-01 TO=2026-10-19 LAMBDA=ingest-bodacc
+REPLAY_LAMBDA = $(or $(LAMBDA),ingest-bodacc)
+
+replay:
+	@test -n "$(FROM)" -a -n "$(TO)" || { echo "usage : make replay FROM=YYYY-MM-DD TO=YYYY-MM-DD [LAMBDA=…]"; exit 2; }
+	uv run infra/scripts/replay.py --from $(FROM) --to $(TO) \
+		--function $$($(TF) output -json lambda_functions | jq -er '."$(REPLAY_LAMBDA)"') \
+		$(if $(PROFILE),--profile $(PROFILE))
 
 # ---------- Terraform ----------
 # Un seul code (infra/), une config par environnement (infra/envs/<ENV>/).
