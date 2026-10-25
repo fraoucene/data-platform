@@ -1,4 +1,5 @@
-# Bootstrap : le bucket qui stockera l'état Terraform du root infra/.
+# Bootstrap : ce qui doit exister avant infra/ et survivre à son `make down` :
+# le bucket de l'état Terraform (ce fichier) et celui des artefacts (artifacts.tf).
 # Ce root a un état LOCAL (infra/bootstrap/terraform.tfstate, gitignoré) et
 # ne doit quasiment jamais changer. Verrou d'état : lockfile natif S3
 # (use_lockfile = true côté backend), donc pas de table DynamoDB.

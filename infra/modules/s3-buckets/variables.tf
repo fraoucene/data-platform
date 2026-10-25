@@ -9,9 +9,9 @@ variable "suffix" {
 }
 
 variable "names" {
-  description = "Noms logiques des buckets à créer. Nom final : <prefix>-<name>-<suffix>."
+  description = "Noms logiques des buckets à créer. Nom final : <prefix>-<name>-<suffix>. Les artefacts de déploiement vivent dans le bootstrap."
   type        = list(string)
-  default     = ["raw", "processed", "out", "artifacts", "logs"]
+  default     = ["raw", "processed", "out", "logs"]
 }
 
 variable "kms_key_arn" {

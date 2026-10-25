@@ -82,6 +82,13 @@ def test_fetch_day_envoie_le_filtre_de_la_journee(export_route):
     assert export_route.calls.last.request.url.params["where"] == "dateparution=date'2026-10-20'"
 
 
+def test_fetch_day_fixe_l_ordre_par_id(export_route):
+    with BodaccClient() as client:
+        list(client.fetch_day(DAY))
+
+    assert export_route.calls.last.request.url.params["order_by"] == "id"
+
+
 def test_fetch_day_lazy_aucune_requete_sans_iteration(export_route):
     with BodaccClient() as client:
         generator = client.fetch_day(DAY)

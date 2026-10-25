@@ -1,7 +1,10 @@
-# infra/bootstrap — bucket d'état Terraform
+# infra/bootstrap — bucket d'état Terraform et bucket des artefacts
 
 Root Terraform indépendant, à **état local** (`terraform.tfstate` ici, gitignoré).
-Il ne gère qu'une chose : le bucket S3 qui stocke l'état du root principal `infra/`.
+Il gère ce qui doit exister avant `infra/` et survivre à son `make down` :
+- le bucket S3 qui stocke l'état du root principal `infra/` (`main.tf`) ;
+- le bucket des artefacts de déploiement, `data-platform-artifacts-<account_id>` (`artifacts.tf`, ajouté en S1-07) :
+  zips de Lambda sous `lambdas/<name>/<sha256>.zip` et pointeur `lambdas/<name>/current.json`.
 Appliqué une fois par compte AWS, quasi jamais modifié.
 
 ## Pourquoi un root séparé
@@ -22,6 +25,7 @@ cp local.auto.tfvars.example local.auto.tfvars   # puis renseigner profile/regio
 terraform -chdir=infra/bootstrap init
 terraform -chdir=infra/bootstrap apply
 terraform -chdir=infra/bootstrap output -raw state_bucket
+terraform -chdir=infra/bootstrap output -raw artifacts_bucket
 ```
 
 ## Si l'état local du bootstrap est perdu

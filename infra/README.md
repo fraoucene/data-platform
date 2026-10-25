@@ -78,12 +78,27 @@ Les objets chiffrés par l'ancienne clé seraient illisibles après 7 jours : `d
 | `raw` | données brutes BODACC, telles que reçues, immuables | expiration 90 j |
 | `processed` | données nettoyées, Parquet partitionné | aucune expiration |
 | `out` | exports et résultats pour les consommateurs | aucune expiration |
-| `artifacts` | zips de Lambda, jars, scripts de jobs | aucune expiration |
-| `logs` | logs d'accès S3 des quatre autres (`s3/<nom>/`) | expiration 30 j |
+| `logs` | logs d'accès S3 des trois autres (`s3/<nom>/`) | expiration 30 j |
 
 Tous : nom `data-platform-<env>-<logique>-<account_id>`, chiffrement `aws:kms` (clé du projet,
 `bucket_key_enabled`), versioning, accès public bloqué, versions non courantes expirées à 30 j,
 multipart abandonnés nettoyés à 7 j.
+
+Les artefacts de déploiement (zips de Lambda, puis jars et scripts de jobs) ne sont **pas** ici : ils vivent dans
+`data-platform-artifacts-<account_id>`, créé par `infra/bootstrap/`, pour survivre à `make down`
+(corrigé en S1-07 : en S1-04, `artifacts` était un bucket de l'environnement, détruit avec lui).
+
+## Lambdas
+
+Une Lambda = un membre uv `lambdas/<dossier>/` + une entrée de `local.lambdas` dans `lambdas.tf`, déployée par le module
+générique `modules/lambda-python` (rôle propre, log group 14 j, arm64, code lu dans le bucket artefacts).
+
+```bash
+make lambdas-publish   # build reproductible + envoi lambdas/<name>/<sha256>.zip + pointeur current.json
+make deploy           # lambdas-publish puis up : ce que lancera la CI
+```
+
+`make up` seul déploie la version désignée par le pointeur ; il échoue si une Lambda n'a jamais été publiée.
 
 ## Rôles IAM
 

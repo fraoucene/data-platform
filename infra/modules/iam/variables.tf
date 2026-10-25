@@ -4,12 +4,12 @@ variable "prefix" {
 }
 
 variable "bucket_arns" {
-  description = "Map nom logique → ARN des buckets (sortie du module s3-buckets). Clés attendues : raw, processed, out, artifacts, logs."
+  description = "Map nom logique → ARN des buckets (sortie du module s3-buckets). Clés attendues : raw, processed, out, logs."
   type        = map(string)
 
   validation {
-    condition     = alltrue([for k in ["raw", "processed", "out", "artifacts", "logs"] : contains(keys(var.bucket_arns), k)])
-    error_message = "bucket_arns doit contenir les clés raw, processed, out, artifacts et logs."
+    condition     = alltrue([for k in ["raw", "processed", "out", "logs"] : contains(keys(var.bucket_arns), k)])
+    error_message = "bucket_arns doit contenir les clés raw, processed, out et logs."
   }
 }
 

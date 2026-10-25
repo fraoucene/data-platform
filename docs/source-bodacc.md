@@ -61,6 +61,7 @@ Une journée compte environ 32 000 annonces. La pagination par offset ne peut do
 - Lecture ligne par ligne, jamais les 59 Mo en mémoire.
 - Timeout de lecture d'au moins 60 s.
 - Ne pas se fier au content-type : l'export renvoie `application/json` alors que le corps est du JSONL.
+- Toujours `order_by=id` : sans tri, l'ordre est celui de l'index du serveur, stable en pratique (mesuré le 2026-10-25 sur deux journées) mais non documenté. Avec `order_by=id`, tri naturel côté serveur (`A202602011`, `A202602012`… `A2026020110`), environ 2 s de plus sur une journée de 32 373 annonces. Condition pour que deux lectures de la même journée produisent les mêmes octets (idempotence de S1-07).
 - Plan B si l'export devient instable : keyset `publicationavis='X' and numeroannonce > N order by numeroannonce`, une boucle par bulletin.
 
 Forme de `id` : lettre du bulletin + numéro de parution + `numeroannonce` sans zéro de tête, par exemple `A202602018167`. Longueur variable, donc ordre lexical différent de l'ordre numérique.

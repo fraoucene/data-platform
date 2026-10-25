@@ -1,4 +1,4 @@
-.PHONY: sync lint fmt test test-integration cov check tf-init tf-fmt tf-validate plan up down cards-validate cards-publish
+.PHONY: sync lint fmt test test-integration cov check tf-init tf-fmt tf-validate plan up down lambdas-build lambdas-publish deploy duckdb cards-validate cards-publish
 
 # ---------- Python ----------
 
@@ -28,6 +28,25 @@ cov:
 
 check: lint test
 
+# ---------- Lambdas ----------
+# Une Lambda = un membre uv dans lambdas/<dossier>/ (son `name` est son identifiant partout).
+# Zip reproductible, roues Linux arm64 du lock ; publié dans le bucket artefacts du bootstrap
+# sous lambdas/<name>/<sha256>.zip, puis pointeur current.json lu par Terraform.
+#   make lambdas-publish                      -> toutes les Lambdas
+#   make lambdas-publish LAMBDA=ingest-bodacc -> une seule
+#   make deploy                               -> publier puis appliquer (ce que fera la CI)
+# PROFILE vide en CI : identifiants OIDC de l'environnement.
+LAMBDA  ?=
+PROFILE ?= data-platform
+
+lambdas-build:
+	uv run infra/scripts/build_lambda.py $(LAMBDA)
+
+lambdas-publish:
+	uv run infra/scripts/build_lambda.py --publish $(if $(PROFILE),--profile $(PROFILE)) $(LAMBDA)
+
+deploy: lambdas-publish up
+
 # ---------- Terraform ----------
 # Un seul code (infra/), une config par environnement (infra/envs/<ENV>/).
 #   make plan            -> dev
@@ -55,6 +74,14 @@ up: tf-init
 
 down: tf-init
 	$(TF) destroy -input=false -auto-approve $(TF_VARS)
+
+# ---------- Exploration ----------
+# DuckDB prêt à interroger le data lake : macros `raw('<source>')` (toutes les partitions brutes) et
+# `manifests('<source>')`. Bucket lu dans les outputs Terraform, identifiants du profil AWS.
+#   make duckdb   puis   SELECT familleavis, count(*) FROM raw('bodacc') GROUP BY 1;
+duckdb:
+	RAW_BUCKET=$$(terraform -chdir=infra output -json bucket_names | jq -r .raw) \
+	AWS_PROFILE=$(PROFILE) duckdb -init tools/duckdb_init.sql
 
 # ---------- Cartes de révision (consommées par revision-pwa) ----------
 # learning/cartes-*.md → s3://<content>/sources/data-platform/ ; la Lambda de revision-pwa

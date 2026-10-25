@@ -16,6 +16,9 @@ RECORDS_PATH = "/records"
 RETRYABLE_STATUS = frozenset({429, 502, 503, 504})
 BULLETINS = ("A", "B", "C")  # `numeroannonce` repart à 1 dans chaque bulletin
 MAX_PAGE_SIZE = 100  # plafond de `limit` sur /records
+# Sans tri, l'export suit l'ordre interne du serveur : stable aujourd'hui, mais non documenté.
+# Trié par `id` (ordre naturel côté serveur), deux lectures de la même journée donnent les mêmes octets.
+EXPORT_ORDER = "id"
 
 DEFAULT_BASE_URL = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales"
 DEFAULT_USER_AGENT = "data-platform-bodacc-client/0.1"
@@ -124,13 +127,14 @@ class BodaccClient:
 
         Générateur : aucune requête n'est faite tant que l'appelant n'itère pas.
         Lit l'export JSONL ligne par ligne, sans charger la journée (~59 Mo) en mémoire.
+        Ordre fixé par `id` : le fichier écrit par la Lambda est identique d'un rejeu à l'autre.
 
         Retries : 429, 502, 503, 504, timeouts et erreurs réseau sont réessayés jusqu'à
         `max_attempts`, mais seulement AVANT la première annonce rendue. Après, une coupure
         lève `BodaccError` : réessayer redonnerait des annonces déjà émises (doublons).
         L'appelant (la Lambda) rejoue alors la journée entière.
         """
-        params = self._day_params(day)
+        params = {**self._day_params(day), "order_by": EXPORT_ORDER}
         for attempt in range(self._max_attempts):  # pragma: no branch (la dernière tentative rend ou lève)
             started = False
             try:

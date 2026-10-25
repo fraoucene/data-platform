@@ -1,0 +1,21 @@
+[project]
+name = "ingest-bodacc"
+version = "0.1.0"
+description = "Lambda d'ingestion BODACC : une journée vers raw S3 (JSONL gzip + manifest), idempotente"
+readme = "README.md"
+authors = [
+    { name = "Fraoucene GUEZOUT", email = "fraoucene.guezout@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "bodacc-client",
+    "boto3>=1.43.118",
+    "tzdata>=2026.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+bodacc-client = { workspace = true }

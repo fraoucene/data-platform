@@ -47,3 +47,8 @@ output "sfn_role_arn" {
   description = "ARN du rôle Step Functions (module iam)."
   value       = module.iam.sfn_role_arn
 }
+
+output "lambda_functions" {
+  description = "Map Lambda → nom de la fonction déployée (aws lambda invoke --function-name)."
+  value       = { for k, m in module.lambda : k => m.function_name }
+}

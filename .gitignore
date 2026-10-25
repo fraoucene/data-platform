@@ -275,3 +275,6 @@ backend.hcl
 infra/envs/*/local.tfvars
 !*.tfvars.example
 !*.auto.tfvars.example
+
+# sortie de `aws lambda invoke`
+out.json

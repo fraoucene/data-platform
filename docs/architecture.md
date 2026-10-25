@@ -11,9 +11,10 @@ Flux : BODACC → S3 `raw` → jobs → S3 `processed` → S3 `out` → agent.
    déployées par Terraform.
 5. **Code partagé** : `packages/dp-common` (schémas Pydantic, tags, clients S3, logging).
 6. **Agent** : interroge `processed` / `out`, jeux de test et scores dans `evals/`.
-7. **Artefacts** : zips de Lambda, jars et scripts de jobs publiés par la CI dans `artifacts`.
+7. **Artefacts** : zips de Lambda (puis jars et scripts de jobs) publiés par `make lambdas-publish` (et la CI) dans
+   `data-platform-artifacts-<account_id>`, bucket du bootstrap qui survit à `make down`.
 8. **Infra** : Terraform dans `infra/` (voir `infra/README.md`) : backend S3 verrouillé, clé KMS du projet,
-   5 buckets chiffrés et versionnés, 3 rôles au moindre privilège, tags audités à chaque `plan`.
+   4 buckets chiffrés et versionnés (+ artefacts dans le bootstrap), 3 rôles au moindre privilège, tags audités à chaque `plan`.
    Un code, une config par environnement (`infra/envs/<env>/`), `make plan|up|down ENV=<env>`.
 9. **À préciser** : format exact des annonces BODACC, fréquence, partitionnement, stratégie de compte
    (un compte AWS par env, recommandé).
