@@ -1,0 +1,37 @@
+{
+  "title": "data-platform-dev-ingest-bodacc : invocations et erreurs (24 h, par 15 min, heure de Paris)",
+  "view": "timeSeries",
+  "region": "eu-west-3",
+  "start": "-PT24H",
+  "period": 900,
+  "stat": "Sum",
+  "width": 1000,
+  "height": 400,
+  "metrics": [
+    [
+      "AWS/Lambda",
+      "Invocations",
+      "FunctionName",
+      "data-platform-dev-ingest-bodacc",
+      {
+        "label": "Invocations"
+      }
+    ],
+    [
+      ".",
+      "Errors",
+      ".",
+      ".",
+      {
+        "label": "Errors",
+        "color": "#d62728"
+      }
+    ]
+  ],
+  "yAxis": {
+    "left": {
+      "min": 0
+    }
+  },
+  "timezone": "+0100"
+}

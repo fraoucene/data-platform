@@ -18,7 +18,8 @@ S3 raw : bodacc/date=YYYY-MM-DD/part-0001.jsonl.gz  puis  _MANIFEST.json (count,
 (S2) Step Functions → PySpark sur EMR Serverless → tables Iceberg → (S4) agent
 ```
 
-Rattraper ou remplir l'historique : `make replay FROM=… TO=…` (une invocation par jour). Détail de la Lambda,
+Rattraper ou remplir l'historique : `make replay FROM=… TO=…` (une invocation par jour). État au 2026-10-25 :
+[docs/livrables/s1/](docs/livrables/s1/) (partitions du bucket raw, graphe des invocations). Détail de la Lambda,
 de son exploitation et du calendrier de la source : [lambdas/ingest_bodacc/README.md](lambdas/ingest_bodacc/README.md) ;
 infrastructure : [infra/README.md](infra/README.md) ; source : [docs/source-bodacc.md](docs/source-bodacc.md).
 

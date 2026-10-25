@@ -538,7 +538,38 @@ terraform -chdir=infra providers \
 - [ ] Le schéma de la dernière version d'AWS
 - Réponse : un schéma vide (mesuré) : sans provider installé dans `.terraform/`, il n'y a rien à décrire, et aucune erreur n'avertit.
 
-## 19. -target : les dépendances suivent
+## 19. required_version : la version de la fonctionnalité
+- Sous-thème : init
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : `required_version` exige la plus ancienne version de Terraform qui gère tout le code ; trop basse, elle laisse passer une version qui casse plus loin.
+- Contexte : Le backend utilise `use_lockfile`, apparu en Terraform 1.10, alors que `infra/versions.tf` disait `>= 1.9` : une 1.9 passait la contrainte, puis butait sur le backend. Le relecteur sans contexte l'a vu en comparant le README (≥ 1.10) et le code. La contrainte se lit dès `init`, avant toute ressource : c'est le contrôle le moins cher.
+- Usage : ✅ monter `required_version` dès qu'on adopte une fonctionnalité récente, avec la raison en commentaire · ❌ contrainte copiée d'un autre projet ou laissée à une version jamais testée.
+
+```hcl
+# Exemple 1 : la contrainte et sa raison
+terraform {
+  required_version = ">= 1.10" # use_lockfile du backend S3
+}
+```
+
+```bash
+# Exemple 2 : version refusée dès init
+terraform init
+# → Error: Unsupported Terraform Core
+#   version
+#   This configuration does not support
+#   Terraform version 1.14.4.
+```
+
+- Quiz : `required_version = ">= 1.9"` et un poste en Terraform 1.9.5. Où l'échec apparaît-il ?
+- [ ] À `init` : contrainte non respectée
+- [x] Sur le backend, à cause de `use_lockfile`
+- [ ] Nulle part : `use_lockfile` est ignoré
+- [ ] À `apply`, sur la première ressource
+- Réponse : sur le backend : 1.9.5 respecte `>= 1.9`, donc la contrainte ne protège de rien ; c'est `use_lockfile`, inconnu avant 1.10, qui échoue.
+
+## 20. -target : les dépendances suivent
 - Sous-thème : plan
 - Niveau : 3
 - Définition : `plan -target=adresse` limite le plan à cette ressource et à tout ce dont elle dépend ; le reste est ignoré, avec un avertissement.
@@ -561,7 +592,7 @@ terraform plan -target=terraform_data.raw
 - [ ] Rien : une cible ne peut pas avoir de dépendants
 - Réponse : `kms` seulement (mesuré, `1 to add`) : `-target` ajoute ce dont la cible dépend, jamais ce qui dépend d'elle.
 
-## 20. providers lock : hashes multi-plateformes
+## 21. providers lock : hashes multi-plateformes
 - Sous-thème : init
 - Niveau : 3
 - Définition : `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64` ajoute au lock les hashes `h1:` de chaque plateforme, sans rien installer.
@@ -587,7 +618,7 @@ grep -c 'h1:' .terraform.lock.hcl
 - [ ] Refusé : la plateforme courante manque
 - Réponse : gardés (mesuré : 2 → 4 `h1:`) : `providers lock` fusionne avec le lock existant pour la même version.
 
-## 21. TF_LOG : journal de débogage
+## 22. TF_LOG : journal de débogage
 - Sous-thème : global
 - Niveau : 3
 - Définition : `TF_LOG=DEBUG` (ou `TRACE`, `INFO`…) fait écrire à Terraform son journal interne sur stderr ; `TF_LOG_PATH` l'envoie dans un fichier.

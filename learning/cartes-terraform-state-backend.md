@@ -702,7 +702,31 @@ grep artifacts_bucket infra/lambdas.tf
 - [ ] Il recréerait le bucket du bootstrap
 - Réponse : l'état du bootstrap est local, sur le poste qui l'a appliqué : la CI ne peut pas le lire ; la convention de nom ne dépend d'aucun fichier.
 
-## 24. moved : renommer sans recréer
+## 24. nom global : un préfixe d'environnement
+- Sous-thème : principe
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : Une ressource dont le nom ne contient pas l'environnement entre en collision dès qu'un second environnement est déployé dans le même compte.
+- Contexte : `data-platform-monthly-cost` (budget) et `data-platform-budget-alerts` (topic SNS) n'ont pas d'env. Un `prod` dans le même compte : le budget échoue (doublon), mais le topic est pire, car `CreateTopic` sur un nom existant renvoie le topic déjà là, sans erreur : deux états gèrent le même objet, et le `destroy` de l'un le supprime pour l'autre. Renommer après coup recrée la ressource : préfixer avant le second env, ou un compte par env.
+- Usage : ✅ `name = "${local.prefix}-…"` pour toute ressource nommée ; un compte AWS par environnement · ❌ nom fixe « parce qu'il n'y a qu'un env » : le piège sort au second.
+
+```hcl
+# Exemple 1 : nom fixe, puis préfixé
+resource "aws_sns_topic" "alerts" {
+  # ❌ name = "data-platform-alerts"
+  name = "${local.prefix}-alerts"
+  # → data-platform-dev-alerts
+}
+```
+
+- Quiz : `dev` et `prod` dans le même compte, même nom de topic SNS. Que fait le `apply` de `prod` ?
+- [ ] Il échoue : le nom existe déjà
+- [x] Il réussit et reprend le topic de `dev`
+- [ ] Il crée un second topic au même nom
+- [ ] Il renomme le topic de `dev`
+- Réponse : il réussit et reprend le topic de `dev` : `CreateTopic` est idempotent sur le nom ; deux états pointent alors vers le même topic.
+
+## 25. moved : renommer sans recréer
 - Sous-thème : state
 - Niveau : 3
 - Définition : Un bloc `moved` déclare qu'une adresse a changé (`from` → `to`) : Terraform déplace l'objet dans le state au lieu de le recréer.
@@ -738,7 +762,7 @@ moved {
 - [ ] Un second bucket `raw[0]`
 - Réponse : `raw has moved to raw[0]` : Terraform déduit seul ce déplacement entre l'adresse sans index et l'index `[0]`.
 
-## 25. state rm : oublier sans détruire
+## 26. state rm : oublier sans détruire
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform state rm` retire une ressource du state sans la toucher dans AWS : Terraform cesse simplement de la gérer.
@@ -772,7 +796,7 @@ removed {
 - [ ] `aws_s3_bucket.raw will be imported`
 - Réponse : `will be created` : Terraform ne connaît plus le bucket ; l'apply échouera car le nom existe déjà dans AWS (`import` pour le reprendre).
 
-## 26. verrou : use_lockfile natif S3
+## 27. verrou : use_lockfile natif S3
 - Sous-thème : backend
 - Niveau : 3
 - Définition : `use_lockfile = true` pose un objet `<key>.tflock` à côté de l'état pendant `plan` et `apply`, pour qu'une seule exécution l'écrive à la fois.
@@ -803,7 +827,7 @@ terraform -chdir=infra \
 - [ ] Il lit l'ancien état et continue
 - Réponse : il échoue (`Error acquiring the state lock`) : `plan` verrouille aussi, et l'attente par défaut est nulle ; `-lock-timeout=60s` attendrait.
 
-## 27. prevent_destroy : ce qu'il protège
+## 28. prevent_destroy : ce qu'il protège
 - Sous-thème : garde-fous
 - Niveau : 3
 - Définition : `lifecycle { prevent_destroy = true }` fait échouer tout plan qui détruirait la ressource, `destroy` compris.
@@ -842,7 +866,7 @@ resource "aws_s3_bucket" "tfstate" {
 - [ ] `No changes.`
 - Réponse : il propose la destruction, sans erreur : avec le bloc disparaît son `lifecycle` ; pour oublier sans détruire, un bloc `removed` avec `destroy = false`.
 
-## 28. import : rattacher l'existant
+## 29. import : rattacher l'existant
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform import adresse id` rattache une ressource AWS existante à l'état sans la recréer : la parade à un état local perdu.
@@ -878,7 +902,7 @@ import {
 - [ ] L'état est écrit, puis `plan` veut détruire
 - Réponse : erreur `resource address … does not exist in the configuration` : `import` remplit un bloc existant ; écrire le code d'abord, ou `plan -generate-config-out` avec un bloc `import`.
 
-## 29. init -migrate-state : déplacer un état
+## 30. init -migrate-state : déplacer un état
 - Sous-thème : backend
 - Niveau : 3
 - Définition : `init -migrate-state` copie l'état de l'ancien backend vers le nouveau, pour déplacer un état sans réimporter les ressources.
@@ -903,7 +927,7 @@ terraform -chdir=infra plan
 - [ ] Remplacé par un renvoi vers le bucket
 - Réponse : vidé : Terraform efface l'état local migré mais laisse `terraform.tfstate.backup`, l'état complet en clair, à mettre à la corbeille ; entre deux backends (changement de `key`), la source reste intacte (mesuré, Terraform 1.14).
 
-## 30. state mv : déplacer tout de suite
+## 31. state mv : déplacer tout de suite
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform state mv A B` change l'adresse d'un objet dans l'état immédiatement, sans plan : la version impérative du bloc `moved`.
@@ -930,7 +954,7 @@ terraform state mv -dry-run \
 - [ ] Modifier `brut` en place
 - Réponse : détruire `brut`, créer `raw` (mesuré) : le code déclare toujours `raw` ; l'état a bougé, pas la configuration.
 
-## 31. changer de couche : moved ne traverse pas
+## 32. changer de couche : moved ne traverse pas
 - Sous-thème : state
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -960,7 +984,7 @@ import {
 - [ ] Il le retire de l'état sans le détruire
 - Réponse : il le détruit : les deux états le référencent, chacun se croit propriétaire ; `prevent_destroy` du bootstrap ne joue que dans le bootstrap. Une ressource, un seul état.
 
-## 32. couches : au-delà de deux
+## 33. couches : au-delà de deux
 - Sous-thème : principe
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -985,3 +1009,27 @@ import {
 - [ ] Dans le socle, avec l'état
 - [ ] Un root par bucket
 - Réponse : une couche données, sous les applications : elle a la durée de vie des données, ses propres droits, et la refonte des Lambdas ne touche plus son état.
+
+## 34. état perdu : importer chaque sous-ressource
+- Sous-thème : state
+- Niveau : 3
+- Source : data-platform · S1-09
+- Définition : Reconstruire un état perdu demande un `terraform import` par bloc `resource` du code, sous-ressources comprises, jusqu'à un `plan` à « No changes ».
+- Contexte : Un bucket du provider AWS v4+ se décrit en plusieurs ressources : `aws_s3_bucket`, `_versioning`, `_server_side_encryption_configuration`, `_public_access_block`, `_lifecycle_configuration`. Chacune a son adresse et s'importe à part, souvent avec le nom du bucket comme id. Oublier les 5 ressources du bucket d'artefacts laissait le `plan` final avec 5 créations : la procédure n'était pas finie, et « No changes » est la seule preuve qu'elle l'est.
+- Usage : ✅ lister les blocs `resource` du root (`grep '^resource'`), un import par ligne, `plan` final · ❌ s'arrêter au bucket principal : le plan propose de recréer le reste.
+
+```bash
+# Exemple 1 : ce qu'il faut importer
+grep -h '^resource' infra/bootstrap/*.tf \
+  | wc -l
+# → 9  (4 tfstate, 5 artifacts)
+terraform -chdir=infra/bootstrap plan
+# → No changes : état reconstruit
+```
+
+- Quiz : Après import du seul `aws_s3_bucket.artifacts`, que propose `plan` pour son versioning ?
+- [ ] Rien : il fait partie du bucket
+- [x] Une création de `aws_s3_bucket_versioning`
+- [ ] Une erreur : bucket déjà versionné
+- [ ] Une suppression du versioning
+- Réponse : une création : la ressource est dans le code mais pas dans l'état, donc Terraform prévoit de la créer, même si le réglage existe déjà sur AWS.

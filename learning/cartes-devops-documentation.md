@@ -527,7 +527,79 @@ make up
 - [ ] `make up` publie les zips tout seul
 - Réponse : `make up` échoue : la remarque est lue après la commande ; la mise en garde doit précéder la ligne qui piège.
 
-## 22. doc qui dérive : la vérifier en CI
+## 22. AGENTS.md : affirmer après mesure
+- Sous-thème : agents
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : Une règle d'`AGENTS.md` impose qu'un comportement d'AWS ou de la source soit affirmé après une commande lancée et sa sortie lue, jamais de mémoire.
+- Contexte : Un agent comble les trous avec ce qu'il croit savoir, sur le même ton qu'un fait mesuré. Dans ce projet, deux affirmations de mémoire étaient fausses le même jour : « pas de parution le dimanche » (7 dimanches sur 7 en avaient) et « l'alarme repasse en OK au bout de 15 min » (elle est restée en ALARM). Aucun test ne voit ce genre d'erreur : seule la règle écrite oblige à mesurer.
+- Usage : ✅ calendrier d'une source, délai d'un service, limite d'API, comportement d'une alarme · ❌ conclure d'une doc lue en diagonale ou d'un souvenir : lancer la commande, citer la sortie.
+
+```markdown
+# Exemple 1 : la règle, sa raison
+- Un comportement AWS ou de la source
+  BODACC s'affirme après mesure
+  (commande lancée, sortie lue), pas
+  de mémoire : deux erreurs le
+  2026-10-25 (calendrier, alarme).
+```
+
+- Quiz : L'agent écrit « le BODACC ne paraît pas le samedi » dans la doc. Que lui demander d'abord ?
+- [ ] La page de la doc officielle qui le dit
+- [x] La commande lancée et le nombre de samedis mesurés
+- [ ] De le marquer « à vérifier »
+- [ ] Rien : c'est vrai
+- Réponse : la commande et la mesure : vrai ici (0 samedi sur 8 avec `count_day`), mais seule la mesure le prouve ; une doc tierce donnait un autre calendrier.
+
+## 23. incident : une erreur, une ligne d'AGENTS.md
+- Sous-thème : agents
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : Chaque erreur vécue qu'aucun test ne détecte devient une ligne d'`AGENTS.md`, avec la commande qui la contrôle.
+- Contexte : Une erreur corrigée sans règle revient au prochain agent ou au prochain arrivant. Ici : un numéro de compte poussé sur un dépôt public (historique réécrit, dépôt recréé) a donné « jamais 12 chiffres dans un fichier suivi » et le grep avant commit ; un `uv sync` qui cassait `make check` dans un clone neuf a donné « `make sync`, jamais `uv sync` seul ». La règle cite le contrôle, pas seulement l'interdit.
+- Usage : ✅ post-mortem court : cause, règle, commande de contrôle · ❌ règle ajoutée « par précaution » sans incident ni raison : le fichier gonfle, plus personne ne le lit.
+
+```bash
+# Exemple 1 : la règle née de la fuite
+git diff --cached \
+  | grep -E '[0-9]{12}'
+# → rien : on peut commiter
+# → une ligne : remplacer par
+#   <account_id> avant le commit
+```
+
+- Quiz : Après la fuite, où la règle « pas de numéro de compte » protège-t-elle aussi les agents d'un collègue ?
+- [ ] Dans ton `~/.claude/CLAUDE.md`
+- [x] Dans l'`AGENTS.md` du dépôt
+- [ ] Dans la mémoire de ton agent
+- [ ] Dans le message du commit correctif
+- Réponse : dans l'`AGENTS.md` du dépôt : il voyage avec le clone ; ta config et ta mémoire ne servent qu'à toi.
+
+## 24. chemin local : le dire dans un dépôt public
+- Sous-thème : sécurité
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : Un chemin propre au poste de l'auteur (`~/.claude/skills/…`, un dépôt voisin) se signale comme local, avec la marche à suivre sans lui.
+- Contexte : Un inconnu qui clone le dépôt suit les chemins cités et bute sur un dossier absent, sans savoir s'il a raté une étape. Écrire « local au poste de l'auteur ; sans lui, respecter le format à la main et ne pas publier » lève le doute. `~` ne révèle pas le nom d'utilisateur ; `/Users/<nom>/` le ferait, et se masque comme un numéro de compte.
+- Usage : ✅ outils personnels cités dans `AGENTS.md`, dépendance à un dépôt voisin non publié · ❌ chemin absolu `/Users/<nom>/…` dans un fichier suivi : `~` ou une variable.
+
+```markdown
+# Exemple 1 : la mention qui lève le doute
+Les skills `/tuteur` et `/cartes` sont
+locaux au poste de l'auteur
+(`~/.claude/skills/`) : sans eux,
+respecter le format à la main, et ne
+pas publier.
+```
+
+- Quiz : Lequel de ces chemins révèle une information personnelle dans un dépôt public ?
+- [ ] `~/.claude/skills/tuteur/`
+- [x] `/Users/jdupont/Desktop/workspace/`
+- [ ] `$HOME/.aws/config`
+- [ ] `infra/envs/dev/local.tfvars`
+- Réponse : `/Users/jdupont/…` : le nom d'utilisateur y est en clair ; `~` et `$HOME` sont développés sur chaque poste.
+
+## 25. doc qui dérive : la vérifier en CI
 - Sous-thème : tester
 - Niveau : 3
 - Source : data-platform · S1-09
@@ -553,7 +625,7 @@ sorted(citees - reelles)   # → ['replay']
 - [ ] Aucune
 - Réponse : `plan` : `\w[\w-]*` s'arrête à l'espace ; les variables qui suivent ne sont pas des cibles.
 
-## 23. make help : la liste vient du Makefile
+## 26. make help : la liste vient du Makefile
 - Sous-thème : tester
 - Niveau : 3
 - Source : data-platform · S1-09
@@ -580,3 +652,33 @@ tf-init:
 - [ ] `sync`
 - [ ] Toutes les cibles commentées
 - Réponse : `help` (mesuré) : `make` seul lance la première cible du fichier ; d'où `help` placée en tête.
+
+## 27. relecteur : séparer mesuré et déduit
+- Sous-thème : tester
+- Niveau : 3
+- Source : data-platform · S1-09
+- Définition : Le rapport d'un relecteur sépare le mesuré (commande lancée) du déduit (lu) ; seul le mesuré se corrige comme un fait.
+- Contexte : Un relecteur privé d'AWS déduit beaucoup : ici, `make check` et `terraform validate` étaient mesurés, mais « `aws_budgets_budget` peut être refusé tant que l'accès IAM à la facturation n'est pas activé » était une déduction. Une déduction passe dans la doc au conditionnel (« si `make up` échoue sur le budget avec `AccessDenied`… »), jamais comme une étape obligatoire inventée.
+- Usage : ✅ exiger les deux colonnes dans la consigne, écrire les déductions en « si… alors » · ❌ recopier tout le rapport en étapes impératives : la doc affirme ce que personne n'a vu.
+
+```markdown
+# Exemple 1 : la consigne au relecteur
+Signale explicitement ce que tu as
+mesuré (commande lancée) et ce que
+tu as seulement déduit en lisant.
+```
+
+```markdown
+# Exemple 2 : une déduction dans la doc
+Si `make up` échoue sur
+`aws_budgets_budget` avec
+`AccessDenied` : activer l'accès IAM
+à la facturation (compte root).
+```
+
+- Quiz : Le relecteur déduit qu'une commande « échouera probablement » sur un compte neuf. Que faire dans le README ?
+- [ ] L'écrire comme une étape obligatoire
+- [ ] L'ignorer tant que ce n'est pas mesuré
+- [x] L'écrire au conditionnel, avec le symptôme
+- [ ] Supprimer la commande
+- Réponse : au conditionnel avec le symptôme : l'inconnu sait quoi faire si ça arrive, sans suivre une étape que personne n'a vérifiée.

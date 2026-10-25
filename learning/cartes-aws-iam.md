@@ -258,7 +258,31 @@ statement {
 - [ ] Rien : IAM ignore le `sid`
 - Réponse : erreur `duplicate Sid (UseProjectKey)` à la lecture du data source (message du provider AWS 6.69) ; le remplacement par `sid` n'existe qu'entre documents, via `override_policy_documents`.
 
-## 9. aws_iam_policy_document : écrire du JSON en HCL
+## 9. IAM Identity Center : un humain sans clé permanente
+- Sous-thème : rôles
+- Niveau : 1
+- Source : data-platform · S1-09
+- Définition : IAM Identity Center (ex-AWS SSO) connecte un humain à un compte par un rôle temporaire, issu d'un permission set, au lieu de clés d'accès permanentes.
+- Contexte : Sur un compte neuf, il n'existe que le root. On active Identity Center, on crée un utilisateur, on lui attribue le compte avec un permission set (`AdministratorAccess` pour un compte perso de dev, plus étroit en entreprise) : AWS crée le rôle correspondant dans le compte. Les identifiants obtenus commencent par `ASIA` et expirent seuls ; une clé `AKIA` d'utilisateur IAM vit jusqu'à sa rotation manuelle.
+- Usage : ✅ tout accès humain à la CLI ou à la console, un ou plusieurs comptes · ❌ travailler en root, ou créer un utilisateur IAM avec des clés pour soi : clés permanentes sur le disque.
+
+```bash
+# Exemple 1 : quel type d'identifiants ?
+aws configure list --profile data-platform
+# → access_key ****DXH2
+#   shared-credentials-file
+#   (clés permanentes d'utilisateur IAM)
+# avec un profil SSO : TYPE sso
+```
+
+- Quiz : Avec des identifiants Identity Center, par quoi commence l'`AccessKeyId` renvoyé ?
+- [ ] `AKIA`
+- [x] `ASIA`
+- [ ] `AROA`
+- [ ] `SSO-`
+- Réponse : `ASIA` : ce sont des identifiants temporaires de rôle, avec un jeton de session ; `AKIA` est une clé permanente d'utilisateur, `AROA` l'identifiant unique d'un rôle.
+
+## 10. aws_iam_policy_document : écrire du JSON en HCL
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : `aws_iam_policy_document` écrit une politique IAM en HCL et produit son JSON via `.json`, avec références et validation à la place d'un heredoc.
@@ -287,7 +311,7 @@ data "aws_iam_policy_document" "deploy" {
 - [ ] Ni l'un ni l'autre : le statement est ignoré
 - Réponse : autorise : `effect` vaut `Allow` par défaut ; mesuré, la trust policy du rôle `deploy` sort en `"Effect": "Allow"` sans l'avoir écrit.
 
-## 10. aws_iam_role_policy : politique inline
+## 11. aws_iam_role_policy : politique inline
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : `aws_iam_role_policy` attache une politique inline à un seul rôle : elle vit et meurt avec lui, adaptée à des droits sur mesure.
@@ -314,7 +338,7 @@ resource "aws_iam_role_policy" "deploy" {
 - [ ] Peu importe : IAM fusionne les doublons
 - Réponse : managée : une seule politique modifiée à un seul endroit ; en inline, chaque changement se recopie dans les trois rôles.
 
-## 11. s3:ListBucket : sur le bucket, pas /*
+## 12. s3:ListBucket : sur le bucket, pas /*
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : `s3:ListBucket` s'applique à l'ARN du bucket, `PutObject` et `DeleteObject` à ses objets (`arn/*`) : deux statements, deux ressources.
@@ -351,7 +375,7 @@ statement {
 - [ ] `apply` refuse la politique
 - Réponse : `AccessDenied` sur `ListObjectsV2` : `ListBucket` ne matche pas une ressource objet, et `sync` doit lister le bucket avant d'envoyer.
 
-## 12. condition s3:prefix : borner le listage
+## 13. condition s3:prefix : borner le listage
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : Un bloc `Condition` teste la requête (`s3:prefix`, `aws:SourceArn`) : le statement ne s'applique que si le test est vrai.
@@ -387,7 +411,7 @@ statement {
 - [ ] Liste tout `sources/`
 - Réponse : `AccessDenied` (mesuré : `implicitDeny`) : `sources/data-platform` ne correspond pas à `sources/data-platform/*`, il manque le `/`.
 
-## 13. jokers : * dans les actions et les ARN
+## 14. jokers : * dans les actions et les ARN
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : `*` (plusieurs caractères) et `?` (un seul) sont permis dans les actions (`s3:Get*`) et les ARN (`function:${prefix}-*`) pour viser une famille.
@@ -420,7 +444,7 @@ statement {
 - [ ] `explicitDeny`
 - Réponse : `implicitDeny` (mesuré) : le nom d'action ignore la casse (`S3:getobject` marche sur `Bodacc/x`), pas l'ARN : `Bodacc` ≠ `bodacc`.
 
-## 14. politique de ressource : l'autre côté
+## 15. politique de ressource : l'autre côté
 - Sous-thème : évaluation
 - Niveau : 2
 - Définition : Une politique basée sur la ressource (bucket, clé KMS, file SQS) est attachée à la ressource, nomme ses `Principal` et s'ajoute aux politiques d'identité.
@@ -448,7 +472,7 @@ aws iam simulate-custom-policy \
 - [ ] Erreur : un rôle ne peut pas être `Principal`
 - Réponse : `allowed` (mesuré) : dans un même compte, un `Allow` d'un seul côté suffit ; seul l'accès entre comptes exige les deux.
 
-## 15. AssumeRole : identifiants temporaires
+## 16. AssumeRole : identifiants temporaires
 - Sous-thème : rôles
 - Niveau : 2
 - Définition : `sts:AssumeRole` échange l'identité de l'appelant contre des identifiants temporaires du rôle (clé `ASIA…`, secret, jeton de session), valables 1 h par défaut.
@@ -480,7 +504,7 @@ aws sts get-caller-identity \
 - [ ] `AccessDenied`
 - Réponse : `ValidationError` (selon la doc : « DurationSeconds exceeds the MaxSessionDuration ») : STS refuse au lieu de raccourcir.
 
-## 16. OIDC : la CI sans clé
+## 17. OIDC : la CI sans clé
 - Sous-thème : rôles
 - Niveau : 2
 - Définition : Un fournisseur OIDC fait confiance aux jetons signés de GitHub : la CI appelle `sts:AssumeRoleWithWebIdentity` et reçoit des identifiants temporaires, sans clé stockée.
@@ -512,7 +536,7 @@ statement {
 - [ ] Non : pas de jeton OIDC sur une PR
 - Réponse : non (doc GitHub) : sur un événement `pull_request`, `sub` vaut `repo:<org>/<dépôt>:pull_request` ; la condition `main` refuse donc les PR, ce qui est voulu.
 
-## 17. iam:PassRole : confier un rôle à un service
+## 18. iam:PassRole : confier un rôle à un service
 - Sous-thème : moindre privilège
 - Niveau : 2
 - Définition : Créer une Lambda, un projet CodeBuild ou un cluster EMR avec un rôle exige `iam:PassRole` sur ce rôle, en plus de l'action de création.
@@ -547,7 +571,7 @@ statement {
 - [ ] Personne : Terraform crée aussi le rôle
 - Réponse : celui qui lance `terraform apply` : c'est lui qui passe l'ARN du rôle à `CreateFunction` ; avoir créé le rôle ne dispense pas du droit de le confier.
 
-## 18. moindre privilège : borner un build piraté
+## 19. moindre privilège : borner un build piraté
 - Sous-thème : moindre privilège
 - Niveau : 2
 - Définition : Le rôle de build n'a de droits que sur ce qu'il touche : bucket `site`, invalidation, groupe de logs, `GitPull` du dépôt.
@@ -571,7 +595,7 @@ aws iam get-role-policy \
 - [x] Réécrire ou vider le site, pas plus
 - Réponse : réécrire ou vider le site : elle a les droits du rôle, limités au bucket `site`, à l'invalidation et aux logs ; ni `content`, ni IAM.
 
-## 19. simulate-principal-policy : tester sans appeler
+## 20. simulate-principal-policy : tester sans appeler
 - Sous-thème : politiques
 - Niveau : 2
 - Source : data-platform · S1-04
@@ -608,7 +632,7 @@ aws iam simulate-custom-policy \
 - [ ] Erreur : un ARN d'objet est attendu
 - Réponse : `implicitDeny` (mesuré) : `GetObject` porte sur un objet, `raw/*` ne couvre pas l'ARN du bucket ; aucun `Allow`, donc refus implicite.
 
-## 20. DeleteObject absent : le rejeu ne nettoie pas
+## 21. DeleteObject absent : le rejeu ne nettoie pas
 - Sous-thème : moindre privilège
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -633,7 +657,7 @@ aws s3 ls "s3://$RAW/bodacc/date=2026-10-20/"
 - [ ] Oui, mais en lecture seule
 - Réponse : oui : Athena lit chaque objet sous le `LOCATION`, il ne connaît pas `_MANIFEST.json` ; il faut lire via le manifest ou réécrire le dossier entier.
 
-## 21. log stream : l'ARN du groupe suivi de :*
+## 22. log stream : l'ARN du groupe suivi de :*
 - Sous-thème : politiques
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -661,7 +685,7 @@ statement {
 - [ ] Erreur à l'`apply` de la politique
 - Réponse : réussies, sans logs : l'ARN du groupe ne correspond à aucun flux, les écritures sont refusées par le runtime sans faire échouer le code.
 
-## 22. ListBucket absent : 403 au lieu de 404
+## 23. ListBucket absent : 403 au lieu de 404
 - Sous-thème : évaluation
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -688,7 +712,7 @@ e.response["Error"]["Code"] == "404"  # → False
 - [ ] `400` : requête invalide
 - Réponse : l'objet : `ListBucket` ne change que la réponse pour une clé absente ; une clé présente se lit avec `GetObject` seul.
 
-## 23. kms:Encrypt : pas pour SSE-KMS
+## 24. kms:Encrypt : pas pour SSE-KMS
 - Sous-thème : politiques
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -715,7 +739,7 @@ statement {
 - [ ] `KMSInvalidStateException`
 - Réponse : `AccessDenied` : S3 appelle `GenerateDataKey` quelle que soit la taille ; `Encrypt` n'est jamais utilisé par SSE-KMS.
 
-## 24. code Lambda : lu avec les droits du déployeur
+## 25. code Lambda : lu avec les droits du déployeur
 - Sous-thème : rôles
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -743,7 +767,7 @@ statement {
 - [ ] Échec au `plan`
 - Réponse : échec à l'`apply` : Lambda lit l'objet au nom du principal qui appelle l'API ; le rôle d'exécution n'existe que pendant les invocations.
 
-## 25. aws:SourceAccount : un rôle de service borné au compte
+## 26. aws:SourceAccount : un rôle de service borné au compte
 - Sous-thème : rôles
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -776,7 +800,7 @@ data "aws_iam_policy_document" "assume" {
 - [ ] Le compte du dernier utilisateur connecté
 - Réponse : ton compte : `aws:SourceAccount` est le compte de la ressource qui déclenche l'appel du service, ici la planification.
 
-## 26. ARN Lambda : `:*` pour versions et alias
+## 27. ARN Lambda : `:*` pour versions et alias
 - Sous-thème : politiques
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -801,7 +825,7 @@ data "aws_iam_policy_document" "assume" {
 - [ ] `explicitDeny`
 - Réponse : `implicitDeny` (simulé) : l'ARN qualifié ne correspond pas à l'ARN nu, aucun `Allow` ne s'applique.
 
-## 27. simulate-custom-policy : tester avant de poser
+## 28. simulate-custom-policy : tester avant de poser
 - Sous-thème : évaluation
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -827,7 +851,35 @@ aws iam simulate-custom-policy \
 - [ ] Une erreur : un seul ARN permis
 - Réponse : une ligne gabarit (mesuré) : le détail par ARN est dans `ResourceSpecificResults` ; d'où un ARN par appel pour lire vite.
 
-## 28. permission boundary : le plafond
+## 29. aws sso login : une session qui expire
+- Sous-thème : rôles
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : `aws configure sso` écrit le profil SSO une fois ; `aws sso login` ouvre une session par le navigateur, à refaire quand elle expire.
+- Contexte : Le profil ne contient aucune clé : l'URL du portail, le compte, le nom du rôle (permission set), la région. `aws sso login` met un jeton en cache dans `~/.aws/sso/cache/` ; la CLI, boto3 et Terraform en tirent des identifiants temporaires. Session expirée : erreur de jeton jusqu'au prochain `aws sso login`, sans rien changer d'autre.
+- Usage : ✅ poste de développement, plusieurs comptes avec un seul login · ❌ CI : pas de navigateur ; rôle OIDC à la place.
+
+```ini
+# Exemple 1 : profil SSO (~/.aws/config)
+[profile data-platform]
+sso_session    = perso
+sso_account_id = <account_id>
+sso_role_name  = AdministratorAccess
+region         = eu-west-3
+
+[sso-session perso]
+sso_start_url  = https://<id>.awsapps.com/start
+sso_region     = eu-west-3
+```
+
+- Quiz : La session SSO a expiré pendant la nuit. Que faut-il refaire avant `make plan` ?
+- [ ] `aws configure sso` en entier
+- [x] `aws sso login --profile data-platform`
+- [ ] Supprimer `~/.aws/credentials`
+- [ ] `terraform init -reconfigure`
+- Réponse : `aws sso login` : le profil n'a pas changé, seul le jeton en cache a expiré ; un nouveau login le renouvelle.
+
+## 30. permission boundary : le plafond
 - Sous-thème : évaluation
 - Niveau : 3
 - Définition : Une permission boundary est une politique managée posée sur un rôle ou un utilisateur : elle plafonne ses droits sans en accorder aucun.
@@ -858,7 +910,7 @@ resource "aws_iam_role" "sandbox" {
 - [ ] Non : `iam:*` est interdit en boundary
 - Réponse : non (mesuré : `implicitDeny`) : il faut un `Allow` des deux côtés ; la boundary large ne compense pas l'identité étroite.
 
-## 29. SCP : le plafond du compte
+## 31. SCP : le plafond du compte
 - Sous-thème : évaluation
 - Niveau : 3
 - Définition : Une SCP (Service Control Policy) d'AWS Organizations plafonne tous les principaux d'un compte membre, sans accorder aucun droit.
@@ -893,7 +945,7 @@ aws organizations list-policies \
 - [ ] Refusé dans la console seulement
 - Réponse : refusé : dans un compte membre, la SCP borne aussi le root ; seul le compte de gestion échappe aux SCP.
 
-## 30. ExternalId : le tiers confus
+## 32. ExternalId : le tiers confus
 - Sous-thème : rôles
 - Niveau : 3
 - Définition : `sts:ExternalId` est une condition de trust policy : un tiers qui endosse le rôle d'un client doit fournir l'identifiant propre à ce client.
@@ -923,7 +975,7 @@ statement {
 - [ ] `ValidationError` : paramètre requis
 - Réponse : `AccessDenied` : la clé `sts:ExternalId` est absente de la requête, la condition est fausse, aucun `Allow` ne s'applique.
 
-## 31. Access Analyzer : valider avant de poser
+## 33. Access Analyzer : valider avant de poser
 - Sous-thème : moindre privilège
 - Niveau : 3
 - Définition : IAM Access Analyzer valide une politique avant de la poser (`validate-policy`) et repère les ressources ouvertes hors du compte ou les droits inutilisés.
@@ -956,7 +1008,7 @@ aws accessanalyzer list-analyzers \
 - [ ] `SECURITY_WARNING`
 - Réponse : aucun (mesuré) : la grammaire est juste, seule la sémantique est fausse ; c'est le simulateur qui montre l'`implicitDeny`.
 
-## 32. multipart : couvert par s3:PutObject, sauf Abort
+## 34. multipart : couvert par s3:PutObject, sauf Abort
 - Sous-thème : politiques
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -984,7 +1036,7 @@ rule {
 - [ ] Oui, s'il a aussi `ListBucket`
 - Réponse : oui : `UploadPart` et les autres appels d'écriture multipart sont autorisés par `s3:PutObject` ; seuls l'annulation et le listage des parts ont leurs propres droits.
 
-## 33. inline : 10 240 caractères par rôle
+## 35. inline : 10 240 caractères par rôle
 - Sous-thème : politiques
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1013,7 +1065,7 @@ resource "aws_iam_role_policy" "app" {
 - [ ] Erreur au `plan`
 - Réponse : `LimitExceeded` à l'`apply` : la limite de 10 240 caractères porte sur le total des politiques inline du rôle, pas sur chacune.
 
-## 34. aws:SourceArn : le groupe de planifications
+## 36. aws:SourceArn : le groupe de planifications
 - Sous-thème : rôles
 - Niveau : 3
 - Source : data-platform · S1-08
