@@ -77,9 +77,13 @@ resource "aws_sns_topic_policy" "alerts" {
   policy = data.aws_iam_policy_document.alerts_topic.json
 }
 
-# Une alarme par Lambda : au moins une invocation en échec (exception non attrapée, timeout) sur 15 min.
-# 15 min couvrent l'essai et les 2 retries asynchrones (étalés sur ~3 min) : une panne = un mail ALARM,
-# puis un mail OK. Sans invocation, pas de point : `notBreaching` lit l'absence comme « tout va bien ».
+# Une alarme par Lambda : au moins une minute avec une invocation en échec (exception non attrapée, timeout)
+# parmi les 15 dernières. 15 min couvrent l'essai et les 2 retries asynchrones (~3 min) : une panne = un mail
+# ALARM, puis un mail OK 15 min après la dernière erreur.
+# Périodes d'1 min, pas une seule période de 15 min : `Errors` n'a de points que quand la fonction tourne.
+# Avec 1 période de 900 s, le dernier vrai point (l'erreur) restait dans la plage d'évaluation et l'alarme
+# restait en ALARM (mesuré en S1-08) ; avec 15 périodes et 1 seul vrai point, CloudWatch complète les
+# minutes vides par `notBreaching` et repasse en OK dès que l'erreur sort de la fenêtre.
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   for_each = local.lambdas
 
@@ -93,8 +97,9 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   }
 
   statistic           = "Sum"
-  period              = 900
-  evaluation_periods  = 1
+  period              = 60
+  evaluation_periods  = 15
+  datapoints_to_alarm = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   threshold           = 1
   treat_missing_data  = "notBreaching"
