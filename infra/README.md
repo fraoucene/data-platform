@@ -15,7 +15,7 @@ infra/
 ├── schedules.tf        # local.schedules : planifications EventBridge Scheduler + rôle d'invocation
 ├── modules/
 │   ├── kms/            # clé symétrique du projet + alias, rotation annuelle
-│   ├── s3-buckets/     # 5 buckets chiffrés KMS, versionnés, privés, lifecycle, logs d'accès
+│   ├── s3-buckets/     # 4 buckets chiffrés KMS, versionnés, privés, lifecycle, logs d'accès
 │   └── iam/            # rôles lambda / emr / sfn, moindre privilège
 ├── envs/
 │   └── dev/            # dev.tfvars (commité), backend.hcl + local.tfvars (gitignorés, .example commités)
@@ -30,7 +30,7 @@ infra/
 ```bash
 # 0. Prérequis : terraform >= 1.10, aws cli, uv, make ; profil AWS « data-platform » configuré.
 
-# 1. Bootstrap (une fois par compte AWS) : crée le bucket d'état.
+# 1. Bootstrap (une fois par compte AWS) : crée le bucket d'état et le bucket des artefacts.
 cp infra/bootstrap/local.auto.tfvars.example infra/bootstrap/local.auto.tfvars   # profile, account_id
 terraform -chdir=infra/bootstrap init
 terraform -chdir=infra/bootstrap apply
@@ -66,13 +66,15 @@ Si l'état local du bootstrap est perdu : voir `bootstrap/README.md` (4 `terrafo
 
 ## Ce que `make down` détruit, et ce qui survit
 
-Détruit (43 ressources en dev) : les 5 buckets et leur contenu (`force_destroy`), les 3 rôles et leurs
-policies, la clé KMS (planifiée, 7 jours) et son alias, le budget, le topic et l'abonnement SNS.
+Détruit (60 ressources gérées en dev au 2026-10-25, `terraform -chdir=infra state list | grep -vc '^data\.'`) :
+les 4 buckets et leur contenu (`force_destroy`), les 5 rôles (lambda, emr, sfn, rôle de la Lambda d'ingestion, rôle
+du scheduler) et leurs policies, la Lambda et son log group, la planification, l'alarme, la clé KMS (planifiée,
+7 jours) et son alias, le budget, les 2 topics SNS et leurs abonnements.
 
-Survit : le bootstrap (bucket d'état, hors périmètre), l'état `dev/terraform.tfstate` lui-même (vide,
-versions précédentes conservées), les autres environnements.
+Survit : le bootstrap (bucket d'état et bucket des artefacts, donc les zips publiés), l'état `dev/terraform.tfstate`
+lui-même (vide, versions précédentes conservées), les autres environnements.
 
-Après `make up` : nouvelle clé KMS (nouvel ARN, même alias) et nouvel abonnement SNS à confirmer par mail.
+Après `make up` : nouvelle clé KMS (nouvel ARN, même alias) et 2 nouveaux abonnements SNS à confirmer par mail.
 Les objets chiffrés par l'ancienne clé seraient illisibles après 7 jours : `down` est réservé à dev.
 
 ## Buckets
