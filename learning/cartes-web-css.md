@@ -13,6 +13,7 @@ Web · CSS : grid (format spec v3 de revision-pwa).
 ## 1. minmax(0, 1fr) : la piste qui ne grandit pas
 - Sous-thème : grid
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : `minmax(0, 1fr)` donne à une piste de grille l'espace restant, sans jamais grandir avec un contenu plus grand qu'elle.
 - Contexte : `1fr` vaut `minmax(auto, 1fr)` : son minimum est la taille du contenu. La rangée qui porte une pile de cartes de 2 000 px grandit donc à 2 000 px, le pied sort de l'écran et rien ne défile. Avec `0` pour minimum, la rangée garde l'espace restant et l'enfant (`overflow-y: auto`) défile. Même piège en colonnes : un `pre` large élargit tout l'écran.
 - Usage : ✅ en-tête / contenu / pied sur `100dvh`, colonne contenant du code qui défile horizontalement · ❌ `1fr` seul dès que le contenu peut dépasser la place disponible.

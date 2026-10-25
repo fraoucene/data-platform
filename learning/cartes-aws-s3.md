@@ -220,6 +220,7 @@ round(go * (standard - ia), 3)
 ## 7. multipart incomplet : invisible et facturé
 - Sous-thème : cycle de vie
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : Un upload multipart jamais terminé garde ses parts dans le bucket, invisibles au listage mais facturées, jusqu'à une règle `abort_incomplete_multipart_upload`.
 - Contexte : Les SDK découpent les gros fichiers en parts (au-delà de 8 Mo pour `upload_file` de boto3) ; si le processus meurt avant `CompleteMultipartUpload`, les parts restent. Elles ne sont pas des objets : ni `aws s3 ls` ni la console ne les montrent. Une règle lifecycle dédiée les purge N jours après le début de l'upload.
 - Usage : ✅ une règle `abort-mpu` à 7 jours sur chaque bucket, quel que soit son rôle · ❌ bucket qui reçoit de gros fichiers sans cette règle : une facture qui grossit sans rien de visible.
@@ -433,6 +434,7 @@ resource "aws_s3_bucket_ownership_controls" "raw" {
 ## 13. logs d'accès S3 : jamais vers lui-même
 - Sous-thème : accès
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : Le server access logging écrit une ligne par requête reçue par un bucket (qui, quoi, quand) dans un bucket cible, sous un préfixe.
 - Contexte : La cible doit autoriser le service `logging.s3.amazonaws.com` à écrire (`s3:PutObject`, borné par `aws:SourceAccount`), d'où une politique posée avant l'activation (`depends_on`). Le bucket de logs ne se logge pas lui-même : chaque écriture de log serait une requête qui produit un log, une boucle facturée sans information. Qui lit `logs` : CloudTrail.
 - Usage : ✅ un bucket `logs` qui reçoit tous les autres sous `s3/<nom>/`, avec une expiration (30 j) · ❌ activer le logging du bucket `logs` vers lui-même : la boucle.
@@ -503,6 +505,7 @@ len(lire(0, 99))    # → 28  (tronqué au bout)
 ## 15. s3 sync --delete : les exclus sont épargnés
 - Sous-thème : requêtes
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : `aws s3 sync --delete` supprime de la destination ce qui manque à la source, sauf les chemins écartés par `--exclude` / `--include`.
 - Contexte : Les filtres valent pour l'envoi comme pour la suppression. `make deploy` s'en sert : le 2e `sync` (tout sauf `assets/*`) supprime les anciens `sw.js` ou icônes mais garde les anciens assets, utiles aux visiteurs encore sur l'ancien `index.html` ; le 3e, limité à `assets/`, les supprime en dernier. `sync` compare taille et date : relancé sans changement, il n'envoie rien.
 - Usage : ✅ `--dryrun` avant tout `--delete`, filtres pour borner ce qui peut disparaître · ❌ `--delete` sans filtre à la racine d'un bucket partagé : tout ce qui manque en local part.

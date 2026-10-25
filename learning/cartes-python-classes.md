@@ -276,6 +276,7 @@ Bodacc().lire("2026-10-23")
 ## 8. _nom ou __nom : privé par convention
 - Sous-thème : propriétés
 - Niveau : 2
+- Source : data-platform · S1-06
 - Définition : `_nom` signale un membre interne par simple convention ; `__nom` (sans `__` final) est renommé `_Classe__nom` par Python (≈ `private` TS, sans vraie protection).
 - Contexte : Python n'a pas de `private` : `self._http` reste accessible, c'est un avertissement pour le lecteur et les outils. `__nom` déclenche le *name mangling* : l'attribut est stocké sous `_Classe__nom`, pour qu'une sous-classe ne l'écrase pas par accident, pas pour le cacher. `__nom__` (deux tirets de chaque côté) est réservé aux méthodes spéciales du langage (`__init__`, `__enter__`).
 - Usage : ✅ `_nom` pour tout détail interne (`_owns_http`, `_day_params`) · ❌ `__nom` pour « faire privé » : complique tests et héritage sans rien protéger ; jamais inventer un `__nom__`.

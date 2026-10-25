@@ -360,6 +360,7 @@ def test_log_retry(caplog):
 ## 11. --import-mode=importlib : des tests homonymes
 - Sous-thème : config
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : `--import-mode=importlib` importe chaque fichier de test sous un nom tiré de son chemin, sans toucher `sys.path` : deux `test_smoke.py` cohabitent.
 - Contexte : En mode par défaut (`prepend`), pytest ajoute le dossier du test à `sys.path` et l'importe comme module nu `test_smoke`. Un second membre avec son `tests/test_smoke.py`, sans `__init__.py`, donne le même nom : `import file mismatch`. Dans un monorepo, chaque membre a ses `tests/` : le mode se pose dans `addopts` dès le premier membre.
 - Usage : ✅ monorepo, `tests/` homonymes dans plusieurs membres · ❌ s'en remettre à des noms de fichiers uniques entre membres : fragile dès le deuxième.
@@ -391,6 +392,7 @@ addopts = "-q --import-mode=importlib"
 ## 12. addopts : des options invisibles
 - Sous-thème : config
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : `addopts` ajoute ses options à chaque lancement de pytest, avant celles de la ligne de commande : invisibles, mais toujours actives.
 - Contexte : Un `-q` dans `addopts` masque déjà l'en-tête (`rootdir`, `configfile`) ; en taper un second donne `-qq`. Quand une sortie surprend, `-o addopts=""` relance sans elles, en-tête compris : il prouve quel `pyproject.toml` est lu. Attention : cela retire aussi `--import-mode=importlib`, et les membres homonymes se percutent à nouveau.
 - Usage : ✅ options de projet (`-q`, `--import-mode`, `-m 'not integration'`) · ❌ y mettre une option qu'on doit parfois retirer à la main : un marqueur ou une cible Makefile dédiée.
@@ -455,6 +457,7 @@ taux == pytest.approx(
 ## 14. @pytest.mark : exclure par défaut
 - Sous-thème : marqueurs
 - Niveau : 2
+- Source : data-platform · S1-06
 - Définition : Un marqueur (`@pytest.mark.integration`) étiquette des tests ; `-m 'not integration'` dans `addopts` les exclut de la suite par défaut.
 - Contexte : Un test sur la vraie API est lent et dépend du réseau : il doit être opt-in. On déclare le nom dans `markers`, on l'exclut dans `addopts`, et `pytest -m integration` en ligne de commande **remplace** le `-m` d'`addopts` : seuls les tests marqués tournent. `pytestmark = pytest.mark.integration` marque tout un module. Les tests écartés apparaissent en `deselected`.
 - Usage : ✅ tests d'intégration réseau, tests lents, cible `make test-integration` · ❌ marquer un test cassé pour l'oublier : `@pytest.mark.skip(reason=…)`, ou le corriger.
@@ -515,6 +518,7 @@ xfail_strict = true
 ## 16. respx : une réponse par appel
 - Sous-thème : mocks
 - Niveau : 2
+- Source : data-platform · S1-06
 - Définition : `respx` intercepte les requêtes `httpx` (≈ `msw`) ; `side_effect=[r1, r2]` rend une réponse différente à chaque appel, ou lève l'exception placée dans la liste.
 - Contexte : `return_value` rend toujours la même réponse ; une liste en `side_effect` rejoue un scénario : 429 puis 200, timeout puis 200. Une exception dans la liste (`httpx.ConnectTimeout("boom")`) est levée au lieu de répondre. `route.call_count` et `route.calls.last.request` vérifient ce qui est parti. Sous `respx.mock`, une requête sans route échoue : aucun appel réseau réel ne s'échappe.
 - Usage : ✅ tester retries, erreurs HTTP et paramètres envoyés, sans réseau · ❌ client qui n'est pas httpx (`requests`, boto3) : `responses`, `moto`.
@@ -626,6 +630,7 @@ delais  # → [1, 2]  (aucune attente réelle)
 ## 19. couverture : lignes ou branches
 - Sous-thème : couverture
 - Niveau : 3
+- Source : data-platform · S1-06
 - Définition : `--cov-branch` mesure aussi les chemins pris (`if` faux, boucle sautée ou épuisée), pas seulement les lignes exécutées (≈ `branches` de `jest --coverage`).
 - Contexte : Une ligne `for` exécutée ne dit pas si la boucle a déjà été sautée. Dans `fetch_day`, la sortie de la boucle de retry sans `return` ni `raise` n'était jamais prise : avec `max_attempts=0`, la fonction rendait une journée vide, sans requête ni erreur. Dans `Missing`, `195-196` = lignes jamais exécutées, `2->exit` = branche jamais prise. Un `# pragma: no branch` seulement après avoir rendu le chemin impossible.
 - Usage : ✅ `--cov-branch --cov-report=term-missing --cov-fail-under=80` en CI, viser les branches d'erreur · ❌ `# pragma: no cover` pour atteindre le seuil : ça cache le défaut au lieu de le corriger.

@@ -49,6 +49,7 @@ unzip -p dist/bodacc_client-*.whl \
 ## 2. nom : dp-common ou dp_common
 - Sous-thème : noms
 - Niveau : 1
+- Source : data-platform · S1-03
 - Définition : `dp-common` est le nom de distribution (uv, lock, PyPI), `dp_common` le nom de module importé : tiret pour `uv add`, underscore pour `import`.
 - Contexte : Deux espaces de noms, reliés par le dossier `src/dp_common/` que le backend embarque. `import dp-common` se lit `dp - common` : erreur de syntaxe. Côté distribution, les noms sont normalisés : tiret, underscore, point et casse sont équivalents, `version("DP_Common")` trouve le paquet. Les deux noms peuvent même différer : `PyYAML` s'importe `yaml`, `python-dateutil` `dateutil`. Pas de `@scope/` : on préfixe (`dp-`).
 - Usage : ✅ tiret dans `pyproject.toml`, `uv add`, `uv tree` ; underscore dans le code et sous `src/` · ❌ deviner le nom d'import d'une lib tierce (lire sa doc) ; un tiret dans un dossier de module.
@@ -196,6 +197,7 @@ bodacc_client.__all__[0]  # → "Annonce"
 ## 7. [build-system] : installable ou virtuel
 - Sous-thème : pyproject
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : `[build-system]` déclare le backend qui construit le paquet ; sans lui, uv traite le projet comme virtuel : ses dépendances sont installées, lui non.
 - Contexte : C'est voulu pour la racine d'un monorepo : un conteneur qui porte le lock, le venv et les outils de dev, rien à importer ni à publier (≈ `"private": true`). Un membre de `packages/` en a besoin pour être importé : `uv init --lib` l'écrit (backend `uv_build`), `uv init --bare` non. Exception : un projet cité en dépendance par un autre est construit quand même, avec setuptools par défaut.
 - Usage : ✅ lib importée par d'autres membres, paquet publié · ❌ racine de monorepo, dossier de scripts : pas de `[build-system]`, le projet reste virtuel.
@@ -229,6 +231,7 @@ uv pip list
 ## 8. src layout : pas d'import par accident
 - Sous-thème : layout
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : En src layout, le code vit dans `src/<module>/` : il n'est importable qu'une fois installé, jamais par accident depuis le dossier courant.
 - Contexte : Python met le dossier courant en tête de `sys.path`. En flat layout (`dp_common/` à la racine du projet), `import dp_common` marche sans installation : les tests passent sur un dossier, pas sur le paquet installé, et un fichier oublié par le build passe inaperçu. `src/` n'a pas de `__init__.py` : le module est `dp_common`, jamais `src.dp_common`.
 - Usage : ✅ toute lib de `packages/`, installée en éditable par `uv sync` · ❌ scripts ou projet virtuel : un simple fichier suffit.

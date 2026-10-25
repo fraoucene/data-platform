@@ -13,6 +13,7 @@ DevOps · pre-commit : ci, config, exécution, installation, versions (format sp
 ## 1. hook qui corrige : Failed et commit annulé
 - Sous-thème : exécution
 - Niveau : 1
+- Source : data-platform · S1-03
 - Définition : Un hook qui modifie un fichier se déclare `Failed` et annule le commit : la correction est sur le disque, à relire puis re-stager.
 - Contexte : C'est le contrat de pre-commit : rien ne part sans que tu aies vu la correction (`end-of-file-fixer`, `ruff-format`, `ruff-check --fix`). Le message dit `files were modified by this hook`. Le fichier apparaît `AM` : l'index a l'ancienne version, le disque la corrigée. `pre-commit run --files` ou `make fmt` avant le commit évite ce tour (≈ husky + lint-staged, sans `git add` automatique).
 - Usage : ✅ `git add <fichier>` puis recommit après un `Failed` qui corrige ; `pre-commit run --files …` pour corriger avant · ❌ `git commit --no-verify` pour passer outre : le défaut part dans l'historique et en CI.
@@ -39,6 +40,7 @@ git commit -m "main: bodacc-client"
 ## 2. pre-commit install : à refaire après un clone
 - Sous-thème : installation
 - Niveau : 1
+- Source : data-platform · S1-03
 - Définition : `pre-commit install` écrit le hook dans `.git/hooks/pre-commit` ; ce dossier n'est jamais versionné, donc chaque clone doit le refaire.
 - Contexte : `.git/` reste local : un `git clone` récupère `.pre-commit-config.yaml`, pas le hook. Sans `install`, les commits passent sans aucun contrôle, en silence. D'où `uv run pre-commit install` dans les prérequis du README, juste après `uv sync` (≈ le script `prepare` de husky, qu'aucun gestionnaire de paquets ne lance ici).
 - Usage : ✅ une fois par clone, documenté dans le README · ❌ le hook local comme seul garde-fou : refaire `ruff check` et `ruff format --check` en CI.
@@ -161,6 +163,7 @@ pre-commit run show-args --files m.py
 ## 7. --all-files : les fichiers suivis seulement
 - Sous-thème : exécution
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : `pre-commit run --all-files` passe les hooks sur tous les fichiers suivis par git (`git ls-files`), pas sur ceux du disque.
 - Contexte : Un fichier `??`, jamais ajouté, n'existe pas pour pre-commit : sur un scaffold neuf, les hooks affichent `(no files to check) Skipped` et le code retour vaut 0, un faux vert. Au `git commit`, seuls les fichiers stagés passent. Un `Skipped` attendu (aucun YAML dans le dépôt) est normal ; un `Skipped` sur `ruff-check` dans un dépôt Python est suspect.
 - Usage : ✅ `git add` ciblé des nouveaux fichiers, puis `pre-commit run --all-files` · ❌ se fier au seul code retour : vérifier qu'aucun hook attendu n'est `Skipped`.
@@ -190,6 +193,7 @@ pre-commit run --all-files
 ## 8. rev : un ruff à part
 - Sous-thème : versions
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : Chaque dépôt de hooks est épinglé par `rev` (un tag git) et tourne dans son propre environnement, indépendant du `.venv` et de `uv.lock`.
 - Contexte : Le ruff du hook est celui de `rev: v0.17.1`, installé dans `~/.cache/pre-commit` au premier lancement (lent une fois). Si `uv.lock` passe à un autre ruff sans toucher `rev`, deux ruff cohabitent : `make lint` et le hook peuvent rendre des verdicts différents. Même risque avec `uv-lock` : un uv de hook plus récent réécrit `uv.lock`. Tags : `git ls-remote --tags --refs <repo>`.
 - Usage : ✅ `rev` = ruff de `uv.lock` (avec `v`), `uv --version` pour `uv-pre-commit` (sans `v`) · ❌ `rev: main` : jamais mis à jour après la première installation, pre-commit avertit.

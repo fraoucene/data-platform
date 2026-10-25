@@ -509,6 +509,7 @@ cards-validate:
 ## 17. $(abspath) : un chemin qui survit au cd
 - Sous-thème : variables
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : `$(abspath chemin)` rend un chemin absolu, calculé depuis le dossier où `make` est lancé, sans vérifier qu'il existe.
 - Contexte : Un chemin relatif se lit depuis le dossier courant de la commande qui le reçoit. `pnpm --dir app` tourne dans `app/` : un `CARDS_DIR=../data-platform/learning` y viserait `revision-pwa/data-platform/learning`. D'où `export CARDS_DIR := $(abspath $(PRODUCER))/learning` : la valeur reste juste dans `app/`, dans `tsx`, dans Vite.
 - Usage : ✅ chemin passé à un sous-processus qui change de dossier (`--dir`, `cd`, `-C`) · ❌ chemin relatif dans une variable exportée : juste par hasard, tant que tout tourne au même endroit.

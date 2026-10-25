@@ -13,6 +13,7 @@ Web · Vite : build (format spec v3 de revision-pwa).
 ## 1. NODE_ENV : le build de dev caché
 - Sous-thème : build
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : `vite build` remplace `process.env.NODE_ENV` dans le code ; s'il vaut `development`, React part dans sa version de dev, deux fois plus lourde.
 - Contexte : Vite ne force `production` que si la variable est vide. Un `export NODE_ENV=development` dans `~/.zshrc` embarque donc les contrôles et messages de dev de React (« unique key… ») dans le bundle, sans erreur ni avertissement. D'où `"build": "tsc -b && NODE_ENV=production vite build"` dans `app/package.json`.
 - Usage : ✅ fixer `NODE_ENV=production` dans le script `build` · ❌ compter sur l'environnement du shell ou de la CI pour obtenir un build de prod.

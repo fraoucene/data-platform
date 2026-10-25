@@ -13,6 +13,7 @@ Python · HTTP : client, réponses, erreurs, streaming, tests, async (format spe
 ## 1. httpx.Client : timeout et en-têtes
 - Sous-thème : client
 - Niveau : 1
+- Source : data-platform · S1-06
 - Définition : `httpx.Client(base_url=…, timeout=…, headers=…)` garde configuration et connexion entre les appels (≈ `axios.create`) ; à fermer avec `with` ou `close()`.
 - Contexte : Le timeout par défaut de httpx est de **5 s** pour chaque phase (connexion, lecture, écriture, pool) : trop court pour un export qui streame une journée. `httpx.Timeout(60, connect=5)` sépare une connexion qui doit échouer vite d'une lecture longue. Un `User-Agent` explicite identifie le client auprès d'une API publique partagée. `params={…}` encode la query string.
 - Usage : ✅ plusieurs appels vers la même API (connexion réutilisée, config centrale) · ❌ `httpx.get` en boucle : une connexion par appel ; `timeout=None` : un serveur muet bloque jusqu'au timeout de la Lambda.
@@ -231,6 +232,7 @@ int(s)    # → 7
 ## 7. client.stream : lire ligne à ligne
 - Sous-thème : streaming
 - Niveau : 2
+- Source : data-platform · S1-06
 - Définition : `with client.stream("GET", url) as r:` puis `r.iter_lines()` lit le corps au fil de l'eau, sans le charger en mémoire (≈ `ReadableStream` lu par morceaux).
 - Contexte : `client.get` télécharge tout le corps avant de rendre la main : 59 Mo pour une journée BODACC. `stream` rend la réponse dès les en-têtes ; le corps arrive pendant l'itération, et le `with` ferme la connexion à la sortie. `r.json()` attend un seul document : sur du JSONL, même servi en `application/json`, il lève `JSONDecodeError`.
 - Usage : ✅ export JSONL, gros fichier, réponse longue traitée ligne à ligne · ❌ petite réponse JSON : `client.get(...).json()` suffit.
@@ -584,6 +586,7 @@ handler({}, None)   # → False  (le même)
 ## 16. stream : le with dans le générateur
 - Sous-thème : streaming
 - Niveau : 3
+- Source : data-platform · S1-06
 - Définition : Dans un générateur qui streame, le `with client.stream(...)` doit être dans le générateur, sinon la réponse est fermée avant la première ligne.
 - Contexte : Un `return (gen…)` depuis un `with` quitte le bloc tout de suite : `__exit__` ferme le flux, puis l'appelant itère sur une réponse fermée → `httpx.StreamClosed`. Avec `yield` dans le `with`, la fonction se met en pause **dans** le bloc : la connexion reste ouverte tant que l'appelant itère et se ferme à la fin du flux. Effet secondaire : aucune requête ne part avant le premier `next`.
 - Usage : ✅ `fetch_day` : `with c.stream(...) as r:` puis `for l in r.iter_lines(): yield …` · ❌ renvoyer une expression génératrice construite dans le `with` ; ouvrir le flux chez l'appelant pour le passer.

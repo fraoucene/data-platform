@@ -13,6 +13,7 @@ DevOps · curl : compression, en-têtes (format spec v3 de revision-pwa).
 ## 1. --compressed : décompresser la réponse
 - Sous-thème : compression
 - Niveau : 1
+- Source : data-platform · S1-05
 - Définition : `curl --compressed` demande une réponse compressée et la décompresse ; sans l'option, curl écrit les octets reçus tels quels.
 - Contexte : Le navigateur, `fetch` et `httpx` décompressent seuls, curl non. Certains serveurs (OpenDataSoft, donc BODACC) envoient du gzip même sans `Accept-Encoding` : la sortie commence par les octets `1f 8b`, et le `json.load` derrière le pipe plante. L'en-tête `content-encoding: gzip` le confirme. Sur un JSON répétitif, gzip divise le transfert par 5 à 10.
 - Usage : ✅ toujours pour explorer une API : `curl -s --compressed` · ❌ le reproduire en Python : `httpx` et `requests` décompressent déjà, `gzip.decompress` en plus casserait.
@@ -47,6 +48,7 @@ r.json()   # → {"n": 1}
 ## 2. -D - : les en-têtes sans le corps
 - Sous-thème : en-têtes
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : `curl -D - -o /dev/null` affiche les en-têtes de réponse et jette le corps ; `-w "%{http_code}"` imprime le statut HTTP.
 - Contexte : Les en-têtes disent ce que le corps tait : quota (`x-ratelimit-*`), compression (`content-encoding`), cache (`cache-control: max-age=60`), type annoncé (`content-type`, parfois faux). `-D -` écrit les en-têtes sur la sortie standard, `-o /dev/null` supprime le corps, `-w` imprime des variables après la requête (`%{http_code}`, `%{time_total}`, `%{url_effective}`). `-I` envoie un HEAD, que certains serveurs traitent autrement qu'un GET.
 - Usage : ✅ vérifier un plafond (400 ou 200), lire un quota, chronométrer · ❌ `-I` pour diagnostiquer un GET : la réponse peut différer ; `-D - -o /dev/null` envoie le vrai GET.

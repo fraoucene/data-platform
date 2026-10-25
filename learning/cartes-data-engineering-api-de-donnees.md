@@ -13,6 +13,7 @@ Data engineering · API de données : requêtes, pagination, erreurs, cache, con
 ## 1. total_count : mesurer avant d'ingérer
 - Sous-thème : requêtes
 - Niveau : 1
+- Source : data-platform · S1-05
 - Définition : Avant d'écrire l'ingestion, on mesure la source : lignes par jour (`total_count`), répartition (`group_by`), poids moyen d'une ligne.
 - Contexte : `limit=0` renvoie le total exact sans aucune donnée : une requête, quelques octets. Un `group_by` donne la répartition par famille. Ces chiffres décident de tout : 32 373 lignes par jour excluent l'offset (plafond 10 000), 59 Mo imposent le streaming, un tiers utile justifie un filtre. Mesurer sur une journée complète, jamais sur une fixture de 25 lignes.
 - Usage : ✅ avant de choisir pagination, mémoire Lambda ou partitions ; contrôle de complétude (lus = `total_count`) · ❌ dimensionner d'après la doc ou un échantillon : les cas rares n'y sont pas.
@@ -60,6 +61,7 @@ lignes > 10_000  # → True  (offset exclu)
 ## 2. where : filtrer côté serveur
 - Sous-thème : requêtes
 - Niveau : 1
+- Source : data-platform · S1-05
 - Définition : Filtrer dans la requête (`where`, `select`) fait trier la source avant l'envoi : on ne télécharge que les lignes et colonnes utiles.
 - Contexte : Sur BODACC, une journée compte 32 373 annonces dont 15 310 dépôts de comptes (`dpc`, 47 %) inutiles au projet. `familleavis in (…)` dans `where` divise le téléchargement par 3, `select` retire les colonnes. Le langage de filtre d'une API (ODSQL ici) est typé et limité : un seul dataset, pas de jointure, champs imbriqués vus comme du texte. Le reste se fait ensuite, dans le lakehouse.
 - Usage : ✅ réduire volume, durée et quota : jour, famille, colonnes · ❌ logique métier complexe ou filtre sur un champ imbriqué : filtrer après le parsing, côté pipeline.
@@ -246,6 +248,7 @@ choisir(800, False, False)    # → "offset"
 ## 7. offset : la fenêtre plafonnée
 - Sous-thème : pagination
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : L'offset (« saute N, donne 100 ») est plafonné par l'API : `offset + limit ≤ 10 000` et `limit ≤ 100`, sinon HTTP 400.
 - Contexte : Pour servir `offset=9000`, le serveur trie puis saute 9 000 lignes à chaque appel : le coût croît avec la page, d'où le plafond (10 000 chez OpenDataSoft comme chez Elasticsearch). Mesuré sur BODACC : `offset=9999&limit=1` → 200, `offset=10000` → 400. Une journée de 32 373 lignes ne se lit donc qu'au premier tiers. L'offset glisse aussi quand des lignes arrivent pendant la lecture.
 - Usage : ✅ afficher une page à un humain, jeu de moins de 10 000 lignes · ❌ ingérer un volume complet : export en flux, ou keyset.
@@ -286,6 +289,7 @@ statut(0, 101)      # → 400
 ## 8. keyset : reprendre après la dernière clé
 - Sous-thème : pagination
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : La pagination keyset demande les N lignes après la dernière clé reçue (`where cle > dernière`, `order_by cle`) : coût constant, sans plafond (≈ `?after=<cursor>`).
 - Contexte : Il faut une clé unique, triée et que l'API sait comparer. Sur BODACC, `id` est un `text` : ODSQL refuse `>` dessus (400), et un texte de longueur variable ne suit pas l'ordre numérique. `numeroannonce` entier convient, mais il repart à 1 dans chaque bulletin : un curseur par bulletin A, B, C, soit 325 appels par journée. Chaque page est une requête indépendante, réessayable sans doublon. Arrêt sur une page incomplète.
 - Usage : ✅ volume au-delà de la fenêtre d'offset, reprise après coupure depuis la dernière clé · ❌ clé non unique ou texte de longueur variable : pages qui sautent ou répètent des lignes ; petit volume : offset ou export.
@@ -347,6 +351,7 @@ max(cles)  # → "A202602019"
 ## 9. export : un flux au lieu de 325 pages
 - Sous-thème : pagination
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : L'endpoint d'export renvoie tout le résultat filtré en une requête, une ligne JSON par enregistrement, sans plafond : on le lit en streaming.
 - Contexte : Une journée BODACC : 1 appel, 32 373 lignes, 59 Mo en 5 s, contre 325 pages en keyset. Contreparties : une connexion longue (timeout de lecture de 60 s, le défaut httpx est 5 s), une lecture ligne par ligne (`iter_lines`) pour ne jamais tenir 59 Mo en mémoire, et un en-tête qui ment : `content-type: application/json` pour du JSONL, donc pas de `r.json()`.
 - Usage : ✅ ingérer une journée ou un lot complet en un appel · ❌ besoin de reprendre au milieu, ou export instable : keyset en plan B.
@@ -387,6 +392,7 @@ def annonces(flux):
 ## 10. erreur d'API : lire avant de parser
 - Sous-thème : erreurs
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : On teste le statut HTTP et on lit le corps d'erreur (`error_code`) avant d'accéder aux données : une erreur arrive souvent en JSON valide.
 - Contexte : Une API de données répond 400 avec `{"error_code", "message"}` : du JSON parfaitement valide, mais sans `results`. Parser sans tester le statut donne `KeyError: 'results'`, loin de la cause. Réflexe d'exploration : afficher la réponse brute (`python3 -m json.tool`). Dans le client : lever sur le statut, décider sur `error_code` (stable), jamais sur le texte de `message`, qui peut changer.
 - Usage : ✅ tout client HTTP : statut d'abord, 4xx = lever, 429 et 5xx = réessayer · ❌ `r.json()["results"]` sans test : l'erreur réelle est masquée par un `KeyError`.
@@ -430,6 +436,7 @@ results(400, '{"error_code": "X"}')  # ❌ ApiError
 ## 11. quota : partagé, remis à zéro à minuit
 - Sous-thème : erreurs
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : Une API annonce son quota dans les en-têtes `X-RateLimit-Limit`, `-Remaining` et `-Reset` ; au-delà, elle répond HTTP 429.
 - Contexte : BODACC : 5 000 000 d'appels par jour pour toute l'instance, remis à zéro à minuit UTC. `remaining` a perdu 2 523 en 69 s sans aucun appel de notre part : le quota est partagé, un autre client peut l'épuiser avant notre passage. Une journée nous coûte 1 appel : inutile de sur-concevoir, mais le 429 reste possible. Sur 429 : backoff court, puis échec propre et relance après le reset.
 - Usage : ✅ lire les en-têtes avant de dimensionner retries et parallélisme ; `User-Agent` explicite sur une instance partagée · ❌ réessayer en boucle sur 429 : on brûle le quota de tous.

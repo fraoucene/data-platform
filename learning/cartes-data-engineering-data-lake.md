@@ -301,6 +301,7 @@ len(hive), len(snapshot)  # → (3, 2)
 ## 9. dt= : la publication, pas l'événement
 - Sous-thème : partitions
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : Une source datée porte deux dates : quand le fait a eu lieu (événement) et quand on l'apprend (publication) ; on partitionne par la seconde.
 - Contexte : Sur BODACC, `dateparution` est la publication, `jugement.date` la décision du tribunal, souvent dix jours plus tôt. L'ingestion du 20 octobre apporte des jugements de tout le mois : partitionner par événement réécrirait des partitions passées à chaque run et casserait la règle « un run = une partition ». On partitionne `dt=` par publication et on garde la date d'événement en colonne, pour filtrer et agréger.
 - Usage : ✅ `dt=` = date de publication ou de réception ; date d'événement en colonne · ❌ partitionner par date d'événement une source qui publie en retard : des partitions jamais closes.

@@ -323,6 +323,7 @@ Pourquoi: pas de plafond de 15 min,
 ## 10. esbuild : un fichier, sans le SDK
 - Sous-thème : déploiement
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : `esbuild --bundle` réunit le handler TypeScript et ses imports en un seul `.mjs` ; `--external:@aws-sdk/*` laisse le SDK au runtime Lambda.
 - Contexte : Lambda Node n'exécute pas de TypeScript et ne voit que le zip : sans `--bundle`, `index.mjs` garde ses `import './catalog.ts'`, absents de l'archive. Le runtime `nodejs22.x` fournit le SDK v3 : l'exclure fait passer le bundle de 1,4 Mo à 9 ko (mesuré). `archive_file` zippe le résultat, `source_code_hash` ne redéploie que si le code change.
 - Usage : ✅ Lambda Node en TS qui utilise le SDK v3 du runtime · ❌ version précise du SDK exigée : l'embarquer ; `aws-sdk` v2 : absent des runtimes depuis Node 18.
@@ -579,6 +580,7 @@ lambda_function {
 ## 18. concurrence réservée : une exécution à la fois
 - Sous-thème : invocation
 - Niveau : 3
+- Source : revision-pwa · pwa-revision
 - Définition : `reserved_concurrent_executions = 1` limite la fonction à une exécution simultanée : les invocations suivantes attendent au lieu de tourner en parallèle.
 - Contexte : `catalog-build` relit toutes les sources et réécrit tout `catalog.json` : l'événement S3 n'est qu'un signal, son ordre et ses doublons (livraison « au moins une fois ») ne comptent pas. Deux exécutions parallèles, si : la plus lente, qui a listé avant le dernier dépôt, écraserait un catalogue complet. La réserve est prise sur les 1 000 du compte (999 non réservées, mesuré).
 - Usage : ✅ traitement qui réécrit un résultat global (catalogue, index, agrégat) · ❌ traitement par objet indépendant : parallélisme bridé pour rien ; `0` coupe toute invocation.

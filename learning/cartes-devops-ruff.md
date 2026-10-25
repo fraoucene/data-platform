@@ -13,6 +13,7 @@ DevOps · Ruff : commandes, config, format, noqa, règles (format spec v3 de rev
 ## 1. check ou format : lint ou mise en forme
 - Sous-thème : commandes
 - Niveau : 1
+- Source : data-platform · S1-03
 - Définition : `ruff check` est le linter (≈ eslint : `F401`, `E501`, `I001`), `ruff format` le formateur (≈ prettier : quotes, espaces, virgules) : deux contrôles distincts.
 - Contexte : `x='a'` passe le lint et échoue au format. Le formateur ne touche qu'à la mise en forme : il ne trie jamais les imports, car les réordonner change l'ordre d'exécution des modules ; `I001` se corrige avec `ruff check --fix`. En CI, `ruff format --check` ne modifie rien et renvoie 1 si un fichier doit changer : d'où deux lignes dans `make lint`.
 - Usage : ✅ `make lint` = `check` + `format --check`, `make fmt` = les deux avec correction · ❌ `ruff format` seul avant un commit : imports non triés ou inutiles restent.
@@ -182,6 +183,7 @@ ruff check --select E501 f.py \
 ## 7. config : le pyproject le plus proche
 - Sous-thème : config
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : Pour chaque fichier, ruff prend le `pyproject.toml` le plus proche qui contient `[tool.ruff]` : une config racine couvre tous les membres.
 - Contexte : Un `pyproject.toml` de membre sans `[tool.ruff]` est sauté, la recherche remonte jusqu'à la racine : `line-length = 120` y vaut pour `packages/*`. Les configs ne fusionnent pas : la plus proche s'applique seule, sauf `extend`. `src` liste les dossiers first-party pour le tri d'imports (`I`). `ruff check --show-settings <fichier>` affiche le fichier retenu.
 - Usage : ✅ une seule section `[tool.ruff]` à la racine du monorepo · ❌ une section `[tool.ruff]` dans un membre sans `extend` vers la racine.
@@ -213,6 +215,7 @@ line-length = 100  # le reste : racine
 ## 8. target-version : ce que UP réécrit
 - Sous-thème : règles
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : `target-version = "py312"` donne à ruff la version minimale de Python visée : les règles `UP` (pyupgrade) proposent la syntaxe moderne qu'elle autorise.
 - Contexte : En `py312`, `Optional[str]` devient `str | None` (UP045) et `List[str]` devient `list[str]` (UP006). Sans `target-version`, ruff la déduit de `requires-python`. Les règles s'activent par préfixe dans `[tool.ruff.lint] select` : `E` pycodestyle, `F` pyflakes, `I` isort, `UP` pyupgrade, `B` bugbear (≈ plugins eslint).
 - Usage : ✅ aligner `target-version` sur `requires-python` et le runtime Lambda (3.12) · ❌ viser plus haut que le runtime : ruff propose une syntaxe qui plante en production.

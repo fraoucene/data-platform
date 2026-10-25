@@ -688,6 +688,7 @@ SITE_BUCKET ?= $(shell $(TF) output -raw site_bucket)
 ## 20. required_version : la version de la CLI
 - Sous-thème : blocs
 - Niveau : 2
+- Source : data-platform · S1-01
 - Définition : `required_version` dans le bloc `terraform {}` refuse toute CLI Terraform hors de la contrainte, dès `init`, avant de toucher l'état.
 - Contexte : Le code s'appuie sur des fonctionnalités récentes (validations croisées de variables en 1.9, verrou S3 natif ensuite) : une CLI trop vieille échouerait plus loin, au pire moment. `>= 1.9` fixe un plancher, `~> 1.9` autorise tout 1.x depuis 1.9, `~> 1.9.0` bloque à 1.9.x. À ne pas confondre avec `required_providers`, qui contraint les providers.
 - Usage : ✅ un plancher `>= 1.9` dans chaque root (`infra/`, `infra/bootstrap/`) · ❌ une contrainte serrée sur le patch : chaque montée de la CLI casse `init` pour toute l'équipe.
@@ -765,6 +766,7 @@ resource "terraform_data" "cdn" {
 ## 22. dynamic : zéro ou un bloc
 - Sous-thème : boucles
 - Niveau : 3
+- Source : data-platform · S1-04
 - Définition : `dynamic` avec un `for_each` qui vaut `[]` ou `[valeur]` produit zéro ou un bloc imbriqué : le bloc conditionnel de HCL (≈ `{cond && <Rule/>}`).
 - Contexte : Un bloc imbriqué (`rule`, `expiration`) n'accepte ni `count` ni condition : seul `dynamic` le rend facultatif. La liste vide ne génère rien, une liste d'un élément génère un bloc, et dans `content` l'itérateur prend le nom du bloc (`rule.value`). Dans data-platform, `raw` (90 j) et `logs` (30 j) reçoivent une règle d'expiration, les trois autres buckets non.
 - Usage : ✅ bloc présent selon une map ou un booléen (expiration, logging, CORS) · ❌ ressource entière facultative : `count = cond ? 1 : 0` sur la ressource ; bloc toujours présent : l'écrire en clair.

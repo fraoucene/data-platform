@@ -195,6 +195,7 @@ log      # → ["avant"]
 ## 6. __enter__ et __exit__ : un with en classe
 - Sous-thème : classes
 - Niveau : 2
+- Source : data-platform · S1-06
 - Définition : Une classe avec `__enter__` et `__exit__` s'utilise dans `with` : `__exit__` est toujours appelé à la sortie (≈ `using` + `Symbol.dispose` en TS).
 - Contexte : `with X() as c` appelle `__enter__()` et lie **sa valeur de retour** à `c`, d'où le `return self`. `__exit__(exc_type, exc, tb)` est appelé même si le bloc lève ; s'il renvoie une valeur vraie, l'exception est avalée. Règle « qui ouvre ferme » : `BodaccClient` ne ferme le `httpx.Client` que s'il l'a créé (`_owns_http`) ; un client injecté reste à l'appelant.
 - Usage : ✅ objet qui possède une ressource (connexion HTTP, fichier, verrou) · ❌ simple donnée : `@dataclass` ; ressource ponctuelle dans une fonction : `@contextmanager`.

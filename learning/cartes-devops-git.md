@@ -13,6 +13,7 @@ DevOps · Git : config, gitignore, commit, branches, historique, remote (format 
 ## 1. git config : global ou local
 - Sous-thème : config
 - Niveau : 1
+- Source : data-platform · S1-01
 - Définition : `git config --global` écrit dans `~/.gitconfig` pour tous les dépôts ; sans `--global`, dans `.git/config` du dépôt courant, qui l'emporte.
 - Contexte : Trois niveaux, du plus large au plus précis : `--system`, `--global`, local. Git lit les trois et garde la valeur la plus précise. D'où une identité perso en global (alias noreply GitHub) et une surcharge locale dans chaque dépôt client. `--show-origin` dit quel fichier a fourni chaque valeur : premier réflexe quand un commit part avec le mauvais email.
 - Usage : ✅ identité perso et `init.defaultBranch` en global, email client en local dans le dépôt client · ❌ `--global` lancé dans un dépôt client : tous les projets perso partent avec l'email client.
@@ -44,6 +45,7 @@ git config --show-origin --get-all \
 ## 2. .gitignore : trop tard pour un fichier suivi
 - Sous-thème : gitignore
 - Niveau : 1
+- Source : data-platform · S1-01
 - Définition : `.gitignore` n'agit que sur les fichiers non suivis : un fichier déjà commité reste suivi, et dans l'historique, même ajouté ensuite.
 - Contexte : Un fichier présent dans l'index est suivi, quel que soit le `.gitignore`. Pour arrêter de le suivre : `git rm --cached` (il reste sur le disque), puis commit. L'historique garde l'ancienne version : un secret poussé sur un dépôt public se révoque, il ne suffit pas de le retirer. D'où le `.gitignore` dès le premier commit, avant `.venv/`, `.terraform/` ou un `*.tfstate`.
 - Usage : ✅ `.gitignore` au premier commit, `git rm --cached` pour un fichier suivi par erreur · ❌ compter sur le `.gitignore` pour cacher un `.env` déjà commité : révoquer le secret.
@@ -77,6 +79,7 @@ git log --oneline -- .env
 ## 3. git status --ignored : !! ou ??
 - Sous-thème : gitignore
 - Niveau : 1
+- Source : data-platform · S1-01
 - Définition : `git status --short --ignored` marque `??` les fichiers non suivis, donc commitables, et `!!` ceux que le `.gitignore` exclut.
 - Contexte : `??` ne protège de rien : un `git add .` l'embarque. Seul `!!` garantit qu'un `terraform.tfstate` ou un `local.auto.tfvars` ne partira pas. Un dossier entièrement non suivi s'affiche replié (`?? infra/`), `-uall` liste chaque fichier. Git suit des fichiers, pas des dossiers : d'où un `README.md` (ou un `.gitkeep`) pour qu'un dossier encore vide existe dans le dépôt.
 - Usage : ✅ avant le premier commit d'un dossier sensible (`infra/`), compter les `!!` attendus · ❌ `git status` sans `--ignored` : un fichier ignoré y est invisible, comme un fichier qui n'existe pas.
@@ -100,6 +103,7 @@ git status --short --ignored infra/
 ## 4. git add : ciblé, jamais -A
 - Sous-thème : commit
 - Niveau : 1
+- Source : data-platform · S1-03
 - Définition : `git add <fichier>` stage ce que tu as décidé d'inclure ; `git add -A` stage tout le non-ignoré, oublis compris.
 - Contexte : Le `.gitignore` liste ce à quoi tu as pensé : un `tfplan` pas encore listé (ARN, ID de compte) part avec `-A`. Un commit = un sujet : `-A` mélange `infra/`, `learning/` et le scaffold. Réflexe avant de commiter : `git status --short`, rien que des `A` et `M` voulus. Un fichier stagé par erreur se retire de l'index sans toucher au disque.
 - Usage : ✅ chemins explicites, `git add -p` pour choisir des morceaux · ❌ `git add -A` ou `git add .` dans un dépôt public qui a des fichiers sensibles non suivis.
@@ -299,6 +303,7 @@ git log --oneline -3
 ## 10. .gitignore : la dernière règle gagne
 - Sous-thème : gitignore
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : Dans `.gitignore`, un chemin suit la dernière ligne qui le désigne ; `!motif` ré-inclut ce qu'une ligne précédente excluait.
 - Contexte : Git lit le fichier de haut en bas, sans priorité au motif le plus précis : l'ordre fait la règle, d'où « exclure large, ré-inclure le commitable, re-exclure le secret ». Un fichier sous un dossier exclu ne peut pas être ré-inclus : Git ne descend plus dedans. `git check-ignore` teste un chemin même inexistant ; piège : `-v` affiche aussi la ligne `!` qui ré-autorise, code 0 ; seul `-q` et son code retour tranchent.
 - Usage : ✅ commiter `dev.tfvars` sans jamais `local.tfvars`, tester les règles avec `git check-ignore` avant le premier `git add` · ❌ exclure un dossier entier pour en ré-inclure un fichier : exclure par motif de fichier (`*.tfvars`).
@@ -351,6 +356,7 @@ git check-ignore -q \
 ## 11. .gitignore : relatif à son dossier
 - Sous-thème : gitignore
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : Un `.gitignore` de sous-dossier se lit depuis son propre dossier : ses motifs ne partent pas de la racine du dépôt.
 - Contexte : Un motif avec un `/` au début ou au milieu (`/dist/`, `apps/revision/dist/`) est ancré au dossier du `.gitignore`. Recopier dans `apps/revision/.gitignore` un chemin écrit pour la racine vise donc `apps/revision/apps/revision/dist/` : rien n'est ignoré, sans message. Le `/` final seul ne compte pas : il dit seulement « un dossier ».
 - Usage : ✅ motifs locaux au sous-projet (`/dist/`, `/coverage/`) dans son `.gitignore` · ❌ chemin écrit depuis la racine dans un sous-dossier : le mettre dans le `.gitignore` racine.
@@ -383,6 +389,7 @@ git check-ignore -v \
 ## 12. credential helper : un par hôte
 - Sous-thème : config
 - Niveau : 2
+- Source : data-platform · S1-01
 - Définition : Un credential helper fournit à git le login d'un dépôt HTTPS ; `gh auth setup-git` déclare `gh` comme helper de `https://github.com` seulement.
 - Contexte : La clé générique `credential.helper` (ici `osxkeychain`) sert à tous les hôtes ; une clé par URL, `credential.https://github.com.helper`, s'ajoute pour un hôte. `gh` y écrit d'abord une valeur vide, qui vide la liste héritée : seul `gh` répond pour GitHub, le keychain reste pour GitLab. Si « Authenticate Git » n'a pas été appliqué au `gh auth login`, `gh auth setup-git` le refait.
 - Usage : ✅ un helper par forge : `gh` pour GitHub, `aws codecommit credential-helper` pour CodeCommit · ❌ remplacer le `credential.helper` global : les autres forges perdent leur login.

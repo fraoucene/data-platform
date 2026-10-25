@@ -13,6 +13,7 @@ DevOps · pnpm : scripts (format spec v3 de revision-pwa).
 ## 1. prebuild : le hook avant le script
 - Sous-thème : scripts
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : Un script `pre<nom>` du `package.json` (`prebuild`, `predev`) s'exécute avant `<nom>` ; s'il échoue, le script principal ne tourne pas.
 - Contexte : `pnpm build` enchaîne `prebuild`, `build`, puis `postbuild`, comme npm (mesuré, pnpm 10.33). L'étape 2 y branchait `pnpm cards` : une carte mal formée arrêtait le build avant `tsc` et `vite`. Le hook suit le nom du script, pas la commande : lancer `vite build` directement le saute.
 - Usage : ✅ générer ou contrôler un fichier avant `build` / `dev` · ❌ chaîne de hooks cachés : l'écrire en clair (`"build": "pnpm cards && vite build"`).

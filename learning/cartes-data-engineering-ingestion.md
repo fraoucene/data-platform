@@ -466,6 +466,7 @@ lire("2026-10-23")  # → None
 ## 12. fraîcheur : planifier après la source
 - Sous-thème : planification
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : Une ingestion quotidienne se planifie après l'heure réelle de mise à jour de la source, lue dans ses métadonnées, avec une marge, en UTC.
 - Contexte : Les métadonnées du dataset BODACC donnent `data_processed` : `2026-10-22T06:17:43+00:00`, soit 08:17 à Paris en octobre, 07:17 en novembre. Un cron en heure de Paris dérive au changement d'heure : on planifie en UTC fixe (`cron(0 7 * * ? *)`). La source ne publie pas tous les jours : J-1 peut légitimement être vide, ce n'est pas une panne.
 - Usage : ✅ toute source quotidienne : relever l'heure de mise à jour sur plusieurs jours avant de fixer le cron · ❌ planifier « tôt le matin » à l'intuition, ou alerter sur 0 ligne sans calendrier de publication.
@@ -682,6 +683,7 @@ lake["2026-10-21"]  # → ["A1", "A9"]
 ## 18. retry en flux : jamais après le premier yield
 - Sous-thème : fiabilité
 - Niveau : 3
+- Source : data-platform · S1-06
 - Définition : Sur un flux sans point de reprise, on ne réessaie que l'ouverture ; une coupure après la première ligne rendue doit lever, pas relancer.
 - Contexte : Relancer un export après 10 000 annonces émises les rend une seconde fois : doublons silencieux en aval. `fetch_day` garde un drapeau `started` : erreur avant le premier `yield`, backoff puis nouvel essai ; après, `BodaccError`. C'est acceptable parce que l'appelant est idempotent : la Lambda rejoue la journée entière et écrase la même clé S3. Une pagination keyset, elle, réessaie page par page sans doublon.
 - Usage : ✅ export streamé, gros téléchargement sans reprise (`Range`) · ❌ pagination par curseur : chaque page se réessaie seule ; appelant qui ajoute au lieu d'écraser : lever ne suffit pas.
@@ -780,6 +782,7 @@ apres = {"A1": {"v": 1}, "A2": {"v": 2}}
 ## 20. annulation : corriger l'annonce visée
 - Sous-thème : idempotence
 - Niveau : 3
+- Source : data-platform · S1-05
 - Définition : Une annulation ou un rectificatif est une nouvelle ligne, avec son propre id, qui désigne une ligne antérieure : on l'applique à celle-ci.
 - Contexte : Un upsert sur `id` absorbe les rejeux, mais une annulation a un autre `id` : l'insérer seule laisse l'annonce visée intacte, et la table garde un événement qui n'a pas eu lieu (une radiation annulée neuf mois plus tard). BODACC donne la cible dans `parutionavisprecedent` : lettre du bulletin, `numeroParution`, `numeroAnnonce`. Annulation : marquer ou supprimer la cible ; rectificatif : la remplacer.
 - Usage : ✅ toute source qui publie des corrections (journaux légaux, CDC, événements compensatoires) · ❌ traiter chaque ligne comme un fait nouveau : la table garde des fantômes.

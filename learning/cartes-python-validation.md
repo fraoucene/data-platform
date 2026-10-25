@@ -48,6 +48,7 @@ Annonce("A1")        # ❌ TypeError
 ## 2. model_validate : les champs en trop
 - Sous-thème : modèles
 - Niveau : 1
+- Source : data-platform · S1-06
 - Définition : `Modele.model_validate(dict)` construit et valide un modèle depuis un dict (≈ `schema.parse` de zod) ; `extra` décide du sort des clés non déclarées.
 - Contexte : Par défaut (`extra="ignore"`), les clés inconnues disparaissent sans erreur : pratique pour un export qui renvoie 40 champs dont on garde 15, dangereux pour une faute de frappe dans une config. `extra="forbid"` les rejette en `ValidationError`, `extra="allow"` les garde dans `model_dump()`. Les types sont convertis (`"2026-10-20"` → `date`). `parse_obj` et `.dict()` sont l'API v1, dépréciée en v2.
 - Usage : ✅ `ignore` pour une source externe large (export BODACC), `forbid` pour une config ou un payload qu'on contrôle · ❌ `parse_obj`, `.dict()` des vieux tutos : `model_validate`, `model_dump`.
@@ -417,6 +418,7 @@ a.model_dump_json()
 ## 11. défaut [] : copié par instance
 - Sous-thème : modèles
 - Niveau : 2
+- Source : data-platform · S1-06
 - Définition : Dans un `BaseModel`, `registre: list[str] = []` est sûr : Pydantic copie le défaut pour chaque instance, contrairement à un argument par défaut Python.
 - Contexte : En Python pur, un défaut mutable (`def __init__(self, r=[])`) est créé une seule fois, quand la fonction est définie : toutes les instances partagent la même liste, et un `append` sur l'une apparaît dans les autres. Pydantic copie le défaut à chaque création, comme `Field(default_factory=list)`. C'est l'inverse du réflexe TS, où un défaut est réévalué à chaque appel.
 - Usage : ✅ `= []` ou `= {}` dans un modèle Pydantic · ❌ dans un `def` ou un `__init__` : `None` par défaut, puis créer la liste dans le corps.

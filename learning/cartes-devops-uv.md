@@ -13,6 +13,7 @@ DevOps · uv : ci, dépendances, lock, outils, python, workspace (format spec v3
 ## 1. workspace : members
 - Sous-thème : workspace
 - Niveau : 1
+- Source : data-platform · S1-03
 - Définition : `[tool.uv.workspace] members` déclare par globs les projets du monorepo : un seul `uv.lock`, un seul `.venv` racine (≈ `pnpm-workspace.yaml`).
 - Contexte : Un seul lock = une seule résolution de versions : pas de `httpx` 0.27 dans un membre et 0.28 dans un autre. Chaque dossier qui correspond à un glob doit avoir son `pyproject.toml`, sinon `uv sync` échoue ; un glob qui ne correspond à rien (`lambdas/*` vide) est accepté. `uv init` lancé dans le workspace y ajoute le nouveau projet.
 - Usage : ✅ monorepo de libs, Lambdas et jobs qui partagent leurs versions · ❌ projets aux dépendances incompatibles (deux versions de pyspark) : projets séparés, un lock chacun.
@@ -48,6 +49,7 @@ grep -A2 'name = "dp-common"' uv.lock
 ## 2. uv add --dev : dependency-groups
 - Sous-thème : dépendances
 - Niveau : 1
+- Source : data-platform · S1-03
 - Définition : `uv add --dev pytest` écrit dans `[dependency-groups] dev` (PEP 735, ≈ `devDependencies`) : installé en local, jamais publié avec le paquet.
 - Contexte : uv écrit une borne basse (`pytest>=9.1.1`) dans `pyproject.toml` ; la version exacte vit dans `uv.lock`, qui se commite. `uv sync` installe le groupe `dev` par défaut, `--no-dev` l'écarte (image, zip de Lambda). À distinguer de `[project.optional-dependencies]` (`uv add --optional`) : des extras, installables par un consommateur (`pkg[s3]`).
 - Usage : ✅ outils de dev : pytest, ruff, pre-commit, respx · ❌ dépendance optionnelle offerte aux utilisateurs du paquet (`boto3` pour S3) : `uv add --optional s3 boto3`.
@@ -255,6 +257,7 @@ uvx --from python-dotenv dotenv --version
 ## 9. uv sync : le graphe de la racine
 - Sous-thème : workspace
 - Niveau : 2
+- Source : data-platform · S1-03
 - Définition : `uv sync` aligne le `.venv` sur le graphe de la racine : un membre non cité n'est pas installé, sauf avec `--all-packages`.
 - Contexte : Contrairement à `pnpm install`, être membre ne suffit pas. La racine cite le membre deux fois : `dependencies = ["dp-common"]` et `[tool.uv.sources] dp-common = { workspace = true }` (≈ `"workspace:*"`), écrits ensemble par `uv add dp-common`. Sans l'entrée `sources`, `uv lock` refuse. `make sync` utilise `--all-packages` pour la CI.
 - Usage : ✅ `uv add <membre>` à la racine pour chaque lib utilisée, `--all-packages` en CI · ❌ `pip install -e packages/x` à la main : hors du lock, non reproductible.
@@ -289,6 +292,7 @@ dp-common = { workspace = true }
 ## 10. uv add --package : le bon pyproject
 - Sous-thème : dépendances
 - Niveau : 2
+- Source : data-platform · S1-06
 - Définition : `uv add --package <membre> <dep>` écrit la dépendance dans le `pyproject.toml` du membre du workspace, pas dans celui de la racine (≈ `pnpm add --filter`).
 - Contexte : Sans `--package`, la dépendance part à la racine : tout marche en local (un seul `.venv` pour le workspace), mais le zip Lambda construit depuis le membre n'a pas `httpx` → `ModuleNotFoundError` en production.
 - Usage : ✅ dépendance runtime d'un package ou d'une Lambda du monorepo (`httpx`, `pydantic`) · ❌ outil de test ou de lint (`respx`, `pytest-cov`) : `uv add --dev` à la racine.

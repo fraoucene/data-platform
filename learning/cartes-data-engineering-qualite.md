@@ -126,6 +126,7 @@ verifier(1000, 80)  # ❌ RuntimeError
 ## 4. contrat de données : vérifié des deux côtés
 - Sous-thème : contrôles
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : Un contrat de données fixe le format qu'un producteur livre ; un même code le vérifie avant publication puis à la réception.
 - Contexte : Écrit seul, dans une spec, le contrat dérive : chaque producteur l'interprète. Ses règles mesurables (champ manquant, longueur, ordre) vivent donc dans un code unique, lancé par le producteur (`make cards-validate`) et par le consommateur (Lambda `catalog-build`). Les erreurs sortent au format `fichier:carte:champ`, lisibles par un humain comme par un agent. Un fichier en erreur est écarté entier, les autres passent.
 - Usage : ✅ toute frontière entre deux dépôts ou deux équipes (fichiers, événements, API) · ❌ contrat implicite (« copie un fichier existant ») : chaque producteur invente sa variante.

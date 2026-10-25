@@ -341,6 +341,7 @@ tf-init:
 ## 11. init -backend=false : valider hors AWS
 - Sous-thème : backend
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : `terraform init -backend=false` installe providers et modules sans configurer le backend : `validate` tourne ensuite sans identifiants ni état.
 - Contexte : Un `init` normal lit `backend.hcl`, contacte le bucket d'état et demande région et identifiants. Pour vérifier syntaxe, types et références (cycles compris), le backend est inutile : `validate` ne lit ni l'état ni AWS. C'est le premier contrôle, en local comme en CI, avant `plan` qui a besoin des deux.
 - Usage : ✅ étape `validate` d'une CI, contrôle avant commit, dossier copié pour un test · ❌ avant `plan` ou `apply` : il faut un `init` complet, avec le backend.

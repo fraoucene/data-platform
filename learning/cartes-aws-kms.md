@@ -48,6 +48,7 @@ aws kms get-key-policy --key-id "$AWS_S3" \
 ## 2. alias KMS : le nom, l'ARN pour les ressources
 - Sous-thème : clés
 - Niveau : 1
+- Source : data-platform · S1-04
 - Définition : Une clé KMS est désignée par un ARN opaque ; l'alias `alias/<nom>` est un nom lisible et stable qui pointe vers elle.
 - Contexte : On ne voit jamais la clé : on demande à KMS de chiffrer ou déchiffrer, chaque appel est autorisé par IAM et tracé dans CloudTrail. L'ARN change à chaque recréation, l'alias reste : les humains utilisent l'alias, les ressources Terraform l'ARN (`module.kms.key_arn`), qui crée la dépendance. Une clé coûte 1 $/mois plus les appels ; `enable_key_rotation` renouvelle le matériel chaque année sans changer l'ARN.
 - Usage : ✅ une clé par projet et environnement, alias `alias/<projet>-<env>`, ARN passé aux modules · ❌ ARN recopié en dur : il change au prochain `make down` / `make up`.
@@ -201,6 +202,7 @@ aws kms enable-key --key-id "$K"
 ## 7. clé KMS : suppression différée
 - Sous-thème : clés
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : Supprimer une clé KMS la place en `PendingDeletion` pendant 7 à 30 jours (`deletion_window_in_days`) ; elle n'est détruite qu'à l'échéance.
 - Contexte : Une clé détruite rend illisible tout ce qu'elle chiffre, d'où le délai : pendant la fenêtre, la clé ne chiffre ni ne déchiffre plus, mais `cancel-key-deletion` la récupère. L'alias, lui, est supprimé tout de suite. Après `make down` puis `make up`, Terraform crée donc une nouvelle clé (nouvel ARN) sous le même alias ; les objets encore chiffrés par l'ancienne seront perdus à l'échéance.
 - Usage : ✅ 7 jours en dev (environnement jetable, buckets vidés au `down`) · ❌ 7 jours en prod : 30 jours, et `prevent_destroy` sur la clé.
@@ -301,6 +303,7 @@ aws kms decrypt \
 ## 10. SSE-KMS : la seconde serrure
 - Sous-thème : s3
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : Sur un bucket `aws:kms`, lire ou écrire exige deux droits : l'action S3 et l'action KMS sur la clé (`kms:Decrypt`, `kms:GenerateDataKey`).
 - Contexte : S3 appelle KMS au nom de l'appelant : `GetObject` déchiffre la clé de données (`kms:Decrypt`), `PutObject` en génère une (`kms:GenerateDataKey`). Un rôle qui a `s3:GetObject` sans droit KMS reçoit `AccessDenied`, alors que sa politique S3 paraît juste. C'est voulu : la clé est une serrure indépendante, tracée dans CloudTrail, révocable d'un geste en la désactivant.
 - Usage : ✅ un statement `UseProjectKey` sur l'ARN de la clé dans chaque rôle qui touche aux buckets · ❌ `kms:*` ou `resources = ["*"]` : borner aux actions utiles et à l'ARN de la clé.
@@ -337,6 +340,7 @@ aws s3 cp "s3://$RAW/bodacc/p.gz" .
 ## 11. bucket key : SSE-KMS moins cher
 - Sous-thème : s3
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : `bucket_key_enabled = true` : S3 dérive une clé de bucket depuis la clé KMS et appelle KMS bien moins souvent qu'une fois par objet.
 - Contexte : En SSE-KMS (`aws:kms`), chaque `PutObject` demande une clé de données à KMS et chaque `GetObject` la déchiffre : sur des milliers de petits fichiers, la facture KMS (0,03 $ les 10 000 appels) et le quota d'appels montent vite. La bucket key réduit ces appels jusqu'à 99 %. CloudTrail trace alors le bucket, plus chaque objet. Les droits ne changent pas : `kms:Decrypt` et `kms:GenerateDataKey`.
 - Usage : ✅ tout bucket en `aws:kms` (`raw`, `processed`) · ❌ audit KMS exigé objet par objet : sans bucket key ; SSE-S3 (`AES256`) : aucun appel KMS, sans objet.
@@ -440,6 +444,7 @@ statement {
 ## 14. politique de clé : déléguer à IAM
 - Sous-thème : politique
 - Niveau : 3
+- Source : data-platform · S1-04
 - Définition : Sans `policy`, une clé KMS reçoit la politique par défaut : `kms:*` au compte (`root`), ce qui délègue l'accès aux politiques IAM du compte.
 - Contexte : Pour KMS, la politique de clé fait autorité : un rôle n'utilise une clé que si elle le permet, directement ou en déléguant à IAM par le principal `arn:aws:iam::<id>:root`. Avec la politique par défaut, `kms:Decrypt` dans la politique du rôle suffit. Une politique écrite à la main sans cette clause coupe ce relais : seuls les principaux listés passent, et l'admin peut perdre la main sur la clé.
 - Usage : ✅ politique par défaut tant que tous les consommateurs sont dans le compte · ❌ politique custom sans la clause `root` ; un autre compte ou un service (CloudFront) : politique custom qui garde `root`.

@@ -549,6 +549,7 @@ json.loads(json.dumps({"t": t}))["t"] == t
 ## 16. json : du JSON dans une chaîne
 - Sous-thème : formes
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : Un champ dont la valeur est une chaîne contenant du JSON demande un second `json.loads` : le premier ne parse que l'enveloppe.
 - Contexte : BODACC sérialise `listepersonnes`, `jugement`, `depot` en texte dans le JSON, et le schéma de l'API les déclare `text`. Après le premier `loads`, ces champs sont des `str` : `a["jugement"]["nature"]` lève `TypeError`. Selon la famille d'annonce, le champ vaut `None` ; s'il est déjà un dict, le redécoder lève `TypeError` : tester `isinstance(v, str)` d'abord. Contrôler en parsant, jamais sur le texte brut.
 - Usage : ✅ exports OpenDataSoft, `body` d'un message SQS qui contient du JSON, colonne JSON dans un CSV · ❌ `loads` aveugle sur tous les champs : une vraie chaîne (`"Lyon"`) lève `JSONDecodeError`.
@@ -591,6 +592,7 @@ decoder("  ")         # → None
 ## 17. JSON issu de XML : un dict ou une liste
 - Sous-thème : formes
 - Niveau : 2
+- Source : data-platform · S1-05
 - Définition : Du JSON converti depuis du XML donne un objet pour une valeur seule, une liste pour plusieurs : normaliser en liste avant de parcourir.
 - Contexte : Le convertisseur ne connaît pas le schéma : un `<personne>` unique devient un dict, répété une liste. BODACC le fait sur `personne` et même sur `prenom`. Le code écrit sur le cas fréquent plante sur le rare, parfois une annonce sur mille : on ne le voit qu'en testant sur une journée complète. Une petite fonction `en_liste`, appliquée à la lecture, règle tous les champs concernés.
 - Usage : ✅ données issues de XML (BODACC, SOAP, exports de greffes) · ❌ des `isinstance` dispersés dans tout le code : normaliser une fois, à la lecture.

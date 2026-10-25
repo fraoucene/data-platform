@@ -237,6 +237,7 @@ terraform output -json | jq -c .token
 ## 9. plan -out : appliquer le plan relu
 - Sous-thème : plan
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : `plan -out=tfplan` enregistre le plan dans un fichier ; `apply tfplan` exécute exactement ces actions, sans recalculer ni redemander.
 - Contexte : `apply` seul recalcule un plan et attend `yes` : entre la relecture et la confirmation, le code ou l'infra ont pu bouger. Le fichier fige les actions avec la configuration du moment : c'est ce qu'on relit en MR et ce que la CI rejoue (`plan` en artefact, `apply tfplan` ensuite). Si l'état a changé depuis (autre apply), Terraform refuse : `Saved plan is stale`.
 - Usage : ✅ CI (plan en MR, apply du même fichier), audit du plan JSON avant l'apply (`show -json`) · ❌ garder un `tfplan` d'hier : périmé ; le commiter : il contient les valeurs en clair.
@@ -271,6 +272,7 @@ make plan   # data-platform
 ## 10. dérive : la console contre le code
 - Sous-thème : plan
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : Une modification faite hors Terraform (console, CLI) est une dérive : `plan` la détecte en relisant AWS, `apply` remet la valeur du code.
 - Contexte : Avant de planifier, Terraform rafraîchit l'état : il relit chaque ressource qu'il connaît et compare au code. Un attribut écrit dans le code et changé à la main revient à sa valeur au prochain `apply`. Un tag `managed_by = terraform` n'empêche rien : c'est une étiquette ; le vrai verrou est un `Deny` IAM ou une SCP. `plan -refresh-only` montre la dérive seule.
 - Usage : ✅ toute modification par le code (MR, puis `make up`), la console pour regarder · ❌ corriger en console « en urgence » : le prochain `make up` l'écrase.
@@ -305,6 +307,7 @@ terraform -chdir=infra plan -refresh-only \
 ## 11. destroy : l'état survit, vide
 - Sous-thème : apply
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : `terraform destroy` supprime toutes les ressources de l'état, dans l'ordre inverse des dépendances, puis réécrit l'état vide.
 - Contexte : Le graphe est parcouru à l'envers : politiques avant rôles, logging avant buckets. L'état n'est pas une ressource : il reste, avec `resources: []`, la même `lineage` et un `serial` plus grand ; le bucket d'état, géré par le bootstrap, est hors périmètre. Les data sources ne sont ni créées ni détruites, mais `state list` les compte.
 - Usage : ✅ environnement jetable (`make down` le vendredi), preuve que tout est décrit par le code · ❌ en prod : `prevent_destroy` sur les données, jamais `-auto-approve`.

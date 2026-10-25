@@ -74,6 +74,7 @@ Web · PWA : manifest, service worker, cache, stockage, iOS, débogage (format s
 ## 3. service worker : HTTPS ou localhost
 - Sous-thème : service worker
 - Niveau : 1
+- Source : revision-pwa · pwa-revision
 - Définition : Un service worker ne s'enregistre que dans un contexte sécurisé : page servie en HTTPS, ou depuis `localhost` en HTTP.
 - Contexte : Hors contexte sécurisé, `navigator.serviceWorker` n'existe pas : le `registerSW.js` de vite-plugin-pwa (`if ('serviceWorker' in navigator)`) ne fait rien, sans erreur. L'app ouverte sur l'iPhone via `http://192.168.x.x:5175` s'affiche et s'installe, mais ne marche pas hors ligne : le test du mode avion attend l'URL CloudFront (HTTPS inclus sur `*.cloudfront.net`).
 - Usage : ✅ tester le hors-ligne sur `vite preview` en local, puis sur l'URL HTTPS déployée · ❌ conclure sur le service worker depuis l'IP locale du téléphone.
@@ -275,6 +276,7 @@ function Maj() {
 ## 10. précache : une empreinte par fichier
 - Sous-thème : cache
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : Workbox écrit dans `sw.js` la liste des fichiers du build à mettre en cache à l'installation, chacun avec une empreinte de son contenu.
 - Contexte : `precacheAndRoute` reçoit des `{ url, revision }`. Un fichier à nom fixe (`index.html`, icônes) porte un MD5 : s'il change, `sw.js` change, et le nouveau service worker ne retélécharge que les entrées modifiées. Un asset au nom haché a `revision: null` : son nom suffit. La liste est figée au build : une donnée publiée ensuite (le catalogue) n'y est jamais.
 - Usage : ✅ tout le shell de l'app (`html`, `js`, `css`, icônes) via `globPatterns`, décrit une seule fois · ❌ données qui changent sans redéploiement : `runtimeCaching`.
@@ -301,6 +303,7 @@ precacheAndRoute([
 ## 11. NetworkFirst : frais en ligne, dernier vu hors ligne
 - Sous-thème : cache
 - Niveau : 2
+- Source : revision-pwa · pwa-revision
 - Définition : La stratégie Workbox `NetworkFirst` demande d'abord au réseau, garde la réponse en cache, et ne sert ce cache qu'en cas d'échec ou de délai dépassé.
 - Contexte : Le catalogue change sans redéploiement : il ne peut pas être précaché. `StaleWhileRevalidate` répondrait d'abord avec le cache et mettrait à jour en arrière-plan : une carte publiée n'apparaîtrait qu'à l'ouverture suivante. `NetworkFirst` est frais en ligne ; `networkTimeoutSeconds: 4` évite d'attendre un réseau de métro muet. `CacheFirst`, lui, ne revalide jamais.
 - Usage : ✅ JSON qui change souvent et doit rester lisible hors ligne · ❌ shell de l'app (précache) ou assets hachés (`CacheFirst`) : une requête réseau inutile à chaque ouverture.
@@ -481,6 +484,7 @@ header {
 ## 17. urlPattern : Workbox recopie le texte
 - Sous-thème : cache
 - Niveau : 3
+- Source : revision-pwa · pwa-revision
 - Définition : Une fonction `urlPattern` de `runtimeCaching` est recopiée en texte dans `sw.js`, telle qu'écrite, sans ses imports.
 - Contexte : `generateSW` sérialise la configuration avec le code source de la fonction. Dans `sw.js`, `CATALOG_KEY` importé de `catalog.ts` n'existe pas : la fonction lève `ReferenceError` à chaque requête testée, la route ne correspond jamais, le catalogue n'est jamais mis en cache. Le build passe, l'app marche en ligne : le défaut n'apparaît qu'hors ligne. Relire le `sw.js` construit.
 - Usage : ✅ chemin en dur dans la fonction, ou une `RegExp` (recopiée telle quelle) · ❌ constante importée dans `urlPattern`.
@@ -517,6 +521,7 @@ urlPattern: ({ url }) =>
 ## 18. première ouverture : rien n'est intercepté
 - Sous-thème : service worker
 - Niveau : 3
+- Source : revision-pwa · pwa-revision
 - Définition : À la première visite, les requêtes parties avant l'installation du service worker ne passent pas par lui : rien n'est mis en cache.
 - Contexte : `registerSW.js` enregistre `sw.js` à l'événement `load` ; l'app a déjà lancé `fetch('/content/catalog.json')` au montage. Le service worker installe le précache, puis `clientsClaim()` lui fait contrôler la page, trop tard pour cette requête : le cache `catalogue` reste vide (mesuré). Hors ligne avant une 2e ouverture en ligne, l'app n'a pas de catalogue.
 - Usage : ✅ tester le hors-ligne après deux ouvertures en ligne, ou précacher la donnée à l'installation · ❌ conclure « le hors-ligne est cassé » sur une première visite.
@@ -681,6 +686,7 @@ bouton.onclick = async () => {
 ## 23. status-bar-style : lu à l'installation
 - Sous-thème : iOS
 - Niveau : 3
+- Source : revision-pwa · pwa-revision
 - Définition : `apple-mobile-web-app-status-bar-style` règle la barre d'état d'une PWA installée sur iPhone : `default`, `black` ou `black-translucent`.
 - Contexte : `black-translucent` fait passer la page sous la barre d'état ; mesuré sur un iPhone à Dynamic Island, iOS coupe alors le bas de la fenêtre (873 sur 932 pt) et aucune hauteur CSS (`100dvh`, `inset: 0`, `screen.height`) ne peint cette bande. `black` fait commencer la page sous la barre et la laisse aller jusqu'en bas. Mesurer sur l'appareil (`innerHeight`, `env(safe-area-inset-*)`) avant de corriger.
 - Usage : ✅ `black`, avec un fond de page de la couleur de l'en-tête · ❌ `black-translucent` pour gagner le haut quand le bas de l'écran porte des onglets.

@@ -490,6 +490,7 @@ aws iam get-role-policy \
 ## 16. simulate-principal-policy : tester sans appeler
 - Sous-thème : politiques
 - Niveau : 2
+- Source : data-platform · S1-04
 - Définition : `aws iam simulate-principal-policy` évalue les politiques d'un rôle pour une action et un ARN, sans rien exécuter : `allowed`, `implicitDeny` ou `explicitDeny`.
 - Contexte : Une politique fausse passe l'`apply` : elle est acceptée, puis l'appel échoue à l'exécution. Le simulateur répond tout de suite. `implicitDeny` : aucun `Allow` ne couvre la demande, le défaut d'IAM ; `explicitDeny` : un `Deny` l'interdit, et aucun `Allow` ne le lève. Côté code, les deux donnent le même `AccessDenied` (HTTP 403).
 - Usage : ✅ prouver le moindre privilège après `make up`, en script ou en CI · ❌ s'y fier seul : les politiques de bucket et de clé ne comptent que passées par `--resource-policy`.
