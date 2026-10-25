@@ -167,7 +167,62 @@ ok_actions    = [aws_sns_topic.alerts.arn]
 - [ ] 3, un par heure
 - Réponse : 1 : l'action n'est exécutée qu'au passage `OK` → `ALARM`, pas à chaque évaluation.
 
-## 7. treat_missing_data : quatre valeurs
+## 7. get-metric-widget-image : un graphe sans console
+- Sous-thème : graphes
+- Niveau : 1
+- Source : data-platform · S1-09
+- Définition : `aws cloudwatch get-metric-widget-image` rend en PNG un graphe décrit en JSON, le même format qu'un widget de tableau de bord.
+- Contexte : Une capture de la console montre le numéro de compte et ne se refait pas à l'identique. La définition JSON se commite à côté du PNG : on relance la commande et on obtient le graphe du jour. Lecture seule : aucun tableau de bord n'est créé. La réponse est du JSON dont le champ `MetricWidgetImage` contient le PNG en base64.
+- Usage : ✅ livrable, rapport, preuve d'exploitation dans le dépôt · ❌ suivi en direct : un tableau de bord CloudWatch (`aws_cloudwatch_dashboard`).
+
+```bash
+# Exemple 1 : définition commitée → PNG
+aws cloudwatch get-metric-widget-image \
+  --metric-widget file://invocations.json \
+  --query MetricWidgetImage \
+  --output text | base64 --decode \
+  > invocations.png
+file invocations.png
+# → PNG image data, 1000 x 400
+```
+
+```json
+# Exemple 2 : invocations.json, minimal
+{"metrics": [["AWS/Lambda", "Invocations",
+  "FunctionName",
+  "data-platform-dev-ingest-bodacc"]],
+ "start": "-PT24H"}
+```
+
+- Quiz : Sans `width` ni `height` dans le JSON, quelle taille fait le PNG ?
+- [ ] 1000 × 400
+- [x] 600 × 400
+- [ ] 800 × 600
+- [ ] Erreur : taille obligatoire
+- Réponse : 600 × 400 (mesuré dans l'en-tête du PNG) : taille par défaut d'un widget ; `width` et `height` la changent.
+
+## 8. start : une durée ISO 8601
+- Sous-thème : graphes
+- Niveau : 1
+- Source : data-platform · S1-09
+- Définition : `"start": "-PT24H"` fait commencer le graphe 24 heures avant maintenant : une durée ISO 8601 précédée d'un signe moins.
+- Contexte : `P` ouvre la durée, `T` sépare les jours des heures : `-P7D` (7 jours), `-PT3H` (3 heures), `-PT15M` (15 minutes). `M` avant `T` voudrait dire mois, après `T` minutes. Une date absolue (`2026-10-25T00:00:00Z`) fige le graphe ; une durée relative le garde à jour à chaque regénération.
+- Usage : ✅ graphe « dernières 24 h » regénéré par script · ❌ rapport sur une période précise et passée : `start` et `end` absolus.
+
+```json
+# Exemple 1 : trois fenêtres glissantes
+{"start": "-PT24H"}
+{"start": "-P7D"}
+{"start": "-PT15M"}
+```
+
+- Quiz : Que couvre `"start": "-P1M"` ?
+- [ ] 1 minute
+- [x] 1 mois
+- [ ] 1 heure
+- Réponse : 1 mois : sans `T`, `M` désigne des mois ; 1 minute s'écrit `-PT1M`.
+
+## 9. treat_missing_data : quatre valeurs
 - Sous-thème : données manquantes
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -192,7 +247,7 @@ etat["missing"]
 - [ ] `INSUFFICIENT_DATA`
 - Réponse : `ALARM` : hors de l'invocation quotidienne, il n'y a aucun point, et chaque absence compte comme un dépassement.
 
-## 8. Errors : un point seulement s'il y a eu invocation
+## 10. Errors : un point seulement s'il y a eu invocation
 - Sous-thème : données manquantes
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -219,7 +274,7 @@ aws cloudwatch get-metric-statistics \
 - [x] Reste `OK` : aucune erreur, aucun point
 - Réponse : reste `OK` : sans invocation, pas de point, et l'absence est lue comme normale ; il faut une alarme sur `Invocations` pour voir un job qui ne tourne plus.
 
-## 9. période et retries : le nombre de mails
+## 11. période et retries : le nombre de mails
 - Sous-thème : alarmes
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -252,7 +307,7 @@ alarmes([0, 2, 4], 15)
 - [ ] 6
 - Réponse : 1 : les trois erreurs tombent dans les 15 minutes regardées ; l'alarme reste en `ALARM` jusqu'à la minute 18 (4 + 15 − 1), puis revient à `OK`.
 
-## 10. evaluation_periods et datapoints_to_alarm : M sur N
+## 12. evaluation_periods et datapoints_to_alarm : M sur N
 - Sous-thème : alarmes
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -277,7 +332,7 @@ etat([0, 1, 0, 0], m=2, n=3)   # → 'OK'
 - [ ] `INSUFFICIENT_DATA`
 - Réponse : `OK` : sans `datapoints_to_alarm`, M = N = 3 ; le point à 0 suffit à ne pas déclencher.
 
-## 11. dimension mal écrite : l'alarme muette
+## 13. dimension mal écrite : l'alarme muette
 - Sous-thème : diagnostic
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -301,7 +356,7 @@ dimensions = {
 - [ ] Erreur à la création de l'alarme
 - Réponse : `OK` : la série surveillée n'a aucun point, lu comme « dans le seuil » ; les erreurs vont dans une autre série.
 
-## 12. alarm_description : le runbook dans le mail
+## 14. alarm_description : le runbook dans le mail
 - Sous-thème : actions
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -328,7 +383,7 @@ msg["Trigger"]["Period"]      # → 60
 - [ ] `AlarmName`
 - Réponse : `NewStateValue` : `ALARM` ou `OK` (avec `OldStateValue`) ; la description est fixe, elle ne change pas d'un message à l'autre.
 
-## 13. describe-alarm-history : qui a changé et quand
+## 15. describe-alarm-history : qui a changé et quand
 - Sous-thème : diagnostic
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -353,7 +408,7 @@ aws cloudwatch describe-alarm-history \
 - [ ] `ConfigurationUpdate`
 - Réponse : `Action` : il dit si la publication vers le topic a réussi ; si oui, chercher du côté de l'abonnement (non confirmé, spams).
 
-## 14. set-alarm-state : tester le chemin du mail
+## 16. set-alarm-state : tester le chemin du mail
 - Sous-thème : diagnostic
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -377,7 +432,7 @@ aws cloudwatch set-alarm-state \
 - [x] Que l'alarme regarde la bonne série
 - Réponse : la bonne série : l'état est forcé sans lire la métrique ; une dimension mal écrite ne se voit qu'avec une vraie erreur.
 
-## 15. for_each : une alarme par Lambda
+## 17. for_each : une alarme par Lambda
 - Sous-thème : alarmes
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -402,7 +457,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
 - [ ] L'alarme existante remplacée
 - Réponse : une alarme à créer : `for_each` ajoute une instance par nouvelle clé, sans toucher à celle d'`ingest-bodacc`.
 
-## 16. Errors = 0 : une invocation réussie débloque l'alarme
+## 18. Errors = 0 : une invocation réussie débloque l'alarme
 - Sous-thème : données manquantes
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -425,7 +480,7 @@ vrais[-1]                     # → 0
 - [ ] Un point `Errors = 0` et un point `Throttles = 1`
 - Réponse : `Errors = 1` : une invocation en erreur compte dans `Errors` ; l'alarme reste en `ALARM`, sans nouveau mail (pas de changement d'état).
 
-## 17. StateReason : lire pourquoi l'alarme a changé
+## 19. StateReason : lire pourquoi l'alarme a changé
 - Sous-thème : diagnostic
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -451,7 +506,7 @@ aws cloudwatch describe-alarms \
 - [ ] Au moment du mail
 - Réponse : entre 06:00 et 06:15 : un point est daté du début de sa période ; l'erreur est quelque part dans les 15 minutes qui suivent.
 
-## 18. tester une alarme : une vraie erreur sans effet de bord
+## 20. tester une alarme : une vraie erreur sans effet de bord
 - Sous-thème : diagnostic
 - Niveau : 2
 - Source : data-platform · S1-08
@@ -479,7 +534,56 @@ resolve_day({"date": "2099-01-01"})  # ❌ ValueError
 - [ ] 185
 - Réponse : 3 : en asynchrone, l'essai et ses 2 nouvelles tentatives (`async_retry`) échouent chacun ; les 185 de Scheduler ne concernent que la livraison.
 
-## 19. fenêtre glissante : évaluée chaque minute
+## 21. widget : "." recopie la ligne du dessus
+- Sous-thème : graphes
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : Dans `metrics` d'un widget, `"."` reprend la valeur à la même position dans la ligne précédente : espace de noms, nom de dimension, valeur.
+- Contexte : Deux séries de la même fonction ne diffèrent que par le nom de métrique : `[".", "Errors", ".", "."]` évite de répéter `AWS/Lambda`, `FunctionName` et le nom de la fonction. Le dernier élément d'une ligne peut être un objet d'options (`label`, `color`, `stat`), propre à cette série.
+- Usage : ✅ plusieurs métriques d'une même ressource sur un graphe · ❌ ressources différentes : écrire chaque ligne en entier, sinon le `"."` recopie la mauvaise valeur.
+
+```json
+# Exemple 1 : invocations et erreurs
+"metrics": [
+  ["AWS/Lambda", "Invocations",
+   "FunctionName", "data-platform-dev-ingest-bodacc",
+   {"label": "Invocations"}],
+  [".", "Errors", ".", ".",
+   {"label": "Errors", "color": "#d62728"}]
+]
+```
+
+- Quiz : Dans l'exemple, que vaut le 3e élément de la ligne `Errors` une fois résolu ?
+- [ ] `"AWS/Lambda"`
+- [x] `"FunctionName"`
+- [ ] `"data-platform-dev-ingest-bodacc"`
+- [ ] `"."`
+- Réponse : `"FunctionName"` : chaque `"."` recopie l'élément à la même position de la ligne au-dessus.
+
+## 22. widget : l'axe en UTC par défaut
+- Sous-thème : graphes
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : Un graphe rendu par `get-metric-widget-image` affiche ses heures en UTC, sauf si le JSON précise `"timezone": "+0100"`.
+- Contexte : Mesuré : le rejeu lancé vers 17:30 à Paris apparaissait en pic à 16:30 ; avec `"timezone": "+0100"`, l'axe et le pic se recalent. Le fuseau est un décalage fixe, pas `Europe/Paris` : il ne suit pas l'heure d'été, `+0200` en été. La console, elle, affiche souvent l'heure locale du navigateur : les deux ne coïncident pas.
+- Usage : ✅ graphe destiné à un lecteur qui raisonne en heure de Paris · ❌ comparer avec des logs ou des dates UTC (`fetched_at`) : garder l'UTC.
+
+```json
+# Exemple 1 : axe à l'heure de Paris (hiver)
+{"timezone": "+0100",
+ "start": "-PT24H",
+ "metrics": [["AWS/Lambda", "Invocations",
+   "FunctionName", "data-platform-dev-ingest-bodacc"]]}
+# sans timezone : pic à 16:30 ; avec : 17:30
+```
+
+- Quiz : En juillet, quelle valeur de `timezone` met l'axe à l'heure de Paris ?
+- [ ] `"+0100"`
+- [x] `"+0200"`
+- [ ] `"Europe/Paris"`
+- Réponse : `"+0200"` : l'heure d'été de Paris est UTC+2 ; `"Europe/Paris"` est refusé (mesuré : `ValidationError`, le champ attend un décalage `+HHMM`).
+
+## 23. fenêtre glissante : évaluée chaque minute
 - Sous-thème : alarmes
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -503,7 +607,7 @@ fenetre = timedelta(seconds=60) * 15
 - [x] Une fois par heure
 - Réponse : une fois par heure (doc CloudWatch) : au-delà d'un jour de fenêtre, l'alarme ne prend en compte les données que jusqu'à l'heure pleine.
 
-## 20. Errors : daté du début de l'invocation
+## 24. Errors : daté du début de l'invocation
 - Sous-thème : métriques
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -528,7 +632,7 @@ debut.replace(second=0).strftime("%H:%M")
 - [ ] Les deux, à 0,5 chacune
 - Réponse : la minute du début : la doc Lambda précise que l'horodatage reflète l'invocation, pas le moment de l'erreur.
 
-## 21. Duration : sans le démarrage à froid
+## 25. Duration : sans le démarrage à froid
 - Sous-thème : métriques
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -549,7 +653,7 @@ duration < billed        # → True
 - [ ] Oui, mais seulement à froid
 - Réponse : non : `Duration` exclut l'init ; seul le temps du handler (279 s) est comparé au seuil.
 
-## 22. AsyncEventsDropped : l'événement abandonné
+## 26. AsyncEventsDropped : l'événement abandonné
 - Sous-thème : métriques
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -573,7 +677,7 @@ dropped = int(all(t == "échec"
 - [ ] 3 et 1
 - Réponse : 2 et 0 : deux tentatives ont échoué, mais l'événement a fini par réussir, il n'est pas abandonné.
 
-## 23. plage d'évaluation : plus large que evaluation_periods
+## 27. plage d'évaluation : plus large que evaluation_periods
 - Sous-thème : données manquantes
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -602,7 +706,7 @@ etat([1] + [None] * 15, n=15, plage=20)   # → 'OK'
 - [ ] `INSUFFICIENT_DATA`
 - Réponse : `ALARM` : un seul vrai point, donc trous complétés, mais l'erreur est encore dans les 15 derniers points.
 
-## 24. dernier vrai point réévalué : l'alarme bloquée en ALARM
+## 28. dernier vrai point réévalué : l'alarme bloquée en ALARM
 - Sous-thème : données manquantes
 - Niveau : 3
 - Source : data-platform · S1-08

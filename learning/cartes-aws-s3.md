@@ -1209,7 +1209,38 @@ aws s3api list-object-versions \
 - [ ] Le premier `VersionId` seulement
 - Réponse : une liste JSON : un filtre `[?…]` produit toujours une liste ; `text` l'aplatit en valeurs séparées par des tabulations.
 
-## 36. bucket versionné : supprimer
+## 36. --delimiter / : lister les « dossiers »
+- Sous-thème : requêtes
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : `list-objects-v2 --prefix bodacc/ --delimiter /` renvoie dans `CommonPrefixes` les sous-préfixes directs, sans lister les objets : les « dossiers » `date=…/`.
+- Contexte : S3 n'a pas de dossiers : le délimiteur regroupe les clés par ce qui suit le préfixe jusqu'au prochain `/`. C'est ce que fait `aws s3 ls` pour afficher `PRE date=…/`, mais en sortie texte pour humain ; `s3api` donne du JSON filtrable. Mesuré : 20 préfixes `bodacc/date=…/`, `length(CommonPrefixes)` → `20`. Sans barre finale, `aws s3 ls s3://$B/bodacc` liste le niveau au-dessus : `PRE bodacc/`.
+- Usage : ✅ compter ou parcourir les partitions dans un script · ❌ parser `aws s3 ls` (colonnes alignées, format non contractuel) : `s3api` avec `--query`.
+
+```bash
+# Exemple 1 : les partitions, scriptable
+aws s3api list-objects-v2 --bucket "$B" \
+  --prefix bodacc/ --delimiter / \
+  --query 'CommonPrefixes[].Prefix' \
+  --output text | tr '\t' '\n'
+# → bodacc/date=2026-10-01/
+#   bodacc/date=2026-10-02/ …
+```
+
+```bash
+# Exemple 2 : la barre finale compte
+aws s3 ls "s3://$B/bodacc/"   # → PRE date=2026-10-01/ …
+aws s3 ls "s3://$B/bodacc"    # → PRE bodacc/
+```
+
+- Quiz : Que renvoie `aws s3 ls s3://$B/bodacc/date=2026-10-20` (sans barre finale) ?
+- [ ] Les deux objets de la partition
+- [x] Une seule ligne `PRE date=2026-10-20/`
+- [ ] Rien, code 1
+- [ ] `NoSuchKey`
+- Réponse : `PRE date=2026-10-20/` (mesuré) : sans `/` final, le dernier segment est un préfixe à regrouper, pas un dossier à ouvrir.
+
+## 37. bucket versionné : supprimer
 - Sous-thème : cycle de vie
 - Niveau : 3
 - Définition : Sur un bucket versionné, chaque écrasement garde l'ancienne version, récupérable par son `VersionId`, et facturée comme un objet normal.
@@ -1246,7 +1277,7 @@ rule {
 - [ ] Erreur : il faut préciser `--version-id`
 - Réponse : oui : sans `VersionId`, S3 pose un delete marker ; les versions restent stockées et facturées jusqu'à `noncurrent_version_expiration`.
 
-## 37. réplication : seulement les nouveaux objets
+## 38. réplication : seulement les nouveaux objets
 - Sous-thème : cycle de vie
 - Niveau : 3
 - Définition : La réplication S3 copie de façon asynchrone les nouveaux objets d'un bucket versionné vers un autre, dans une autre région (CRR) ou la même (SRR).
@@ -1279,7 +1310,7 @@ resource "aws_s3_bucket_replication_configuration" "raw" {
 - [ ] Seules les suppressions échouent
 - Réponse : refus à l'`apply` (`InvalidRequest`, selon la doc) : source et destination doivent toutes deux être versionnées avant la règle.
 
-## 38. Object Lock : écrire une fois
+## 39. Object Lock : écrire une fois
 - Sous-thème : cycle de vie
 - Niveau : 3
 - Définition : Object Lock interdit de supprimer ou d'écraser une version d'objet pendant une durée de rétention : stockage WORM (écrire une fois, lire souvent).
@@ -1310,7 +1341,7 @@ resource "aws_s3_bucket_object_lock_configuration" "audit" {
 - [ ] Demande la confirmation du root
 - Réponse : échec : `force_destroy` supprime chaque version, ce que `COMPLIANCE` interdit à tous ; le bucket reste tant qu'une version est sous rétention.
 
-## 39. S3 : écritures concurrentes
+## 40. S3 : écritures concurrentes
 - Sous-thème : requêtes
 - Niveau : 3
 - Définition : S3 est fortement cohérent : un `GET` ou `LIST` après un `PUT` réussi voit l'objet ; une écriture conditionnelle refuse d'écraser une clé existante.
@@ -1350,7 +1381,7 @@ store["_DONE"]  # → "run-1"
 - [ ] S3 garde les deux objets sous la même clé
 - Réponse : les deux réussissent et la dernière écriture reçue l'emporte, sans erreur ; seule une condition (`If-None-Match`, `If-Match`) fait échouer l'une des deux.
 
-## 40. ETag : pas toujours un MD5
+## 41. ETag : pas toujours un MD5
 - Sous-thème : requêtes
 - Niveau : 3
 - Définition : L'ETag d'un objet envoyé d'un bloc est le MD5 de son contenu ; en multipart, c'est le MD5 des MD5 des parts, suffixé `-N`.
@@ -1385,7 +1416,7 @@ aws s3api list-objects-v2 --bucket "$B" \
 - [ ] Le MD5 suffixé `-0`
 - Réponse : un MD5 de MD5 suffixé `-1` (mesuré sur un artefact CodePipeline de 3 747 octets) : la dernière part peut faire moins de 5 Mo, même si c'est la seule.
 
-## 41. TransferConfig : le seuil multipart
+## 42. TransferConfig : le seuil multipart
 - Sous-thème : requêtes
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1419,7 +1450,7 @@ m.stop()
 - [ ] `-20`
 - Réponse : `-3` (mesuré sous moto) : 8 + 8 + 4 Mio, la dernière part est plus petite ; le suffixe compte les parts.
 
-## 42. copy_object : changer les métadonnées
+## 43. copy_object : changer les métadonnées
 - Sous-thème : requêtes
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1452,7 +1483,7 @@ m.stop()
 - [ ] L'objet est dupliqué sous une autre version
 - Réponse : `InvalidRequest` (mesuré) : en mode `COPY`, une copie sur soi-même ne change rien, S3 la refuse ; le nouveau type n'est pris qu'avec `REPLACE`.
 
-## 43. mimetypes : le .gz est un encodage
+## 44. mimetypes : le .gz est un encodage
 - Sous-thème : requêtes
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1476,7 +1507,7 @@ mimetypes.guess_type("export.csv")
 - [ ] `("application/jsonl", "gzip")`
 - Réponse : `(None, "gzip")` (mesuré) : `.gz` est lu comme encodage, puis `.jsonl` n'a pas de type connu ; `application/gzip` n'est jamais proposé.
 
-## 44. noncurrent_days : depuis le remplacement
+## 45. noncurrent_days : depuis le remplacement
 - Sous-thème : cycle de vie
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1513,7 +1544,7 @@ rule {
 - [ ] Le 2026-11-30
 - Réponse : jamais : `noncurrent_version_expiration` ne touche que les versions non courantes ; la courante dépend de `expiration`.
 
-## 45. newer_noncurrent_versions : garder N versions
+## 46. newer_noncurrent_versions : garder N versions
 - Sous-thème : cycle de vie
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1536,7 +1567,7 @@ noncurrent_version_expiration {
 - [ ] Oui, mais passée en Glacier
 - Réponse : oui : il n'existe aucune version non courante plus récente, la condition des 2 versions plus récentes n'est jamais remplie.
 
-## 46. ChecksumSHA256 : l'intégrité gardée par S3
+## 47. ChecksumSHA256 : l'intégrité gardée par S3
 - Sous-thème : requêtes
 - Niveau : 3
 - Source : data-platform · S1-07

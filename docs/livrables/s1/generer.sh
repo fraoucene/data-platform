@@ -12,7 +12,9 @@ mask() { sed -E 's/[0-9]{12}/<account_id>/g'; }
 {
   echo "# Partitions de s3://$BUCKET/bodacc/ (généré le $(date -u +%Y-%m-%dT%H:%M:%SZ))"
   echo "# date        count   gz_bytes  fetched_at"
-  aws s3 ls "s3://$BUCKET/bodacc/" --profile "$PROFILE" | awk '{print $2}' | sed -n 's|^date=\(.*\)/$|\1|p' |
+  # Préfixes de partition via l'API (format stable), pas en découpant l'affichage de `aws s3 ls`.
+  aws s3api list-objects-v2 --bucket "$BUCKET" --prefix bodacc/ --delimiter / --profile "$PROFILE" \
+    --query 'CommonPrefixes[].Prefix' --output text | tr '\t' '\n' | sed -n 's|^bodacc/date=\(.*\)/$|\1|p' |
     while read -r day; do
       aws s3 cp "s3://$BUCKET/bodacc/date=$day/_MANIFEST.json" - --profile "$PROFILE" 2>/dev/null |
         jq -r --arg d "$day" '"\($d)  \(.count)  \(.gz_bytes)  \(.fetched_at)"' ||

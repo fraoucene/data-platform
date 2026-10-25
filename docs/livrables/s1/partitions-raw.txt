@@ -1,4 +1,4 @@
-# Partitions de s3://data-platform-dev-raw-<account_id>/bodacc/ (généré le 2026-10-25T18:16:23Z)
+# Partitions de s3://data-platform-dev-raw-<account_id>/bodacc/ (généré le 2026-10-25T18:25:18Z)
 # date        count   gz_bytes  fetched_at
 2026-10-01  15874  1746812  2026-10-25T16:36:49+00:00
 2026-10-02  14396  2041778  2026-10-25T16:36:52+00:00

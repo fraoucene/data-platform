@@ -8,7 +8,7 @@ updated: 2026-10-25
 ---
 
 # Cartes · Shell
-DevOps · Shell (zsh, bash) : redirections, guillemets, expansion, enchaînement, variables (format spec v3 de revision-pwa).
+DevOps · Shell (zsh, bash) : redirections, guillemets, expansion, enchaînement, variables, scripts (format spec v3 de revision-pwa).
 
 ## 1. < : lire un fichier en entrée
 - Sous-thème : redirections
@@ -204,7 +204,29 @@ echo $?   # → 0  (code du echo)
 - [ ] `127`
 - Réponse : `1` : pour `grep`, 1 = aucune ligne trouvée, 2 = vraie erreur (fichier illisible).
 
-## 8. 2>&1 : l'ordre compte
+## 8. column -t : aligner des colonnes
+- Sous-thème : scripts
+- Niveau : 1
+- Source : data-platform · S1-09
+- Définition : `column -t` aligne en tableau un texte dont les champs sont séparés par des espaces, pour une sortie lisible par un humain.
+- Contexte : Les valeurs de longueurs différentes (`0`, `15874`) décalent les colonnes ; `column -t` calcule la largeur de chaque colonne sur toutes les lignes, donc il lit toute l'entrée avant d'écrire. `-s ','` change le séparateur d'entrée (CSV simple). La sortie reste du texte : un humain la lit, un script préfère du JSON ou `@tsv`.
+- Usage : ✅ rapport ou livrable lu par un humain (`partitions-raw.txt`) · ❌ sortie relue par un autre programme : `jq -r '@tsv'` ou du JSON.
+
+```bash
+# Exemple 1 : partitions alignées
+printf '2026-10-01 15874 1746812\n2026-10-03 0 20\n' \
+  | column -t
+# → 2026-10-01  15874  1746812
+#   2026-10-03  0      20
+```
+
+- Quiz : `column -t` reçoit 20 lignes au fil d'une boucle lente. Quand affiche-t-il la première ?
+- [ ] Dès qu'elle arrive
+- [x] Quand la 20e est arrivée
+- [ ] Toutes les 10 lignes
+- Réponse : après la dernière : il doit connaître la largeur maximale de chaque colonne avant d'écrire.
+
+## 9. 2>&1 : l'ordre compte
 - Sous-thème : redirections
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -227,7 +249,7 @@ wc -c < f2   # → 0
 - [ ] Seulement stderr
 - Réponse : les deux : `2>&1` est appliqué après le branchement du pipe, stderr suit donc stdout dans le pipe.
 
-## 9. guillemets doubles : $ et ` restent actifs
+## 10. guillemets doubles : $ et ` restent actifs
 - Sous-thème : guillemets
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -257,7 +279,7 @@ echo 'a==`false`b'
 - [ ] Les VersionId courants
 - Réponse : `ParamValidation` (mesuré) : le shell remplace `` `false` `` par rien, la CLI reçoit `IsLatest==]`, illisible.
 
-## 10. glob zsh : no matches found
+## 11. glob zsh : no matches found
 - Sous-thème : expansion
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -287,7 +309,7 @@ zsh -c 'echo moto[s3]'
 - [ ] Ignore la query string
 - Réponse : `no matches found` : `?` remplace un caractère dans un motif de fichiers ; aucun fichier ne correspond, zsh refuse.
 
-## 11. pipe : seul le dernier code compte
+## 12. pipe : seul le dernier code compte
 - Sous-thème : enchaînement
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -310,7 +332,7 @@ echo $?    # → 1
 - [x] `0`
 - Réponse : `0` : c'est le code de `wc`, qui a bien compté zéro ligne ; l'erreur de `aws` est perdue.
 
-## 12. heredoc : <<'EOF' fige le texte
+## 13. heredoc : <<'EOF' fige le texte
 - Sous-thème : redirections
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -338,7 +360,7 @@ EOF
 - [ ] Les accents graves sont retirés
 - Réponse : `make check` est lancé : sans `'EOF'`, `` `…` `` est une substitution de commande.
 
-## 13. export : visible des commandes lancées
+## 14. export : visible des commandes lancées
 - Sous-thème : variables
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -362,7 +384,7 @@ zsh -c 'echo "A=$A"'
 - [ ] Seulement dans les sous-processus
 - Réponse : oui : `source` lit le fichier dans le shell courant ; `export` ne compte que pour les programmes lancés ensuite.
 
-## 14. VAR=x cmd : une variable pour une seule commande
+## 15. VAR=x cmd : une variable pour une seule commande
 - Sous-thème : variables
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -384,7 +406,7 @@ echo "B=$B"
 - [ ] Erreur : affectation interdite
 - Réponse : une ligne vide : `"$D"` est développé avant le lancement d'`echo`, quand `D` n'existe pas encore.
 
-## 15. ~ : jamais entre guillemets
+## 16. ~ : jamais entre guillemets
 - Sous-thème : expansion
 - Niveau : 2
 - Source : data-platform · S1-07
@@ -415,7 +437,29 @@ str(Path("~/x").expanduser()).startswith("~")
 - [ ] La liste du dossier courant
 - Réponse : erreur : entre guillemets, `~` est un caractère ordinaire ; `ls` cherche `./~/Desktop`.
 
-## 16. zsh ne découpe pas $VAR
+## 17. cd "$(dirname "$0")" : partir du dossier du script
+- Sous-thème : scripts
+- Niveau : 2
+- Source : data-platform · S1-09
+- Définition : `cd "$(dirname "$0")"` en tête de script se place dans le dossier du script, quel que soit le dossier d'où on le lance.
+- Contexte : Un chemin relatif (`file://invocations.json`, `> partitions-raw.txt`) se résout depuis le dossier courant de l'appelant, pas depuis le script : lancé depuis la racine, il écrit au mauvais endroit. `$0` est le chemin du script tel qu'il a été appelé ; `dirname` en garde le dossier. Guillemets obligatoires : un chemin avec une espace casserait le `cd`. ≈ `__dirname` en Node.
+- Usage : ✅ script qui lit ou écrit des fichiers à côté de lui · ❌ script qui doit agir sur le dossier de l'appelant (formatage, git) : ne pas changer de dossier.
+
+```bash
+# Exemple 1 : même script, deux dossiers
+# a/b/s.sh :  cd "$(dirname "$0")"; pwd
+# a/b/t.sh :  pwd
+bash a/b/s.sh   # → …/a/b
+bash a/b/t.sh   # → …   (dossier de l'appelant)
+```
+
+- Quiz : `bash docs/livrables/s1/generer.sh` lancé depuis la racine, sans le `cd` : où atterrit `partitions-raw.txt` ?
+- [ ] Dans `docs/livrables/s1/`
+- [x] À la racine du dépôt
+- [ ] Dans `$HOME`
+- Réponse : à la racine : une redirection relative se résout depuis le dossier courant de l'appelant, pas depuis le script.
+
+## 18. zsh ne découpe pas $VAR
 - Sous-thème : variables
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -438,7 +482,7 @@ printf '[%s]\n' $V
 - [ ] Rien : erreur de syntaxe
 - Réponse : `mes` puis `notes.txt` : le shebang lance bash, qui découpe `$F` non protégé en deux arguments.
 
-## 17. set -euo pipefail : échouer tôt
+## 19. set -euo pipefail : échouer tôt
 - Sous-thème : enchaînement
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -466,3 +510,69 @@ echo apres   # jamais affiché
 - [x] Affiche `X` puis `Y`
 - [ ] Affiche `Y` seulement
 - Réponse : `X` puis `Y` : une commande suivie de `||` est testée, `set -e` ne s'applique pas à elle.
+
+## 20. set -e dans une boucle : protéger chaque tour
+- Sous-thème : scripts
+- Niveau : 3
+- Source : data-platform · S1-09
+- Définition : Sous `set -e`, un échec dans une boucle arrête tout le script ; `cmd || repli` traite l'échec du tour et passe au suivant.
+- Contexte : Mesuré : `set -euo pipefail`, une boucle sur des partitions, un `grep` qui ne trouve rien au premier tour → script terminé, code 1, aucune ligne écrite. Avec `|| echo "absent $x"`, l'échec est testé, `set -e` ne s'applique plus à lui, et chaque tour s'exécute. Dans `generer.sh`, une partition sans manifest donne une ligne « pas de manifest » au lieu d'arrêter le livrable.
+- Usage : ✅ boucle sur des éléments dont certains peuvent manquer (manifests, fichiers) · ❌ `|| true` partout : il cache aussi les vraies pannes ; un repli qui dit ce qui manque.
+
+```bash
+# Exemple 1 : sans repli, le script meurt
+set -euo pipefail
+printf 'a\nb\n' | while read -r x; do
+  grep -q zz /dev/null      # échoue
+  echo "vu $x"
+done
+# → rien affiché, code de sortie 1
+```
+
+```bash
+# Exemple 2 : avec repli, chaque tour passe
+set -euo pipefail
+printf 'a\nb\n' | while read -r x; do
+  grep -q zz /dev/null || echo "absent $x"
+done
+echo fin
+# → absent a / absent b / fin
+```
+
+- Quiz : Avec `set -e`, que fait `f() { echo début; false; echo après; }; f || echo KO` ?
+- [ ] Affiche `début` puis `KO`
+- [x] Affiche `début` puis `après`
+- [ ] Affiche `début` puis s'arrête
+- Réponse : `début` puis `après` (mesuré) : appelée dans un `||`, toute la fonction s'exécute sans `set -e`, et elle réussit grâce au dernier `echo`.
+
+## 21. pipe et while : la variable perdue en bash
+- Sous-thème : variables
+- Niveau : 3
+- Source : data-platform · S1-09
+- Définition : En bash, `cmd | while read` tourne dans un sous-shell : les variables modifiées dans la boucle sont perdues ensuite ; zsh les garde.
+- Contexte : Chaque étage d'un pipe bash tourne dans son propre processus. Mesuré : un compteur incrémenté dans `printf … | while read` vaut 0 après la boucle en bash, 2 en zsh (zsh exécute le dernier étage dans le shell courant). Un script testé dans le terminal zsh d'un Mac casse donc sous `#!/usr/bin/env bash`. Correctif bash : `while … done < <(cmd)`.
+- Usage : ✅ `< <(cmd)` quand la boucle doit remplir une variable · ❌ compter ou cumuler dans `cmd | while` en bash ; ou bien tout afficher dans la boucle, sans variable.
+
+```bash
+# Exemple 1 : même code, deux shells
+n=0
+printf 'a\nb\n' | while read -r x; do
+  n=$((n+1))
+done
+echo "n=$n"
+# bash → n=0   zsh → n=2
+```
+
+```bash
+# Exemple 2 : bash, sans sous-shell
+n=0
+while read -r x; do n=$((n+1)); done \
+  < <(printf 'a\nb\n')
+echo "n=$n"   # → n=2
+```
+
+- Quiz : Sur le bash 3.2 livré avec macOS, que donne `shopt -s lastpipe` (qui garde le dernier étage dans le shell courant) ?
+- [ ] La variable est conservée, `n=2`
+- [x] `invalid shell option name`, puis `n=0`
+- [ ] Une erreur de syntaxe sur le pipe
+- Réponse : `invalid shell option name` (mesuré, bash 3.2.57) : `lastpipe` date de bash 4.2 ; `< <(cmd)` marche partout, y compris en 3.2.
