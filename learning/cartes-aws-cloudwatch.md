@@ -119,7 +119,7 @@ aws cloudwatch describe-alarms \
 - Source : data-platform · S1-08
 - Définition : `period` (secondes) découpe la métrique en points : chaque point agrège, avec la statistique choisie, ce qui s'est passé pendant la période.
 - Contexte : Lambda publie en résolution standard, à la minute : `period` vaut 60 ou un multiple. Une période courte réagit vite mais découpe une même panne en plusieurs points ; une période longue regroupe une panne et ses retries en un seul point. Le choix dépend du rythme du job, pas d'une valeur « standard ».
-- Usage : ✅ 60 s pour un service continu, 900 s pour un job quotidien avec retries · ❌ une période plus courte que la résolution de la métrique : points vides.
+- Usage : ✅ 60 s, avec `evaluation_periods` pour la durée regardée (15 × 60 s), même pour un job quotidien · ❌ une seule longue période (900 s) sur une métrique rare : l'alarme peut rester bloquée en `ALARM` (mesuré en S1-08).
 
 ```python
 # Exemple 1 : 3 erreurs, deux découpages
@@ -133,8 +133,9 @@ len(par_15min)        # → 1 point (Sum 3)
 ```hcl
 # Exemple 2 : l'alarme de data-platform
 statistic           = "Sum"
-period              = 900
-evaluation_periods  = 1
+period              = 60
+evaluation_periods  = 15   # 15 min regardées
+datapoints_to_alarm = 1    # une minute en erreur suffit
 comparison_operator = "GreaterThanOrEqualToThreshold"
 threshold           = 1
 ```
@@ -222,37 +223,41 @@ aws cloudwatch get-metric-statistics \
 - Sous-thème : alarmes
 - Niveau : 2
 - Source : data-platform · S1-08
-- Définition : Une période plus courte que l'étalement des retries découpe une seule panne en plusieurs passages `ALARM` / `OK`, donc plusieurs paires de mails.
-- Contexte : En asynchrone, Lambda réessaie après ~1 min puis ~2 min : trois erreurs étalées sur environ 3 min. Avec `period = 60` et `notBreaching`, chaque minute sans erreur ramène l'alarme à `OK`, puis l'erreur suivante la renvoie en `ALARM`. Une période de 15 min couvre les trois tentatives : une panne, un mail `ALARM`, un mail `OK`.
-- Usage : ✅ période ≥ fenêtre des retries pour un job unique · ❌ `period = 60` sur une Lambda asynchrone : jusqu'à six mails pour un seul jour raté.
+- Définition : Pour qu'une panne et ses retries donnent un seul mail, la durée regardée (`period × evaluation_periods`) doit couvrir l'étalement des retries.
+- Contexte : En asynchrone, Lambda réessaie après ~1 min puis ~2 min : trois erreurs étalées sur environ 3 min. Si l'alarme ne regardait qu'une minute, une minute sans erreur pourrait la ramener à `OK` entre deux tentatives. Couvrir 15 min suffit ; mais avec une seule période de 900 s, l'alarme est restée bloquée en `ALARM` (dernier vrai point réévalué). La forme qui marche : 15 périodes de 60 s, 1 sur 15.
+- Usage : ✅ `period = 60`, `evaluation_periods = 15`, `datapoints_to_alarm = 1` pour une Lambda asynchrone · ❌ regarder une seule minute (`evaluation_periods = 1`) : une panne peut être découpée en plusieurs paires de mails.
 
 ```python
 # Exemple 1 : passages en ALARM
 # (minutes, fenêtres alignées : simplifié)
-def alarmes(erreurs, period, fin=20):
-    pts = [any(t // period == p for t in erreurs)
-           for p in range(fin // period + 1)]
+def alarmes(erreurs, n, fin=40):
+    # ALARM à la minute t si une erreur
+    # tombe dans les n dernières minutes
+    pts = [any(t - n < e <= t for e in erreurs)
+           for t in range(fin)]
     return sum(1 for a, b in
                zip([False] + pts, pts) if b and not a)
 
 essais = [0, 1, 3]   # minutes
-alarmes(essais, 1)   # → 2
-alarmes(essais, 15)  # → 1
+alarmes(essais, 1)   # → 2  (n = 1 minute)
+alarmes(essais, 15)  # → 1  (1 sur 15)
+alarmes([0, 2, 4], 15)
+# → 1
 ```
 
-- Quiz : Retries plus espacés, erreurs à 0, 2 et 4 min, `period = 60` : combien de passages en `ALARM` ?
-- [ ] 1
+- Quiz : Erreurs à 0, 2 et 4 min, alarme « 1 sur 15 » de 60 s : combien de passages en `ALARM` (modèle de l'exemple) ?
+- [x] 1
 - [ ] 2
-- [x] 3
+- [ ] 3
 - [ ] 6
-- Réponse : 3 : chaque minute sans erreur (1 et 3) ramène l'alarme à `OK`, chaque erreur la renvoie en `ALARM` ; soit six mails.
+- Réponse : 1 : les trois erreurs tombent dans les 15 minutes regardées ; l'alarme reste en `ALARM` jusqu'à la minute 18 (4 + 15 − 1), puis revient à `OK`.
 
 ## 10. evaluation_periods et datapoints_to_alarm : M sur N
 - Sous-thème : alarmes
 - Niveau : 2
 - Source : data-platform · S1-08
 - Définition : `evaluation_periods` (N) fixe combien de points récents on regarde ; `datapoints_to_alarm` (M) combien doivent dépasser pour passer en `ALARM`.
-- Contexte : Sans `datapoints_to_alarm`, M vaut N : tous les points évalués doivent dépasser. « 2 sur 3 » tolère un point isolé, utile contre le bruit d'un service continu. Les points en dépassement n'ont pas besoin d'être consécutifs, seulement dans les N derniers. Pour un job quotidien, 1 sur 1 suffit : un seul échec est déjà une journée perdue.
+- Contexte : Sans `datapoints_to_alarm`, M vaut N : tous les points évalués doivent dépasser. « 2 sur 3 » tolère un point isolé, utile contre le bruit d'un service continu. Les points en dépassement n'ont pas besoin d'être consécutifs, seulement dans les N derniers. Pour un job quotidien : 1 sur 15 avec des périodes de 60 s (un seul échec est déjà une journée perdue, et 15 périodes courtes laissent l'alarme redescendre).
 - Usage : ✅ M sur N pour une latence ou un taux d'erreur bruité · ❌ 3 sur 3 avec `period = 900` sur un job quotidien : il faudrait 45 min d'erreurs continues, l'alarme ne part jamais.
 
 ```python
@@ -311,9 +316,9 @@ msg = json.loads('''{
   "AlarmName": "dp-dev-ingest-bodacc-errors",
   "NewStateValue": "ALARM",
   "AlarmDescription": "lire aws logs tail …, puis make replay",
-  "Trigger": {"MetricName": "Errors", "Period": 900}}''')
+  "Trigger": {"MetricName": "Errors", "Period": 60}}''')
 msg["NewStateValue"]          # → 'ALARM'
-msg["Trigger"]["Period"]      # → 900
+msg["Trigger"]["Period"]      # → 60
 ```
 
 - Quiz : Quel champ du message dit si c'est une panne ou un retour à la normale ?
@@ -397,22 +402,99 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
 - [ ] L'alarme existante remplacée
 - Réponse : une alarme à créer : `for_each` ajoute une instance par nouvelle clé, sans toucher à celle d'`ingest-bodacc`.
 
-## 16. fenêtre glissante : évaluée chaque minute
+## 16. Errors = 0 : une invocation réussie débloque l'alarme
+- Sous-thème : données manquantes
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Une invocation réussie publie un point `Errors = 0` ; devenu le point le plus récent, il ramène l'alarme à `OK`.
+- Contexte : `Errors` n'a de points que pendant les minutes où la fonction a tourné : 0 si tout va bien, ≥ 1 sinon. Sans invocation, il n'y a rien. Mesuré : alarme bloquée en `ALARM` depuis 18:17 sur l'erreur, un `make replay` réussi vers 18:40, retour `OK` à 18:41:11 avec la raison « 1 datapoint [0.0] was not greater than or equal to the threshold ». Le temps seul ne l'avait pas fait.
+- Usage : ✅ comprendre pourquoi le rejeu « répare » aussi l'alarme · ❌ s'en servir comme réglage : une alarme doit redescendre seule (périodes courtes, 1 sur 15).
+
+```python
+# Exemple 1 : le point le plus récent décide
+points = [1, None, None, 0]  # erreur, rien, rien, succès
+vrais = [p for p in points if p is not None]
+vrais[-1]                     # → 0
+"ALARM" if vrais[-1] >= 1 else "OK"
+# → 'OK'
+```
+
+- Quiz : Même alarme bloquée, mais le rejeu échoue lui aussi : que publie-t-il ?
+- [ ] Rien : un échec ne publie pas de point
+- [x] Un point `Errors = 1`
+- [ ] Un point `Errors = 0` et un point `Throttles = 1`
+- Réponse : `Errors = 1` : une invocation en erreur compte dans `Errors` ; l'alarme reste en `ALARM`, sans nouveau mail (pas de changement d'état).
+
+## 17. StateReason : lire pourquoi l'alarme a changé
+- Sous-thème : diagnostic
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `StateReason` (dans le mail et `describe-alarms`) dit sur quels points l'alarme a décidé : valeur, date du point, ou points manquants.
+- Contexte : Mesuré : `Threshold Crossed: 1 datapoint [1.0 (17:02:00)]` lors d'une erreur à 17:16 UTC, la date est le début de la période qui contient l'erreur, pas l'heure de l'erreur. `1 datapoint [0.0 …]` : un vrai point sain a ramené `OK`. `no datapoints were received for 15 periods and 15 missing datapoints were treated as [NonBreaching]` : retour `OK` par absence de données.
+- Usage : ✅ distinguer un retour `OK` par succès d'un retour par silence, dater une panne · ❌ lire la date du point comme l'heure exacte de l'erreur.
+
+```bash
+# Exemple 1 : la raison du dernier changement
+aws cloudwatch describe-alarms \
+  --alarm-names data-platform-dev-ingest-bodacc-errors \
+  --query 'MetricAlarms[0].StateReason' \
+  --output text --profile data-platform
+# → Threshold Crossed: no datapoints were
+#   received for 15 periods and 15 missing
+#   datapoints were treated as [NonBreaching].
+```
+
+- Quiz : Période de 900 s, point annoncé `[1.0 (06:00:00)]` : quand l'erreur a-t-elle eu lieu ?
+- [ ] À 06:00:00 exactement
+- [x] Entre 06:00 et 06:15
+- [ ] Entre 05:45 et 06:00
+- [ ] Au moment du mail
+- Réponse : entre 06:00 et 06:15 : un point est daté du début de sa période ; l'erreur est quelque part dans les 15 minutes qui suivent.
+
+## 18. tester une alarme : une vraie erreur sans effet de bord
+- Sous-thème : diagnostic
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Tester une alarme de bout en bout : provoquer une vraie erreur du handler, qui échoue avant toute écriture, sans casser source ni droits.
+- Contexte : Ici, une date future (`{"date": "2099-01-01"}`) : `resolve_day` lève `ValueError` à la première ligne, rien n'est lu ni écrit dans S3, et `Errors` compte l'échec comme une vraie panne. En synchrone (`aws lambda invoke`), pas de retry : une erreur, un mail. `set-alarm-state` ne teste que le chemin SNS → mail, pas la métrique ni la dimension. Après le test, ne pas réinvoquer avant le retour à `OK`.
+- Usage : ✅ entrée invalide refusée par la validation de l'event · ❌ couper le réseau, retirer un droit IAM, ou tester sur un jour réel : effets de bord et partition partielle possible.
+
+```python
+# Exemple 1 : refusée avant tout appel
+from datetime import date
+
+def resolve_day(event, today=date(2026, 10, 25)):
+    day = date.fromisoformat(event["date"])
+    if day >= today:
+        raise ValueError(f"{day} n'est pas terminée")
+    return day
+
+resolve_day({"date": "2099-01-01"})  # ❌ ValueError
+```
+
+- Quiz : Même test, mais invoqué avec `--invocation-type Event` : combien d'erreurs dans `Errors` ?
+- [ ] 1
+- [ ] 2
+- [x] 3
+- [ ] 185
+- Réponse : 3 : en asynchrone, l'essai et ses 2 nouvelles tentatives (`async_retry`) échouent chacun ; les 185 de Scheduler ne concernent que la livraison.
+
+## 19. fenêtre glissante : évaluée chaque minute
 - Sous-thème : alarmes
 - Niveau : 3
 - Source : data-platform · S1-08
 - Définition : Une alarme est évaluée chaque minute sur les dernières `period × evaluation_periods` secondes : la fenêtre glisse, sans alignement sur l'horloge.
-- Contexte : Avec `period = 900`, l'évaluation de 06:05 regarde 05:50 → 06:05, celle de 06:06 regarde 05:51 → 06:06. Une erreur à 06:00 maintient donc `ALARM` jusqu'à ce qu'elle sorte de la fenêtre, environ 15 min plus tard, puis `OK`. Une fenêtre « horloge » (alignée, avec fuseau) existe en option. Au-delà d'un jour de fenêtre totale, l'évaluation n'a lieu qu'une fois par heure.
-- Usage : ✅ prévoir le délai du mail `OK` (≈ une période après la dernière erreur) · ❌ attendre un `OK` à la minute où le rejeu réussit.
+- Contexte : Avec 15 périodes de 60 s, l'évaluation de 06:05 regarde 05:50 → 06:05, celle de 06:06 regarde 05:51 → 06:06. Une erreur à 06:00 maintient `ALARM` jusqu'à sa sortie des 15 minutes, puis `OK` (mesuré : 21 min après la dernière erreur, latence comprise). Piège : CloudWatch lit une plage plus large ; avec une seule période de 900 s, la sortie de fenêtre n'a pas suffi. Option : fenêtre « horloge ». Au-delà d'un jour, évaluation horaire.
+- Usage : ✅ prévoir le délai du mail `OK` (≈ 15 min + quelques minutes de latence après la dernière erreur) · ❌ compter sur la sortie de fenêtre avec `evaluation_periods = 1` : voir « dernier vrai point réévalué ».
 
 ```python
 # Exemple 1 : quand revient OK ?
 from datetime import datetime, timedelta
 
 derniere_erreur = datetime(2026, 10, 26, 6, 3)
-period = timedelta(seconds=900)
-(derniere_erreur + period).strftime("%H:%M")
-# → '06:18'  (≈ retour à OK)
+fenetre = timedelta(seconds=60) * 15
+(derniere_erreur + fenetre).strftime("%H:%M")
+# → '06:18'  (+ latence : OK vers 06:20)
 ```
 
 - Quiz : Fenêtre totale de 2 jours (`period` 86400, 2 périodes) : à quelle fréquence l'alarme est-elle évaluée ?
@@ -421,7 +503,7 @@ period = timedelta(seconds=900)
 - [x] Une fois par heure
 - Réponse : une fois par heure (doc CloudWatch) : au-delà d'un jour de fenêtre, l'alarme ne prend en compte les données que jusqu'à l'heure pleine.
 
-## 17. Errors : daté du début de l'invocation
+## 20. Errors : daté du début de l'invocation
 - Sous-thème : métriques
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -446,7 +528,7 @@ debut.replace(second=0).strftime("%H:%M")
 - [ ] Les deux, à 0,5 chacune
 - Réponse : la minute du début : la doc Lambda précise que l'horodatage reflète l'invocation, pas le moment de l'erreur.
 
-## 18. Duration : sans le démarrage à froid
+## 21. Duration : sans le démarrage à froid
 - Sous-thème : métriques
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -467,7 +549,7 @@ duration < billed        # → True
 - [ ] Oui, mais seulement à froid
 - Réponse : non : `Duration` exclut l'init ; seul le temps du handler (279 s) est comparé au seuil.
 
-## 19. AsyncEventsDropped : l'événement abandonné
+## 22. AsyncEventsDropped : l'événement abandonné
 - Sous-thème : métriques
 - Niveau : 3
 - Source : data-platform · S1-08
@@ -490,3 +572,59 @@ dropped = int(all(t == "échec"
 - [ ] 0 et 0
 - [ ] 3 et 1
 - Réponse : 2 et 0 : deux tentatives ont échoué, mais l'événement a fini par réussir, il n'est pas abandonné.
+
+## 23. plage d'évaluation : plus large que evaluation_periods
+- Sous-thème : données manquantes
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : À chaque évaluation, CloudWatch lit plus de points que `evaluation_periods` (la plage d'évaluation), pour combler les trous avec de vrais points plus anciens.
+- Contexte : Doc *alarms-and-missing-data* : s'il y a assez de vrais points dans la plage (au moins `evaluation_periods`), l'alarme décide sur les plus récents d'entre eux et `treat_missing_data` est ignoré. Sinon seulement, les trous sont complétés (`notBreaching` → dans le seuil). La taille exacte de la plage dépend de la période et n'est pas réglable. Vaut pour la fenêtre glissante (par défaut), pas pour la fenêtre « horloge ».
+- Usage : ✅ `evaluation_periods` grand (15) sur une métrique rare : peu de vrais points, les trous jouent · ❌ `evaluation_periods = 1` : un seul vrai point ancien suffit, `notBreaching` n'entre jamais en jeu.
+
+```python
+# Exemple 1 : la règle, simplifiée
+def etat(points, n, plage, seuil=1):
+    vus = points[-plage:]
+    vrais = [p for p in vus if p is not None]
+    if len(vrais) >= n:
+        evalues = vrais[-n:]   # derniers VRAIS
+    else:                      # trous = notBreaching
+        evalues = [p or 0 for p in vus[-n:]]
+    return "ALARM" if any(p >= seuil for p in evalues) else "OK"
+
+etat([1, None, None], n=1, plage=3)       # → 'ALARM'
+etat([1] + [None] * 15, n=15, plage=20)   # → 'OK'
+```
+
+- Quiz : Modèle de l'exemple, `n=15`, points `[1] + [None] * 10` : quel état ?
+- [x] `ALARM`
+- [ ] `OK`
+- [ ] `INSUFFICIENT_DATA`
+- Réponse : `ALARM` : un seul vrai point, donc trous complétés, mais l'erreur est encore dans les 15 derniers points.
+
+## 24. dernier vrai point réévalué : l'alarme bloquée en ALARM
+- Sous-thème : données manquantes
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : Sur une métrique qui ne publie plus, une alarme à une seule période peut réévaluer indéfiniment son dernier vrai point, et rester en `ALARM`.
+- Contexte : Mesuré en S1-08 : `period = 900`, `evaluation_periods = 1`, `notBreaching` ; erreur à 18:16, `ALARM` à 18:17, toujours `ALARM` à 18:40 alors que l'erreur était sortie de la période. Le seul vrai point de la plage, l'erreur, suffisait (1 ≥ 1). Doc : « might repeatedly re-evaluate the last set of data points… use shorter periods ». Correctif mesuré : 60 s × 15, 1 sur 15 → `OK` seul en 20 min.
+- Usage : ✅ métrique d'erreurs rare : périodes de 60 s, `evaluation_periods` 15, `datapoints_to_alarm` 1 · ❌ une seule longue période avec `notBreaching` en croyant que « pas de point = OK ».
+
+```hcl
+# Exemple 1 : avant / après (data-platform)
+# avant : bloquée en ALARM
+period             = 900
+evaluation_periods = 1
+# après : OK seule 15 min après l'erreur
+period              = 60
+evaluation_periods  = 15
+datapoints_to_alarm = 1
+treat_missing_data  = "notBreaching"
+```
+
+- Quiz : Ancien réglage (900 s × 1), panne à 06:00, aucune invocation jusqu'au lendemain 06:00 : quel risque ?
+- [ ] Aucun : `OK` à 06:15
+- [x] Rester en `ALARM` longtemps : pas de mail à la panne suivante
+- [ ] Un mail `ALARM` toutes les 15 min
+- [ ] `INSUFFICIENT_DATA` toute la nuit
+- Réponse : rester en `ALARM` longtemps (mesuré : 23 min et plus, sans fin observée) : les actions ne partent qu'au changement d'état, une nouvelle panne pendant ce temps ne déclencherait aucun mail.
