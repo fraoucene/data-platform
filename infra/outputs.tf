@@ -52,3 +52,8 @@ output "lambda_functions" {
   description = "Map Lambda → nom de la fonction déployée (aws lambda invoke --function-name)."
   value       = { for k, m in module.lambda : k => m.function_name }
 }
+
+output "alerts_topic_arn" {
+  description = "ARN du topic SNS des alertes d'exploitation (alarmes CloudWatch)."
+  value       = aws_sns_topic.alerts.arn
+}
