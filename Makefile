@@ -55,8 +55,11 @@ REPLAY_LAMBDA = $(or $(LAMBDA),ingest-bodacc)
 
 replay:
 	@test -n "$(FROM)" -a -n "$(TO)" || { echo "usage : make replay FROM=YYYY-MM-DD TO=YYYY-MM-DD [LAMBDA=…]"; exit 2; }
-	uv run infra/scripts/replay.py --from $(FROM) --to $(TO) \
-		--function $$($(TF) output -json lambda_functions | jq -er '."$(REPLAY_LAMBDA)"') \
+	@# Nom résolu et testé avant l'appel : dans un `$$(…)` passé en argument, l'échec de jq serait perdu
+	@# et replay.py recevrait `--function null`.
+	@fn=$$($(TF) output -json lambda_functions | jq -er '."$(REPLAY_LAMBDA)"') \
+		|| { echo "Lambda inconnue : $(REPLAY_LAMBDA) (voir terraform -chdir=infra output lambda_functions)"; exit 2; }; \
+	set -x; uv run infra/scripts/replay.py --from $(FROM) --to $(TO) --function "$$fn" \
 		$(if $(PROFILE),--profile $(PROFILE))
 
 # ---------- Terraform ----------

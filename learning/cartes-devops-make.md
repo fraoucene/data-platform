@@ -4,7 +4,7 @@ type: cartes
 langage: DevOps
 cours: Make
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Make
@@ -535,7 +535,78 @@ show:
 - [ ] Une erreur de make
 - Réponse : une chaîne vide (mesuré) : `realpath` résout les liens et exige un chemin existant, `abspath` calcule sans vérifier ; une faute dans `PRODUCER` passe donc inaperçue avec `abspath`.
 
-## 18. variable : l'espace avant le commentaire
+## 18. $(or) : un défaut à l'usage
+- Sous-thème : variables
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `$(or $(A),défaut)` renvoie le premier argument non vide : une valeur par défaut qui s'applique aussi quand `A` est passée vide.
+- Contexte : `A ?= défaut` ne joue que si `A` n'existe pas : `make replay LAMBDA=` la laisse vide. `$(or …)` teste la valeur, pas l'existence : vide ou absente, le défaut gagne. On l'écrit dans une seconde variable (`REPLAY_LAMBDA = $(or $(LAMBDA),ingest-bodacc)`) quand `LAMBDA` sert déjà ailleurs avec un autre sens (vide = toutes les Lambdas pour `lambdas-publish`).
+- Usage : ✅ défaut d'une option partagée entre cibles, robuste à `VAR=` · ❌ défaut simple d'une variable propre à la cible : `?=`.
+
+```makefile
+# Exemple 1 : absente, autre, vide
+L = $(or $(LAMBDA),ingest-bodacc)
+show:
+	@echo "[$(L)]"
+# make show             → [ingest-bodacc]
+# make show LAMBDA=autre → [autre]
+# make show LAMBDA=     → [ingest-bodacc]
+```
+
+- Quiz : Avec `L ?= ingest-bodacc` et la recette `@echo "[$(L)]"`, qu'affiche `make show L=` ?
+- [ ] `[ingest-bodacc]`
+- [x] `[]`
+- [ ] Une erreur : `L` vide
+- Réponse : `[]` (mesuré) : `L` est définie, vide, en ligne de commande ; `?=` ne joue donc pas. C'est le cas que `$(or)` couvre.
+
+## 19. garde dans la recette : test -n || { …; exit 2; }
+- Sous-thème : pièges
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `@test -n "$(FROM)" || { echo "usage : …"; exit 2; }` en première ligne arrête la seule cible concernée quand un paramètre manque.
+- Contexte : Contrairement à `$(error)` au niveau du fichier, la garde ne touche que la cible qui l'utilise : `make check` n'exige pas `FROM`. Les accolades sont indispensables : sans elles, `test … || echo usage; exit 2` lance `exit 2` dans tous les cas, et la cible échoue toujours. `exit 2` suit la convention « erreur d'utilisation ».
+- Usage : ✅ paramètre obligatoire d'une seule cible (`make replay FROM= TO=`) · ❌ variable dont dépend tout le Makefile (`ENV`) : garde à la lecture avec `$(error)`.
+
+```makefile
+# Exemple 1 : la garde de make replay
+replay:
+	@test -n "$(FROM)" -a -n "$(TO)" \
+	  || { echo "usage : make replay \
+	FROM=… TO=…"; exit 2; }
+	@echo "rejoue $(FROM) → $(TO)"
+# make replay → usage…, Error 2
+```
+
+- Quiz : Que fait `make bad FROM=2026-10-01` avec la recette `@test -n "$(FROM)" || echo usage; exit 2` ?
+- [ ] Rien : `FROM` est fourni
+- [x] Échoue avec `Error 2`
+- [ ] Affiche `usage` puis réussit
+- Réponse : `Error 2` (mesuré) : sans accolades, `; exit 2` n'appartient pas au `||` et s'exécute toujours.
+
+## 20. $(if) : une option seulement si la variable existe
+- Sous-thème : variables
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `$(if $(P),--profile $(P))` produit l'option quand `P` n'est pas vide, et rien sinon : une même cible sert en local et en CI.
+- Contexte : En local, `PROFILE = data-platform` donne `--profile data-platform` ; en CI, `PROFILE=` (identifiants OIDC de l'environnement) ne donne rien, au lieu d'un `--profile` sans valeur qui ferait échouer la commande. La fonction est évaluée par Make avant le shell : `make -n` montre la commande finale, avec ou sans l'option.
+- Usage : ✅ options facultatives (`--profile`, `-var-file`, `--dry-run`) · ❌ logique sur plusieurs branches : `ifeq` à la lecture, ou un script.
+
+```makefile
+# Exemple 1 : local puis CI
+P ?= data-platform
+opt:
+	@echo cmd $(if $(P),--profile $(P))
+# make opt    → cmd --profile data-platform
+# make opt P= → cmd
+```
+
+- Quiz : Qu'affiche `make opt P=" "` (une espace) ?
+- [ ] `cmd --profile`
+- [x] `cmd`
+- [ ] `cmd --profile  `
+- Réponse : `cmd` (mesuré, GNU make 3.81) : une condition qui ne contient que des espaces compte comme vide pour `$(if)`.
+
+## 21. variable : l'espace avant le commentaire
 - Sous-thème : pièges
 - Niveau : 3
 - Définition : La valeur d'une variable s'étend jusqu'au `#`, espaces compris : un commentaire en fin de ligne laisse un espace final.
@@ -567,7 +638,7 @@ init:
 - [x] `[envs/dev /backend.hcl]`
 - Réponse : `[envs/dev /backend.hcl]` : l'espace avant `#` fait partie de la valeur ; le chemin casse sans aucune erreur Make.
 
-## 19. ifeq : une condition à la lecture
+## 22. ifeq : une condition à la lecture
 - Sous-thème : pièges
 - Niveau : 3
 - Définition : `ifeq (a,b)` … `endif` garde ou retire des lignes du Makefile selon une valeur, évaluée à la lecture du fichier, pas à l'exécution.
@@ -593,7 +664,7 @@ plan:
 - [ ] Erreur : `ifeq` interdit dans une recette
 - Réponse : non : `ifeq` est tranché avant toute exécution, et une variable du shell n'existe jamais pour Make ; tester dans le shell avec `if [ … ]`.
 
-## 20. $(error) : bloquer tôt
+## 23. $(error) : bloquer tôt
 - Sous-thème : pièges
 - Niveau : 3
 - Définition : `$(error message)` arrête Make avec ce message dès qu'il est développé : sert de garde sur une variable obligatoire.
@@ -628,7 +699,7 @@ plan:
 - [ ] Un avertissement, puis `plan`
 - Réponse : `ENV obligatoire` : pour `ifdef` / `ifndef`, une variable vide compte comme non définie ; la garde protège aussi de `ENV=`.
 
-## 21. $(shell) : capter une commande
+## 24. $(shell) : capter une commande
 - Sous-thème : pièges
 - Niveau : 3
 - Définition : `$(shell cmd)` exécute une commande quand Make le développe et renvoie sa sortie, retours à la ligne remplacés par des espaces.
@@ -660,3 +731,48 @@ t:
 - [x] Vide, et Make continue
 - [ ] `1`, le code de sortie
 - Réponse : vide, sans erreur : `$(shell)` ignore le code de sortie ; vérifier la valeur avec une garde `$(if $(X),,$(error …))`.
+
+## 25. make -n : $$( ) n'est pas lancé
+- Sous-thème : exécution
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : En simulation (`make -n`), une substitution du shell `$$(cmd)` est affichée telle quelle, sans être exécutée, contrairement à `$(shell cmd)`.
+- Contexte : `$(shell …)` est une fonction de Make : elle tourne pour afficher la commande. `$$(…)` n'est qu'un texte pour Make, que le shell exécuterait : `-n` ne lance pas le shell, donc rien ne tourne. Conséquence : `make -n replay` ne contacte ni Terraform ni AWS, et montre `--function $(terraform … | jq …)` au lieu du nom résolu.
+- Usage : ✅ relire une cible qui interroge Terraform ou AWS sans rien appeler · ❌ attendre de `make -n` la valeur résolue d'un `$$(…)` : lancer la sous-commande à part.
+
+```makefile
+# Exemple 1 : la substitution reste du texte
+n:
+	echo $$(date +%s)
+# make -n n → echo $(date +%s)
+#   (date n'est pas lancé)
+```
+
+- Quiz : `make -n replay FROM=2026-10-01 TO=2026-10-19` : combien d'appels à AWS ?
+- [x] Aucun
+- [ ] Un : `terraform output` lit l'état S3
+- [ ] Dix-neuf
+- Réponse : aucun : `terraform output` est dans un `$$(…)`, donc non exécuté en simulation (mesuré : la commande affichée garde `$(terraform …)`).
+
+## 26. $$( ) en échec : la recette continue
+- Sous-thème : pièges
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : Si la commande d'un `$$(…)` échoue au milieu d'une ligne, la ligne réussit quand même : c'est le code de la commande principale qui compte.
+- Contexte : `--function $$(… | jq -er '."x"')` : la clé absente fait échouer `jq`, mais `-e` affiche quand même `null`, capturé, et la commande principale tourne avec `--function null`. Make ne voit que le code final. Pour échouer tôt : une ligne séparée qui teste la valeur, ou `$(shell …)` plus `$(error)` si elle est vide.
+- Usage : ✅ valeur lue dans un output, puis contrôlée avant usage · ❌ compter sur `jq -e` ou `set -e` à l'intérieur d'un `$$(…)` inséré dans une autre commande.
+
+```makefile
+# Exemple 1 : null capturé, ligne réussie
+subjq:
+	@echo fn=[$$(echo '{}' \
+	  | jq -er '.x')]
+# make subjq → fn=[null]
+#   code 0
+```
+
+- Quiz : `make replay LAMBDA=inconnue` avec `--function $$(… | jq -er …)` : que reçoit `replay.py` ?
+- [ ] Rien : make s'arrête sur l'échec de jq
+- [x] `--function null`
+- [ ] `--function` sans valeur
+- Réponse : `--function null` : `jq -e` écrit `null` avant de sortir en 1, et ce code est perdu dans la substitution (mesuré : `fn=[null]`).

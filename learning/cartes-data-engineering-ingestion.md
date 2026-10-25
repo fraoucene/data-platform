@@ -918,8 +918,8 @@ str(veille(run, timezone.utc))  # → "2026-10-23"
 - Sous-thème : fiabilité
 - Niveau : 2
 - Source : data-platform · S1-07
-- Définition : Une journée sans publication (dimanche) s'écrit en partition vide avec un manifest à 0 : « vide » se distingue de « non traitée ».
-- Contexte : Le BODACC ne paraît pas le dimanche : le run du lundi vise une journée à 0 annonce, ce n'est pas une erreur. Si le job n'écrit rien, l'aval ne sait pas si la journée est vide ou si le run a échoué, et un contrôle de complétude alerte à tort. Écrire le manifest (`count: 0`) rend l'absence d'annonces explicite, datée et vérifiable.
+- Définition : Une journée sans publication (samedi) s'écrit en partition vide avec un manifest à 0 : « vide » se distingue de « non traitée ».
+- Contexte : Le BODACC ne date aucune parution du samedi (0 sur 8 semaines, mesuré) : le run du dimanche vise une journée à 0 annonce, ce n'est pas une erreur. Si le job n'écrit rien, l'aval ne sait pas si la journée est vide ou si le run a échoué, et un contrôle de complétude alerte à tort. Écrire le manifest (`count: 0`) rend l'absence d'annonces explicite, datée et vérifiable.
 - Usage : ✅ toujours écrire le manifest, même à 0 ligne · ❌ lever une erreur sur 0 annonce, ou ne rien écrire.
 
 ```python
@@ -928,19 +928,19 @@ lake = {}
 def ecrire(jour, annonces):
     lake[f"dt={jour}/manifest"] = {
         "count": len(annonces)}
-ecrire("2026-10-25", [])   # dimanche
-lake["dt=2026-10-25/manifest"]
+ecrire("2026-10-24", [])   # samedi
+lake["dt=2026-10-24/manifest"]
 # → {"count": 0}
-"dt=2026-10-24/manifest" in lake
+"dt=2026-10-23/manifest" in lake
 # → False  (pas traitée)
 ```
 
 - Quiz : Le contrôle aval alerte sur « partition absente », et le job n'écrit rien quand il n'y a aucune annonce. Que se passe-t-il ?
 - [ ] Rien : 0 annonce est normal
-- [x] Une fausse alerte chaque lundi
-- [ ] Le job échoue chaque dimanche
-- [ ] Le lundi est ingéré deux fois
-- Réponse : une fausse alerte chaque lundi : le run du lundi vise dimanche, n'écrit rien, et l'aval prend le vide pour une panne.
+- [x] Une fausse alerte chaque dimanche
+- [ ] Le job échoue chaque samedi
+- [ ] Le samedi est ingéré deux fois
+- Réponse : une fausse alerte chaque dimanche : le run du dimanche vise samedi, n'écrit rien, et l'aval prend le vide pour une panne.
 
 ## 27. horloge : lue une seule fois par run
 - Sous-thème : planification
@@ -1474,7 +1474,73 @@ make replay FROM=2026-10-26 TO=2026-10-26
 - [ ] Désactiver l'alarme la nuit
 - Réponse : planifier après la fenêtre : une panne récurrente et connue se contourne par l'horaire, les retries restent courts et l'alarme garde son sens.
 
-## 43. retry en flux : jamais après le premier yield
+## 43. calendrier de la source : constaté, pas supposé
+- Sous-thème : planification
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Les jours de publication d'une source se mesurent sur plusieurs semaines de vraies données, par jour de la semaine, jamais d'après l'intuition.
+- Contexte : Supposé : « pas de parution le week-end ». Mesuré sur 8 semaines : BODACC date ses parutions du dimanche et du mardi au vendredi, jamais du samedi, presque jamais du lundi, avec une exception (31/08 publié, 01/09 vide). Le calendrier conditionne l'heure de la planification, les alertes « journée vide » et les attentes d'un rejeu. Même constaté, il peut glisser : un `count` à 0 se constate, il ne se prévoit pas.
+- Usage : ✅ avant de planifier un job ou d'écrire un contrôle de complétude · ❌ alerter sur « 0 annonce un lundi » d'après un calendrier supposé : comparer à l'historique.
+
+```python
+# Exemple 1 : profil par jour de semaine
+from collections import defaultdict
+from datetime import date
+
+counts = {date(2026, 10, 3): 0,
+          date(2026, 10, 4): 17416,
+          date(2026, 10, 5): 0,
+          date(2026, 10, 6): 32448}
+profil = defaultdict(list)
+for d, n in counts.items():
+    profil[d.strftime("%a")].append(n)
+dict(profil)
+# → {'Sat': [0], 'Sun': [17416], 'Mon': [0], 'Tue': [32448]}
+```
+
+- Quiz : Sur 8 semaines, 7 lundis à 0 et un lundi à 15 480. Que doit faire le contrôle de complétude un lundi à 0 ?
+- [ ] Alerter : il existe des lundis publiés
+- [x] Accepter : vide, avec un manifest
+- [ ] Rejouer le lundi jusqu'à obtenir des annonces
+- [ ] Supprimer la partition
+- Réponse : accepter : 0 est le cas courant du lundi ; ce qui doit alerter, c'est l'absence de manifest, pas un `count` à 0.
+
+## 44. rejeu : rapprocher trois comptes
+- Sous-thème : rejeux
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Un rejeu se vérifie en rapprochant trois chiffres : ce que l'outil a affiché, ce que disent les manifests, et ce que compte la source.
+- Contexte : `19/19 jours ingérés` ne prouve que l'absence d'exception. On compte ensuite les manifests de la plage (19), on additionne leurs `count` et on compare à la somme des lignes affichées (225 765), puis on vérifie quelques jours contre la source (`count_day`). Un écart sur un seul jour désigne la partition à rejouer. Les jours à 0 annonce gardent leur manifest : 19, pas 13.
+- Usage : ✅ après tout backfill, avant d'annoncer « historique complet » · ❌ se fier au seul code de sortie ou au nombre de jours « ok ».
+
+```python
+# Exemple 1 : affiché ↔ manifests
+affiche = {"2026-10-04": 17416, "2026-10-05": 0,
+           "2026-10-06": 32448}
+manifests = {"2026-10-04": {"count": 17416},
+             "2026-10-05": {"count": 0},
+             "2026-10-06": {"count": 32448}}
+len(manifests) == len(affiche)   # → True
+sum(m["count"] for m in manifests.values())
+# → 49864
+```
+
+```bash
+# Exemple 2 : les manifests de la plage
+for d in $(seq -w 1 19); do
+  aws s3 cp s3://"$RAW_BUCKET"/bodacc/date=2026-10-$d/_MANIFEST.json - \
+    | jq -r '.count'
+done | awk '{n++; s+=$1} END {print n, s}'
+# → 19 225765
+```
+
+- Quiz : Le rejeu affiche 19 jours `ok`, mais seuls 13 manifests existent dans la plage. Explication la plus probable ?
+- [ ] Les 6 jours à 0 n'ont pas de manifest, c'est normal
+- [x] 6 écritures ont manqué : à rejouer
+- [ ] S3 n'a pas encore indexé les objets
+- Réponse : 6 écritures manquent : un jour à 0 écrit quand même son manifest ; 13 sur 19 signale des partitions incomplètes.
+
+## 45. retry en flux : jamais après le premier yield
 - Sous-thème : fiabilité
 - Niveau : 3
 - Source : data-platform · S1-06
@@ -1531,7 +1597,7 @@ list(sur())  # ❌ RuntimeError
 - [ ] `[]`
 - Réponse : `["A1", "A2"]` : rien n'a encore été rendu (`started` faux), le nouvel essai est sans risque de doublon.
 
-## 44. empreinte : détecter un changement
+## 46. empreinte : détecter un changement
 - Sous-thème : idempotence
 - Niveau : 3
 - Définition : Un hash SHA-256 du contenu sérialisé détecte qu'un enregistrement a changé entre deux ingestions, sans comparer champ par champ.
@@ -1573,7 +1639,7 @@ apres = {"A1": {"v": 1}, "A2": {"v": 2}}
 - [ ] `TypeError`
 - Réponse : `False` : `dumps` suit l'ordre d'insertion du dict ; même contenu, autre chaîne, autre hash.
 
-## 45. annulation : corriger l'annonce visée
+## 47. annulation : corriger l'annonce visée
 - Sous-thème : idempotence
 - Niveau : 3
 - Source : data-platform · S1-05
@@ -1617,7 +1683,7 @@ p = json.loads(
 - [x] 2
 - Réponse : 2 : l'annulation `B20260201284` s'ajoute à côté de la radiation `B20260002157`, qui reste en table comme si elle avait eu lieu.
 
-## 46. checkpoint : reprendre au dernier lot écrit
+## 48. checkpoint : reprendre au dernier lot écrit
 - Sous-thème : rejeux
 - Niveau : 3
 - Définition : Un job long écrit par lots numérotés et note le dernier lot validé : après un crash, il repart du suivant sans tout refaire.
@@ -1646,7 +1712,7 @@ list(ecrits), checkpoint
 - [x] Le lot 2 est sauté, jamais écrit
 - Réponse : le lot 2 est sauté : le checkpoint dit 2 alors que rien n'est écrit ; le trou est silencieux.
 
-## 47. deux fuseaux, deux rôles
+## 49. deux fuseaux, deux rôles
 - Sous-thème : planification
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1675,7 +1741,7 @@ rec["ingested_at"]  # → "2026-10-24T22:30:00+00:00"
 - [ ] Aucun
 - Réponse : le 13 juillet : l'été Paris est à UTC+2, il est 23:30 UTC le 13 ; grouper par `dt` (jour de la source) donne le 14.
 
-## 48. tri : à la source, pas en mémoire
+## 50. tri : à la source, pas en mémoire
 - Sous-thème : flux
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1710,7 +1776,7 @@ list(fusion)   # → ["A2", "A3", "A4"]
 - [ ] `max` : tout le flux, `sorted` : constante
 - Réponse : `max` : constante, `sorted` : tout le flux : `max` ne garde que le plus grand vu, `sorted` doit stocker chaque ligne pour rendre une liste (mesuré : 0,5 Ko contre 12 Mo sur 200 000 ids).
 
-## 49. ordre naturel ou lexical : seule la stabilité compte
+## 51. ordre naturel ou lexical : seule la stabilité compte
 - Sous-thème : idempotence
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1745,7 +1811,7 @@ sorted(ids, key=naturel)
 - [ ] `TypeError`
 - Réponse : `"A2026020110"` : la comparaison se fait caractère par caractère ; au 10e, `"1"` passe avant `"2"`, quelle que soit la longueur.
 
-## 50. tri : départager les ex aequo
+## 52. tri : départager les ex aequo
 - Sous-thème : idempotence
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1779,7 +1845,7 @@ sorted(r1, key=cle) == sorted(r2, key=cle)
 - [ ] Non : il faut ajouter `DESC`
 - Réponse : Non : il faut finir par une colonne unique : deux lignes égales sur toutes les colonnes triées restent dans un ordre libre ; `…, id` les départage.
 
-## 51. octets reproductibles : les sources de variation
+## 53. octets reproductibles : les sources de variation
 - Sous-thème : idempotence
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1820,7 +1886,7 @@ octets(0, "a") == octets(0, "")   # → False
 - [ ] Les deux
 - Réponse : Celle du `.gz`, pas celle du brut : une autre version de zlib peut compresser autrement ; le JSONL brut ne dépend que de `json.dumps`.
 
-## 52. rejeu : l'ancien manifest décrit le nouveau fichier
+## 54. rejeu : l'ancien manifest décrit le nouveau fichier
 - Sous-thème : rejeux
 - Niveau : 3
 - Source : data-platform · S1-07

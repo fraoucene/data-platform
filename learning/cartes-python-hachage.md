@@ -119,7 +119,7 @@ n, len(h.hexdigest())   # → (3, 64)
 - Niveau : 1
 - Source : data-platform · S1-07
 - Définition : Le contenu vide a une empreinte connue, `e3b0c442…b855` : un fichier vide ou une journée sans annonce ont donc un hash valide, toujours le même.
-- Contexte : Le writer BODACC hache le JSONL au fil des lignes : un dimanche, aucune ligne n'est écrite et le hash vaut celui de `b""`. C'est utile en contrôle : `sha256 == e3b0c442…` dans un manifest signale une partition vide, à distinguer d'une partition absente. Tout outil le connaît (`sha256sum /dev/null`, ETag de checksum S3 d'un objet vide).
+- Contexte : Le writer BODACC hache le JSONL au fil des lignes : un samedi, aucune ligne n'est écrite et le hash vaut celui de `b""`. C'est utile en contrôle : `sha256 == e3b0c442…` dans un manifest signale une partition vide, à distinguer d'une partition absente. Tout outil le connaît (`sha256sum /dev/null`, ETag de checksum S3 d'un objet vide).
 - Usage : ✅ reconnaître une partition vide dans un manifest, tester le cas « journée vide » · ❌ prendre un hash comme preuve de contenu : le vide aussi a une empreinte.
 
 ```python

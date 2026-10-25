@@ -108,6 +108,8 @@ Calendrier des parutions, mesuré le 2026-10-25 avec `count_day` sur 8 semaines 
 | samedi | 0 / 8 | 0 |
 | dimanche | 7 / 7 | 12 000 à 18 000 |
 
+Explication (fiche data.gouv.fr du jeu de données) : « Les bulletins paraissent 5 fois par semaine les lundi-mardi, mercredi, jeudi, vendredi et samedi-dimanche ». Le bulletin samedi-dimanche est daté du dimanche, le bulletin lundi-mardi du mardi : samedi et lundi n'ont pas de bulletin propre. Confirmé par les numéros de parution, consécutifs (dimanche 04/10 = `20260190`, mardi 06/10 = `20260191`), et par les volumes (mardi et dimanche couvrent deux jours). Source : https://www.data.gouv.fr/datasets/559395f1c751df0f51a453b9
+
 Cinq parutions par semaine, datées du dimanche et du mardi au vendredi ; l'exception du 31/08 (lundi avec parution, mardi 01/09 sans) montre que le calendrier peut glisser d'un jour. Ne jamais déduire « pas de parution » du jour de la semaine : un `count` à 0 se constate, il ne se prévoit pas. La parution datée du dimanche 25/10 comptait déjà 14 157 annonces le jour même à 17:38 (heure de Paris) : l'ingestion de J-1 à 06:00 lit une journée complète.
 
 ## 5. Champs clés et champs imbriqués

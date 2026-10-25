@@ -76,7 +76,7 @@ verifier(1000, 12)  # → 0.012
 verifier(1000, 80)  # ❌ RuntimeError
 ```
 
-- Quiz : Que fait `verifier(0, 0)` un dimanche sans annonce ?
+- Quiz : Que fait `verifier(0, 0)` un samedi sans annonce ?
 - [ ] Renvoie `0.0`
 - [ ] `RuntimeError`
 - [x] `ZeroDivisionError`
