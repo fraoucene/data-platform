@@ -4,53 +4,13 @@ type: cartes
 langage: Data engineering
 cours: Qualité et observabilité
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Qualité et observabilité
 Data engineering · Qualité et observabilité : contrôles, logs, rejets (format spec v3 de revision-pwa).
 
-## 1. logging : le niveau par défaut
-- Sous-thème : logs
-- Niveau : 1
-- Définition : `logging.getLogger(nom)` donne un logger nommé par module ; son niveau filtre les messages avant les handlers (≈ `console.*` filtrable).
-- Contexte : Les loggers forment un arbre : `bodacc.client` hérite de `bodacc`, qui hérite du root. Un logger sans niveau prend celui de son parent. Dans une Lambda, tout ce qui sort sur stdout ou stderr part dans CloudWatch Logs. Passer les valeurs en arguments (`log.info("dt=%s", jour)`) plutôt qu'en f-string : le formatage n'a lieu que si le message est émis.
-- Usage : ✅ un logger par module (`getLogger(__name__)`), niveaux `info` / `warning` / `error` · ❌ `print` dans une Lambda : pas de niveau, pas de filtrage.
-
-```python
-# Exemple 1 : niveau INFO explicite
-import io, logging
-
-buf = io.StringIO()
-log = logging.getLogger("ingest8")
-log.addHandler(
-    logging.StreamHandler(buf))
-log.setLevel(logging.INFO)
-log.info("début dt=2026-10-23")
-buf.getvalue()
-# → "début dt=2026-10-23\n"
-```
-
-```python
-# Exemple 2 : arguments formatés à l'émission
-import io, logging
-
-buf = io.StringIO()
-log = logging.getLogger("ingest8b")
-log.addHandler(
-    logging.StreamHandler(buf))
-log.setLevel(logging.INFO)
-log.info("lu %d annonces", 1423)
-buf.getvalue()  # → "lu 1423 annonces\n"
-```
-
-- Quiz : Dans l'exemple 1, sans `log.setLevel(logging.INFO)`, que vaut `buf.getvalue()` ?
-- [x] `""`
-- [ ] `"début dt=2026-10-23\n"`
-- [ ] `"INFO:ingest8:début dt=2026-10-23\n"`
-- Réponse : `""` : le logger hérite du niveau du root, `WARNING` par défaut ; `info` est filtré.
-
-## 2. quarantaine : isoler les lignes invalides
+## 1. quarantaine : isoler les lignes invalides
 - Sous-thème : rejets
 - Niveau : 2
 - Définition : Une ligne invalide part en quarantaine (rejets, avec l'erreur) au lieu de faire planter tout le lot (≈ dead letter queue).
@@ -97,7 +57,7 @@ err["type"], err["loc"]
 - [ ] `ok`, avec `siren == 483609327`
 - Réponse : `rejets` : pydantic v2 ne convertit pas un `int` en `str` (erreur `string_type`).
 
-## 3. seuil de rejet : échouer à temps
+## 2. seuil de rejet : échouer à temps
 - Sous-thème : rejets
 - Niveau : 2
 - Définition : Au-delà d'un taux de rejet fixé, le job échoue : trop de lignes invalides signale un changement de format de la source.
@@ -123,7 +83,7 @@ verifier(1000, 80)  # ❌ RuntimeError
 - [ ] Renvoie `None`
 - Réponse : `ZeroDivisionError` : tester `lus == 0` avant ; une journée vide n'est pas un échec.
 
-## 4. contrat de données : vérifié des deux côtés
+## 3. contrat de données : vérifié des deux côtés
 - Sous-thème : contrôles
 - Niveau : 2
 - Source : revision-pwa · pwa-revision
@@ -152,7 +112,7 @@ verifier("cartes-ko.md", cartes)
 - [x] Oui : rien n'oblige un dépôt S3 à passer par la validation
 - Réponse : oui : un `aws s3 cp` à la main ou un autre producteur contourne le contrôle local ; le consommateur ne publie que ce qu'il a lui-même vérifié (fichier `test/cartes-ko.md` écarté à l'étape 10).
 
-## 5. logs JSON : des champs filtrables
+## 4. logs JSON : des champs filtrables
 - Sous-thème : logs
 - Niveau : 3
 - Définition : Un formatter JSON écrit un objet par événement, avec des champs (`run_id`, compteurs) filtrables dans CloudWatch Logs Insights.
@@ -199,7 +159,7 @@ buf.getvalue()  # → '{"lus": 1423}\n'
 - [x] `KeyError`
 - Réponse : `KeyError` (Attempt to overwrite 'message' in LogRecord) : `extra` ne peut pas réutiliser un attribut réservé du record.
 
-## 6. réconciliation : lus = écrits + rejetés
+## 5. réconciliation : lus = écrits + rejetés
 - Sous-thème : contrôles
 - Niveau : 3
 - Définition : En fin de run, on vérifie lus = écrits + rejetés ; un écart signale des lignes perdues en silence.

@@ -4,7 +4,7 @@ type: cartes
 langage: AWS
 cours: IAM
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · IAM
@@ -174,7 +174,91 @@ decide(pol, "s3:PutObject")  # → "implicitDeny"
 - [ ] Erreur : condition inconnue
 - Réponse : `allowed` (mesuré au simulateur) : la condition est fausse, le `Deny` ne s'applique pas ; reste l'`Allow`.
 
-## 6. aws_iam_policy_document : écrire du JSON en HCL
+## 6. s3:PutObject : borné à un préfixe
+- Sous-thème : moindre privilège
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `s3:PutObject` sur `"${arn_raw}/bodacc/*"` autorise l'écriture sous `bodacc/` seulement : le reste du bucket `raw` reste fermé à la fonction.
+- Contexte : L'ARN d'un objet est `arn:aws:s3:::<bucket>/<clé>` ; le joker `*` couvre toute la suite de la clé, `/` compris (`bodacc/date=2026-10-20/part-0001.jsonl.gz`). Une Lambda par source, un préfixe par source : un bug dans l'ingestion BODACC ne peut pas écraser les données INSEE du même bucket. Le préfixe se construit depuis l'output du module (`module.s3.bucket_arns["raw"]`), jamais en dur.
+- Usage : ✅ un préfixe par producteur dans un bucket partagé · ❌ `"${arn_raw}/*"` par facilité : toute la zone brute devient inscriptible.
+
+```hcl
+# Exemple 1 : écrire sous bodacc/ seul
+data "aws_iam_policy_document" "ingest_bodacc" {
+  statement {
+    sid     = "WriteBodaccPartitions"
+    actions = ["s3:PutObject"]
+    resources = [
+      "${module.s3.bucket_arns["raw"]}/bodacc/*",
+    ]
+  }
+}
+# PutObject raw/bodacc/date=…/x.gz → allowed
+# PutObject raw/insee/x.gz         → implicitDeny
+```
+
+- Quiz : Avec cette politique, `PutObject` de la clé `bodacc` (sans `/` ni suite) : décision ?
+- [ ] `allowed` : `*` accepte une suite vide
+- [x] `implicitDeny` : le `/` manque
+- [ ] `allowed` : même préfixe
+- [ ] `explicitDeny`
+- Réponse : `implicitDeny` : le motif exige `bodacc/` puis n'importe quoi ; la clé `bodacc` ne contient pas le `/`, donc ne correspond pas.
+
+## 7. s3:PutObject : écrire, c'est aussi écraser
+- Sous-thème : politiques
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `s3:PutObject` autorise la création comme le remplacement d'un objet : IAM n'a pas de droit séparé pour « écrire sans écraser ».
+- Contexte : Pour S3, réécrire une clé est un `PutObject` comme un autre. L'ingestion en a besoin : rejouer une journée réécrit la même partition, c'est ce qui la rend idempotente. Pour interdire l'écrasement, il faut d'autres outils : versioning (l'ancienne version reste), Object Lock, ou écriture conditionnelle (`If-None-Match`). `s3:DeleteObject` est un droit à part, absent ici.
+- Usage : ✅ `PutObject` seul pour un producteur qui réécrit ses partitions · ❌ croire qu'un rôle sans `DeleteObject` ne peut rien détruire : il peut écraser par un objet vide.
+
+```bash
+# Exemple 1 : remplacer, pas supprimer
+aws s3api put-object --bucket "$RAW" \
+  --key bodacc/date=2026-10-20/part-0001.jsonl.gz
+# → allowed : objet remplacé par 0 octet
+aws s3 rm \
+  "s3://$RAW/bodacc/date=2026-10-20/part-0001.jsonl.gz"
+# → AccessDenied : pas de DeleteObject
+```
+
+- Quiz : Bucket `raw` versionné, rôle avec `PutObject` seul : un objet écrasé par erreur est-il perdu ?
+- [ ] Oui : l'écrasement remplace l'objet
+- [x] Non : l'ancienne version reste
+- [ ] Non : S3 refuse d'écraser
+- [ ] Oui, sauf avec `DeleteObject`
+- Réponse : non : avec le versioning, `PutObject` crée une nouvelle version et garde l'ancienne ; la récupérer demande `GetObjectVersion`, que ce rôle n'a pas.
+
+## 8. sid : unique dans la politique
+- Sous-thème : politiques
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `sid` nomme un statement (`WriteBodaccPartitions`, `UseProjectKey`) : facultatif, mais unique dans une politique, il dit à quoi sert chaque droit.
+- Contexte : IAM ignore le `sid` pour décider ; il sert aux humains (revue de MR, Access Analyzer, `simulate-principal-policy` qui cite le statement décisif). Lettres et chiffres seulement, sans espace ni tiret. Avec `aws_iam_policy_document`, un `sid` répété fait échouer la lecture du data source, et `override_policy_documents` s'en sert pour remplacer un statement du même nom.
+- Usage : ✅ un `sid` par statement, qui dit l'intention (`WriteOwnLogs`) · ❌ des `sid` génériques (`Stmt1`) : la revue ne sait plus pourquoi le droit existe.
+
+```hcl
+# Exemple 1 : l'intention dans le nom
+statement {
+  sid       = "WriteBodaccPartitions"
+  actions   = ["s3:PutObject"]
+  resources = ["${local.raw_arn}/bodacc/*"]
+}
+statement {
+  sid       = "UseProjectKey"
+  actions   = ["kms:GenerateDataKey"]
+  resources = [local.key_arn]
+}
+```
+
+- Quiz : Deux statements du même `aws_iam_policy_document` ont `sid = "UseProjectKey"` : que se passe-t-il ?
+- [ ] Le second remplace le premier
+- [ ] Les deux sont fusionnés
+- [x] Erreur : `duplicate Sid`
+- [ ] Rien : IAM ignore le `sid`
+- Réponse : erreur `duplicate Sid (UseProjectKey)` à la lecture du data source (message du provider AWS 6.69) ; le remplacement par `sid` n'existe qu'entre documents, via `override_policy_documents`.
+
+## 9. aws_iam_policy_document : écrire du JSON en HCL
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : `aws_iam_policy_document` écrit une politique IAM en HCL et produit son JSON via `.json`, avec références et validation à la place d'un heredoc.
@@ -203,7 +287,7 @@ data "aws_iam_policy_document" "deploy" {
 - [ ] Ni l'un ni l'autre : le statement est ignoré
 - Réponse : autorise : `effect` vaut `Allow` par défaut ; mesuré, la trust policy du rôle `deploy` sort en `"Effect": "Allow"` sans l'avoir écrit.
 
-## 7. aws_iam_role_policy : politique inline
+## 10. aws_iam_role_policy : politique inline
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : `aws_iam_role_policy` attache une politique inline à un seul rôle : elle vit et meurt avec lui, adaptée à des droits sur mesure.
@@ -230,7 +314,7 @@ resource "aws_iam_role_policy" "deploy" {
 - [ ] Peu importe : IAM fusionne les doublons
 - Réponse : managée : une seule politique modifiée à un seul endroit ; en inline, chaque changement se recopie dans les trois rôles.
 
-## 8. s3:ListBucket : sur le bucket, pas /*
+## 11. s3:ListBucket : sur le bucket, pas /*
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : `s3:ListBucket` s'applique à l'ARN du bucket, `PutObject` et `DeleteObject` à ses objets (`arn/*`) : deux statements, deux ressources.
@@ -267,7 +351,7 @@ statement {
 - [ ] `apply` refuse la politique
 - Réponse : `AccessDenied` sur `ListObjectsV2` : `ListBucket` ne matche pas une ressource objet, et `sync` doit lister le bucket avant d'envoyer.
 
-## 9. condition s3:prefix : borner le listage
+## 12. condition s3:prefix : borner le listage
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : Un bloc `Condition` teste la requête (`s3:prefix`, `aws:SourceArn`) : le statement ne s'applique que si le test est vrai.
@@ -303,7 +387,7 @@ statement {
 - [ ] Liste tout `sources/`
 - Réponse : `AccessDenied` (mesuré : `implicitDeny`) : `sources/data-platform` ne correspond pas à `sources/data-platform/*`, il manque le `/`.
 
-## 10. jokers : * dans les actions et les ARN
+## 13. jokers : * dans les actions et les ARN
 - Sous-thème : politiques
 - Niveau : 2
 - Définition : `*` (plusieurs caractères) et `?` (un seul) sont permis dans les actions (`s3:Get*`) et les ARN (`function:${prefix}-*`) pour viser une famille.
@@ -336,7 +420,7 @@ statement {
 - [ ] `explicitDeny`
 - Réponse : `implicitDeny` (mesuré) : le nom d'action ignore la casse (`S3:getobject` marche sur `Bodacc/x`), pas l'ARN : `Bodacc` ≠ `bodacc`.
 
-## 11. politique de ressource : l'autre côté
+## 14. politique de ressource : l'autre côté
 - Sous-thème : évaluation
 - Niveau : 2
 - Définition : Une politique basée sur la ressource (bucket, clé KMS, file SQS) est attachée à la ressource, nomme ses `Principal` et s'ajoute aux politiques d'identité.
@@ -364,7 +448,7 @@ aws iam simulate-custom-policy \
 - [ ] Erreur : un rôle ne peut pas être `Principal`
 - Réponse : `allowed` (mesuré) : dans un même compte, un `Allow` d'un seul côté suffit ; seul l'accès entre comptes exige les deux.
 
-## 12. AssumeRole : identifiants temporaires
+## 15. AssumeRole : identifiants temporaires
 - Sous-thème : rôles
 - Niveau : 2
 - Définition : `sts:AssumeRole` échange l'identité de l'appelant contre des identifiants temporaires du rôle (clé `ASIA…`, secret, jeton de session), valables 1 h par défaut.
@@ -396,7 +480,7 @@ aws sts get-caller-identity \
 - [ ] `AccessDenied`
 - Réponse : `ValidationError` (selon la doc : « DurationSeconds exceeds the MaxSessionDuration ») : STS refuse au lieu de raccourcir.
 
-## 13. OIDC : la CI sans clé
+## 16. OIDC : la CI sans clé
 - Sous-thème : rôles
 - Niveau : 2
 - Définition : Un fournisseur OIDC fait confiance aux jetons signés de GitHub : la CI appelle `sts:AssumeRoleWithWebIdentity` et reçoit des identifiants temporaires, sans clé stockée.
@@ -428,7 +512,7 @@ statement {
 - [ ] Non : pas de jeton OIDC sur une PR
 - Réponse : non (doc GitHub) : sur un événement `pull_request`, `sub` vaut `repo:<org>/<dépôt>:pull_request` ; la condition `main` refuse donc les PR, ce qui est voulu.
 
-## 14. iam:PassRole : confier un rôle à un service
+## 17. iam:PassRole : confier un rôle à un service
 - Sous-thème : moindre privilège
 - Niveau : 2
 - Définition : Créer une Lambda, un projet CodeBuild ou un cluster EMR avec un rôle exige `iam:PassRole` sur ce rôle, en plus de l'action de création.
@@ -463,7 +547,7 @@ statement {
 - [ ] Personne : Terraform crée aussi le rôle
 - Réponse : celui qui lance `terraform apply` : c'est lui qui passe l'ARN du rôle à `CreateFunction` ; avoir créé le rôle ne dispense pas du droit de le confier.
 
-## 15. moindre privilège : borner un build piraté
+## 18. moindre privilège : borner un build piraté
 - Sous-thème : moindre privilège
 - Niveau : 2
 - Définition : Le rôle de build n'a de droits que sur ce qu'il touche : bucket `site`, invalidation, groupe de logs, `GitPull` du dépôt.
@@ -487,7 +571,7 @@ aws iam get-role-policy \
 - [x] Réécrire ou vider le site, pas plus
 - Réponse : réécrire ou vider le site : elle a les droits du rôle, limités au bucket `site`, à l'invalidation et aux logs ; ni `content`, ni IAM.
 
-## 16. simulate-principal-policy : tester sans appeler
+## 19. simulate-principal-policy : tester sans appeler
 - Sous-thème : politiques
 - Niveau : 2
 - Source : data-platform · S1-04
@@ -524,7 +608,142 @@ aws iam simulate-custom-policy \
 - [ ] Erreur : un ARN d'objet est attendu
 - Réponse : `implicitDeny` (mesuré) : `GetObject` porte sur un objet, `raw/*` ne couvre pas l'ARN du bucket ; aucun `Allow`, donc refus implicite.
 
-## 17. permission boundary : le plafond
+## 20. DeleteObject absent : le rejeu ne nettoie pas
+- Sous-thème : moindre privilège
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Sans `s3:DeleteObject`, la fonction ne peut que réécrire ses fichiers : une partie devenue inutile après un rejeu reste en place.
+- Contexte : Le moindre privilège a un effet métier. Une journée écrite en deux parties, puis rejouée en une seule, laisse `part-0002` : un lecteur qui liste la partition compterait des annonces en double. D'où le manifest `_MANIFEST.json`, réécrit à chaque passage : il fait foi sur la liste des parties. Ajouter `DeleteObject` sur `bodacc/*` est possible, mais élargit ce qu'un bug peut détruire.
+- Usage : ✅ un manifest qui liste les fichiers valides, lu par les consommateurs · ❌ ajouter `DeleteObject` pour faire le ménage : un bug efface des journées entières.
+
+```bash
+# Exemple 1 : rejeu en moins de parties
+# 1er passage : part-0001, part-0002
+# rejeu       : part-0001 seule
+aws s3 ls "s3://$RAW/bodacc/date=2026-10-20/"
+# → _MANIFEST.json
+#   part-0001.jsonl.gz
+#   part-0002.jsonl.gz   (périmée)
+```
+
+- Quiz : Un job Athena lit `bodacc/date=2026-10-20/` par un `LOCATION` sur le dossier : voit-il `part-0002` ?
+- [ ] Non : le manifest l'exclut
+- [x] Oui : Athena lit tout le préfixe
+- [ ] Non : S3 masque les fichiers périmés
+- [ ] Oui, mais en lecture seule
+- Réponse : oui : Athena lit chaque objet sous le `LOCATION`, il ne connaît pas `_MANIFEST.json` ; il faut lire via le manifest ou réécrire le dossier entier.
+
+## 21. log stream : l'ARN du groupe suivi de :*
+- Sous-thème : politiques
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `logs:CreateLogStream` et `logs:PutLogEvents` portent sur les flux : la ressource est `"${aws_cloudwatch_log_group.this.arn}:*"`, pas l'ARN du groupe seul.
+- Contexte : Un flux a pour ARN `arn:aws:logs:<région>:<account_id>:log-group:<nom>:log-stream:<flux>`. Le provider AWS renvoie l'ARN du groupe sans le suffixe `:*` que l'API ajoute parfois ; il faut le remettre pour couvrir ses flux. Sans lui, la politique est acceptée, et les écritures de logs sont refusées en silence à l'exécution.
+- Usage : ✅ `"${arn}:*"` pour les actions sur les flux d'un groupe précis · ❌ `"*"` par commodité : la fonction peut écrire dans les logs de toutes les autres.
+
+```hcl
+# Exemple 1 : les flux d'un seul groupe
+statement {
+  sid     = "WriteOwnLogs"
+  actions = ["logs:CreateLogStream",
+             "logs:PutLogEvents"]
+  resources = [
+    "${aws_cloudwatch_log_group.this.arn}:*",
+  ]
+}
+# → …:log-group:/aws/lambda/<nom>:*
+```
+
+- Quiz : On écrit `resources = [aws_cloudwatch_log_group.this.arn]`, sans `:*` : que donnent les invocations ?
+- [ ] Échec : `AccessDenied` remonté au code
+- [x] Réussies, mais sans aucun log
+- [ ] Réussies, logs dans un groupe par défaut
+- [ ] Erreur à l'`apply` de la politique
+- Réponse : réussies, sans logs : l'ARN du groupe ne correspond à aucun flux, les écritures sont refusées par le runtime sans faire échouer le code.
+
+## 22. ListBucket absent : 403 au lieu de 404
+- Sous-thème : évaluation
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Sans `s3:ListBucket` sur le bucket, lire une clé absente répond `403 AccessDenied`, pas `404 NoSuchKey` : S3 ne révèle pas qu'elle n'existe pas.
+- Contexte : Avec `ListBucket`, l'appelant pourrait de toute façon lister : S3 lui dit donc `404`. Sans, répondre `404` ou `403` selon l'existence ferait fuiter le contenu du bucket. Un code qui attrape `NoSuchKey` pour « pas encore écrit » reçoit alors un `ClientError` 403 et plante. L'ingestion n'a ni `GetObject` ni `ListBucket` : elle n'a rien à relire.
+- Usage : ✅ ajouter `ListBucket` (borné par `s3:prefix`) au rôle qui doit tester l'existence d'une clé · ❌ traiter tout `403` comme « absent » : un vrai refus passerait inaperçu.
+
+```python
+# Exemple 1 : le code qui attend un 404
+from botocore.exceptions import ClientError
+
+def code_erreur(status):
+    err = {"Error": {"Code": status}}
+    return ClientError(err, "HeadObject")
+
+e = code_erreur("403")
+e.response["Error"]["Code"] == "404"  # → False
+```
+
+- Quiz : Rôle avec `GetObject` sur `raw/*` mais sans `ListBucket` : `get_object` d'une clé présente répond ?
+- [x] L'objet, normalement
+- [ ] `403` : `ListBucket` manque
+- [ ] `404` : la clé est masquée
+- [ ] `400` : requête invalide
+- Réponse : l'objet : `ListBucket` ne change que la réponse pour une clé absente ; une clé présente se lit avec `GetObject` seul.
+
+## 23. kms:Encrypt : pas pour SSE-KMS
+- Sous-thème : politiques
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Écrire dans un bucket SSE-KMS exige `kms:GenerateDataKey` sur la clé, pas `kms:Encrypt` : S3 chiffre avec une clé de données, pas avec la clé KMS.
+- Contexte : `kms:Encrypt` sert à chiffrer directement au plus 4 Ko par la clé KMS, appel que S3 ne fait jamais. S3 demande une clé de données (`GenerateDataKey`), chiffre l'objet localement et stocke la clé de données chiffrée avec lui. La lecture appelle `kms:Decrypt` sur cette clé de données. La ressource est l'ARN de la clé (`module.kms.key_arn`), pas son alias.
+- Usage : ✅ `GenerateDataKey` pour écrire, `Decrypt` pour lire ou pour un envoi multipart · ❌ `kms:*` ou `kms:Encrypt` « au cas où » : trop large ou inutile.
+
+```hcl
+# Exemple 1 : les deux actions utiles
+statement {
+  sid = "UseProjectKey"
+  actions = ["kms:GenerateDataKey",
+             "kms:Decrypt"]
+  resources = [module.kms.key_arn]
+}
+# PutObject petit : GenerateDataKey
+# PutObject multipart : + Decrypt
+```
+
+- Quiz : Le rôle a `s3:PutObject` et `kms:Encrypt` seul sur la clé du bucket : que donne un `put_object` de 1 Ko ?
+- [ ] Réussi : 1 Ko est sous la limite d'Encrypt
+- [x] `AccessDenied` : `GenerateDataKey` manque
+- [ ] Réussi, chiffré en SSE-S3 à la place
+- [ ] `KMSInvalidStateException`
+- Réponse : `AccessDenied` : S3 appelle `GenerateDataKey` quelle que soit la taille ; `Encrypt` n'est jamais utilisé par SSE-KMS.
+
+## 24. code Lambda : lu avec les droits du déployeur
+- Sous-thème : rôles
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Lambda lit le zip sur S3 avec les droits de celui qui appelle `CreateFunction` ou `UpdateFunctionCode`, jamais avec le rôle d'exécution de la fonction.
+- Contexte : Le rôle d'exécution sert au code, à l'invocation ; le déploiement est fait par Terraform, avec le profil du poste ou le rôle de la CI. C'est donc ce principal qui a besoin de `s3:GetObject` sur `artifacts/lambdas/*`, et de `kms:Decrypt` si le bucket était en SSE-KMS. C'est l'autre raison du SSE-S3 sur `artifacts` : aucune clé à autoriser pour chaque déployeur.
+- Usage : ✅ droits de lecture des artefacts sur le rôle de déploiement de la CI · ❌ ajouter `GetObject` sur `artifacts` au rôle de la fonction : inutile.
+
+```hcl
+# Exemple 1 : rôle de déploiement de la CI
+statement {
+  sid     = "ReadArtifacts"
+  actions = ["s3:GetObject"]
+  resources = [
+    "${aws_s3_bucket.artifacts.arn}/lambdas/*",
+  ]
+}
+# + lambda:UpdateFunctionCode, iam:PassRole
+# rien de tout cela sur le rôle de la Lambda
+```
+
+- Quiz : Le déployeur n'a pas `s3:GetObject` sur le zip, le rôle de la fonction l'a : que donne l'`apply` ?
+- [ ] Réussi : Lambda prend le rôle de la fonction
+- [x] Échec : le déployeur ne peut pas lire le zip
+- [ ] Réussi, mais la fonction n'a pas de code
+- [ ] Échec au `plan`
+- Réponse : échec à l'`apply` : Lambda lit l'objet au nom du principal qui appelle l'API ; le rôle d'exécution n'existe que pendant les invocations.
+
+## 25. permission boundary : le plafond
 - Sous-thème : évaluation
 - Niveau : 3
 - Définition : Une permission boundary est une politique managée posée sur un rôle ou un utilisateur : elle plafonne ses droits sans en accorder aucun.
@@ -555,7 +774,7 @@ resource "aws_iam_role" "sandbox" {
 - [ ] Non : `iam:*` est interdit en boundary
 - Réponse : non (mesuré : `implicitDeny`) : il faut un `Allow` des deux côtés ; la boundary large ne compense pas l'identité étroite.
 
-## 18. SCP : le plafond du compte
+## 26. SCP : le plafond du compte
 - Sous-thème : évaluation
 - Niveau : 3
 - Définition : Une SCP (Service Control Policy) d'AWS Organizations plafonne tous les principaux d'un compte membre, sans accorder aucun droit.
@@ -590,7 +809,7 @@ aws organizations list-policies \
 - [ ] Refusé dans la console seulement
 - Réponse : refusé : dans un compte membre, la SCP borne aussi le root ; seul le compte de gestion échappe aux SCP.
 
-## 19. ExternalId : le tiers confus
+## 27. ExternalId : le tiers confus
 - Sous-thème : rôles
 - Niveau : 3
 - Définition : `sts:ExternalId` est une condition de trust policy : un tiers qui endosse le rôle d'un client doit fournir l'identifiant propre à ce client.
@@ -620,7 +839,7 @@ statement {
 - [ ] `ValidationError` : paramètre requis
 - Réponse : `AccessDenied` : la clé `sts:ExternalId` est absente de la requête, la condition est fausse, aucun `Allow` ne s'applique.
 
-## 20. Access Analyzer : valider avant de poser
+## 28. Access Analyzer : valider avant de poser
 - Sous-thème : moindre privilège
 - Niveau : 3
 - Définition : IAM Access Analyzer valide une politique avant de la poser (`validate-policy`) et repère les ressources ouvertes hors du compte ou les droits inutilisés.
@@ -652,3 +871,60 @@ aws accessanalyzer list-analyzers \
 - [ ] `ERROR` : ressource invalide pour l'action
 - [ ] `SECURITY_WARNING`
 - Réponse : aucun (mesuré) : la grammaire est juste, seule la sémantique est fausse ; c'est le simulateur qui montre l'`implicitDeny`.
+
+## 29. multipart : couvert par s3:PutObject, sauf Abort
+- Sous-thème : politiques
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `CreateMultipartUpload`, `UploadPart` et `CompleteMultipartUpload` sont autorisés par `s3:PutObject` ; annuler exige `s3:AbortMultipartUpload`, un droit à part.
+- Contexte : IAM n'a pas d'action par appel multipart : les trois appels d'écriture se rangent sous `s3:PutObject`. `upload_file` de boto3 découpe au-delà de 8 Mo et, en cas d'échec d'une part, tente d'annuler : sans `AbortMultipartUpload`, l'annulation échoue et les parts déjà envoyées restent facturées. D'où la règle `abort_incomplete_multipart_upload` du cycle de vie, qui les supprime après quelques jours.
+- Usage : ✅ `PutObject` pour écrire, règle `abort_incomplete_multipart_upload` sur chaque bucket · ❌ ajouter `s3:*Multipart*` par réflexe : `PutObject` suffit à écrire.
+
+```hcl
+# Exemple 1 : le filet du cycle de vie
+rule {
+  id     = "abort-mpu"
+  status = "Enabled"
+  filter {}
+  abort_incomplete_multipart_upload {
+    days_after_initiation = 7
+  }
+}
+# parts orphelines → supprimées à J+7
+```
+
+- Quiz : Le rôle a `s3:PutObject` sur `bodacc/*` et la clé KMS ; un fichier de 30 Mo part en multipart : l'envoi réussit-il ?
+- [ ] Non : `s3:UploadPart` manque
+- [x] Oui : `PutObject` couvre les trois appels
+- [ ] Non : `s3:CreateMultipartUpload` manque
+- [ ] Oui, s'il a aussi `ListBucket`
+- Réponse : oui : `UploadPart` et les autres appels d'écriture multipart sont autorisés par `s3:PutObject` ; seuls l'annulation et le listage des parts ont leurs propres droits.
+
+## 30. inline : 10 240 caractères par rôle
+- Sous-thème : politiques
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Les politiques inline d'un rôle totalisent au plus 10 240 caractères ; une politique managée, 6 144 : au-delà, l'`apply` échoue.
+- Contexte : Les espaces ne comptent pas, mais chaque ARN répété, si. Un rôle partagé par des dizaines de fonctions finit par dépasser ; un rôle par fonction garde chaque politique courte. Si une politique grossit vraiment, les jokers (`bodacc/*`) et le regroupement d'actions réduisent la taille ; un rôle peut aussi porter 10 politiques managées par défaut (quota relevable à 20).
+- Usage : ✅ des politiques courtes, une par rôle et par usage (`app`, `logs`) · ❌ empiler toutes les Lambdas dans un rôle : quota atteint, et droits mélangés.
+
+```hcl
+# Exemple 1 : deux inline, chacune courte
+resource "aws_iam_role_policy" "logs" {
+  name   = "logs"
+  role   = aws_iam_role.this.id
+  policy = data.aws_iam_policy_document.logs.json
+}
+resource "aws_iam_role_policy" "app" {
+  name   = "app"
+  role   = aws_iam_role.this.id
+  policy = var.policy_json
+}
+```
+
+- Quiz : Une politique inline de 9 000 caractères existe ; on ajoute au même rôle une seconde inline de 2 000 : résultat ?
+- [ ] Réussi : chaque politique est sous 10 240
+- [x] `LimitExceeded` : 11 000 au total
+- [ ] Réussi, la seconde devient managée
+- [ ] Erreur au `plan`
+- Réponse : `LimitExceeded` à l'`apply` : la limite de 10 240 caractères porte sur le total des politiques inline du rôle, pas sur chacune.

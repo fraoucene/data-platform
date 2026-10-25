@@ -4,7 +4,7 @@ type: cartes
 langage: Python
 cours: Tests
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Tests Python (pytest)
@@ -231,7 +231,230 @@ uv run pytest --lf   # ce test seul
 - [ ] Erreur : expression invalide
 - Réponse : `2` : depuis pytest 5.4, `-k` ignore la casse ; `Siren` trouve `siren` dans les deux noms.
 
-## 7. pytest : @mark.parametrize
+## 7. pytest.raises : plusieurs types
+- Sous-thème : assertions
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `pytest.raises((ValueError, TypeError))` accepte un tuple : le test passe si le bloc lève l'un des types listés.
+- Contexte : Même règle que `except (A, B)` : le tuple entre parenthèses, sous-classes comprises. `exc.type` dit lequel a été levé, pour une assertion plus fine. Mais un contrat précis se teste précisément : si la fonction promet `ValueError` pour toute entrée invalide (comme `resolve_day`), le test doit l'exiger seule, sinon une `TypeError` non voulue passerait inaperçue.
+- Usage : ✅ fonction qui documente deux types possibles, test de bas niveau sur la stdlib · ❌ masquer l'hésitation sur le type réellement levé : fixer le contrat, puis le tester.
+
+```python
+# Exemple 1 : l'un ou l'autre
+import pytest
+from datetime import date
+with pytest.raises((ValueError,
+                    TypeError)) as exc:
+    date.fromisoformat(20261020)
+exc.type.__name__   # → "TypeError"
+```
+
+- Quiz : `with pytest.raises(ValueError):` entoure `date.fromisoformat(20261020)`. Résultat du test ?
+- [ ] Il passe : une erreur a été levée
+- [x] Il échoue : la `TypeError` traverse
+- [ ] Il échoue : `DID NOT RAISE`
+- [ ] Il est ignoré (`skipped`)
+- Réponse : échec sur `TypeError` : `raises` ne capture que le type demandé ; toute autre exception remonte et fait échouer le test.
+
+## 8. instant de test : une constante aware
+- Sous-thème : mocks
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Les tests passent un instant fixe et aware (`LUNDI_MATIN = datetime(2026, 10, 26, 8, tzinfo=PARIS)`), jamais l'horloge réelle.
+- Contexte : Un test qui lit `datetime.now()` donne un résultat différent chaque jour et casse au changement d'heure ou à minuit. Avec `now` injecté, chaque cas fixe son instant et son résultat attendu : `resolve_day({}, now=LUNDI_MATIN) == date(2026, 10, 25)`. Une constante de module nommée (`LUNDI_MATIN`) dit ce que l'instant a de particulier.
+- Usage : ✅ toute fonction qui dépend de l'heure, testée par paramètre `now` · ❌ un test qui calcule son attendu avec `datetime.now()` : il réécrit le code testé.
+
+```python
+# Exemple 1 : un lundi figé
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+P = ZoneInfo("Europe/Paris")
+LUNDI_MATIN = datetime(2026, 10, 26, 8,
+                       tzinfo=P)
+veille = LUNDI_MATIN.date() - timedelta(1)
+veille   # → date(2026, 10, 25)  (dimanche)
+```
+
+- Quiz : On écrit `LUNDI_MATIN = datetime(2026, 10, 26, 8)` (sans `tzinfo`) : que fait `resolve_day({}, now=LUNDI_MATIN)` ?
+- [ ] Renvoie le 25, comme avec `tzinfo`
+- [x] `ValueError`
+- [ ] Renvoie le 25 sur Mac, le 26 sur Lambda
+- [ ] `TypeError`
+- Réponse : `ValueError` : `resolve_day` refuse un `now` naïf, justement pour que le résultat ne dépende pas de la machine.
+
+## 9. moto : mock_aws, AWS en mémoire
+- Sous-thème : mocks
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `mock_aws()` intercepte les appels boto3 et les sert depuis une fausse AWS en mémoire, le temps d'un `with` ou d'une fonction décorée.
+- Contexte : moto se branche dans botocore : la requête n'atteint jamais le réseau, un backend Python joue S3, SQS, DynamoDB… avec leurs vraies erreurs (`NoSuchKey`, `NoSuchBucket`). L'état part vide à chaque démarrage : le bucket se crée dans le test. Depuis moto 5, un seul `mock_aws` remplace `mock_s3`, `mock_sqs` et les autres. Équivalent TS : `aws-sdk-client-mock`, en plus complet.
+- Usage : ✅ tester le code qui écrit ou relit S3, sans compte ni coût, en local et en CI · ❌ prouver les droits IAM du rôle, l'ordre des appels ou les latences : moto ne les montre pas.
+
+```python
+# Exemple 1 : écrire et relire sans AWS
+import boto3
+from moto import mock_aws
+with mock_aws():
+    s3 = boto3.client("s3", "us-east-1")
+    s3.create_bucket(Bucket="dp-raw")
+    s3.put_object(Bucket="dp-raw", Key="k", Body=b"A1")
+    r = s3.get_object(Bucket="dp-raw", Key="k")
+    corps = r["Body"].read()
+corps   # → b"A1"
+```
+
+```python
+# Exemple 2 : moto 5, un seul mock
+from moto import mock_s3  # ❌ ImportError
+```
+
+- Quiz : Un client boto3 créé **avant** `with mock_aws():`, puis utilisé dedans : où partent ses appels ?
+- [ ] Vers le vrai AWS : il a été créé hors du mock
+- [x] Vers moto : le mock intercepte tous les clients
+- [ ] `NoCredentialsError`
+- [ ] `ProfileNotFound`
+- Réponse : vers moto (mesuré avec moto 5.2) : le mock se branche dans botocore, pas dans le client ; la doc conseille quand même de créer les clients dans le mock.
+
+## 10. aws_credentials : de faux identifiants
+- Sous-thème : fixtures
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Une fixture pose de faux identifiants (`AWS_ACCESS_KEY_ID=testing`) et retire `AWS_PROFILE`, pour qu'aucun appel du test ne puisse viser le vrai compte.
+- Contexte : boto3 cherche ses identifiants dans l'ordre : variables d'environnement, puis profil de `~/.aws`, puis rôle. Les variables gagnent donc sur le profil. Un appel qui échapperait au mock (client créé à l'import, test sans fixture `s3`) partirait avec ces clés bidon et échouerait, au lieu d'écrire dans `dev`. `AWS_DEFAULT_REGION` évite l'erreur de région manquante.
+- Usage : ✅ fixture dont dépend `s3` (`def s3(aws_credentials)`), dans `conftest.py`, avec `monkeypatch.setenv` · ❌ `os.environ[...] = ...` dans un test : rien n'est restauré après.
+
+```python
+# Exemple 1 : les variables gagnent
+import os, boto3
+os.environ.pop("AWS_PROFILE", None)
+os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+c = boto3.Session().get_credentials()
+c.access_key    # → "testing"
+c.method        # → "env"
+del os.environ["AWS_ACCESS_KEY_ID"]
+del os.environ["AWS_SECRET_ACCESS_KEY"]
+```
+
+```python
+# Exemple 2 : la fixture du projet
+import pytest
+
+@pytest.fixture
+def aws_credentials(monkeypatch):
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    for k in ("AWS_ACCESS_KEY_ID",
+              "AWS_SECRET_ACCESS_KEY",
+              "AWS_SESSION_TOKEN"):
+        monkeypatch.setenv(k, "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION",
+                       "eu-west-3")
+```
+
+- Quiz : `AWS_PROFILE=dp-dev`, profil qui existe sur le poste, **et** les clés `testing` : lesquelles boto3 utilise-t-il ?
+- [ ] Celles du profil `dp-dev`
+- [x] `testing`, les variables d'environnement
+- [ ] Aucune : `ProfileNotFound` pour conflit
+- [ ] Celles du profil, si c'est un profil SSO
+- Réponse : `testing` (mesuré) : les variables d'environnement passent avant le fichier `~/.aws/credentials`, même avec `AWS_PROFILE` défini.
+
+## 11. fixture s3 : yield dans le with
+- Sous-thème : fixtures
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : La fixture `s3` fait `yield` du client **dans** `with mock_aws()` : le mock reste actif tout le test, puis s'arrête et efface son état.
+- Contexte : Avec `return` à la place, la fonction quitte le `with` avant que le test commence : le mock est déjà arrêté, ses objets effacés, et le client parle au vrai AWS (avec les faux identifiants : `InvalidAccessKeyId`). La chaîne `bucket(s3)` → `s3(aws_credentials)` fixe l'ordre : identifiants, puis mock, puis bucket. Après le test, pytest reprend après le `yield` et ferme le `with`.
+- Usage : ✅ toute ressource à durée de vie (mock, connexion, serveur) : `yield` dans son `with` · ❌ `return` dans un `with` : la ressource est fermée avant d'être utilisée.
+
+```python
+# Exemple 1 : return ferme trop tôt
+from contextlib import contextmanager
+journal = []
+@contextmanager
+def faux_mock():
+    journal.append("start")
+    yield
+    journal.append("stop")
+def fixture_return():
+    with faux_mock():
+        return "client"
+client = fixture_return()
+journal  # → ["start", "stop"] : déjà arrêté
+```
+
+```python
+# Exemple 2 : la fixture du projet
+import boto3, pytest
+from moto import mock_aws
+
+@pytest.fixture
+def s3(aws_credentials):
+    with mock_aws():
+        yield boto3.client("s3", "eu-west-3")
+
+@pytest.fixture
+def bucket(s3):
+    s3.create_bucket(Bucket="data-platform-test-raw",
+        CreateBucketConfiguration={
+            "LocationConstraint": "eu-west-3"})
+    return "data-platform-test-raw"
+```
+
+- Quiz : `def test_x(bucket):` ne demande pas `s3` : le mock est-il actif pendant le test ?
+- [ ] Non : il faut demander `s3` aussi
+- [x] Oui : `bucket` dépend de `s3`
+- [ ] Erreur : fixture `s3` introuvable
+- [ ] Seulement si `s3` est `autouse`
+- Réponse : oui : pytest instancie les dépendances de `bucket`, donc `s3` et `aws_credentials` ; on ne demande `s3` que pour s'en servir dans le test.
+
+## 12. SimpleNamespace : un faux objet en une ligne
+- Sous-thème : mocks
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `types.SimpleNamespace(aws_request_id="req-123")` crée un objet dont les attributs sont ceux passés en arguments : un faux `context` Lambda sans classe.
+- Contexte : Le code testé lit `context.aws_request_id` : un dict ne convient pas (`ctx["…"]` contre `ctx.…`), une classe est verbeuse, un `MagicMock` répond à tout, même aux fautes de frappe. `SimpleNamespace` n'a que ce qu'on lui donne : un attribut absent lève `AttributeError`, comme le vrai objet le ferait. Pour une méthode, passer une `lambda`.
+- Usage : ✅ faux `context`, faux événement à attributs, réponse d'API simplifiée · ❌ faux qui doit vérifier ses appels : `MagicMock` ou un faux écrit à la main.
+
+```python
+# Exemple 1 : un faux context Lambda
+from types import SimpleNamespace
+ctx = SimpleNamespace(
+    aws_request_id="req-123",
+    get_remaining_time_in_millis=lambda: 5000)
+ctx.aws_request_id  # → "req-123"
+ctx.get_remaining_time_in_millis()  # → 5000
+ctx.function_name  # ❌ AttributeError
+```
+
+- Quiz : Que vaut `SimpleNamespace(a=1) == SimpleNamespace(a=1)` ?
+- [ ] `False` : deux objets distincts
+- [x] `True`
+- [ ] `TypeError` : pas de comparaison définie
+- Réponse : `True` : `SimpleNamespace` compare ses attributs, contrairement à un objet ordinaire comparé par identité.
+
+## 13. [record] = … : exactement un élément
+- Sous-thème : assertions
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `[record] = [r for r in caplog.records if …]` déstructure une liste d'un seul élément : il en faut exactement un, sinon `ValueError`.
+- Contexte : Une seule ligne fait deux vérifications : « il y a un log de ce module » et « il n'y en a pas deux ». Plus court que `assert len(lst) == 1` suivi de `lst[0]`, et le message dit ce qui ne va pas (`not enough values` / `too many values`). ≈ `const [r] = lst` en TS, qui lui ne vérifie rien et donne `undefined`.
+- Usage : ✅ récupérer l'unique log, appel ou objet attendu dans un test · ❌ hors des tests, sur une donnée externe : un `if len(…) != 1` avec un message métier.
+
+```python
+# Exemple 1 : un seul élément attendu
+logs = ["ingestion terminée"]
+[record] = logs
+record  # → "ingestion terminée"
+[r] = []  # ❌ ValueError
+```
+
+- Quiz : Que fait `[record] = ["fin", "fin"]` ?
+- [ ] `record` vaut `"fin"`, le second est ignoré
+- [ ] `record` vaut `["fin", "fin"]`
+- [x] `ValueError: too many values to unpack`
+- Réponse : `ValueError` (mesuré : too many values to unpack (expected 1)) : la déstructuration exige autant de valeurs que de noms.
+
+## 14. pytest : @mark.parametrize
 - Sous-thème : marqueurs
 - Niveau : 2
 - Définition : `@pytest.mark.parametrize("arg", valeurs)` lance le même test une fois par valeur, chacune comptée comme un test séparé.
@@ -259,7 +482,7 @@ def test_valide(siren, ok):
 - [x] `6`
 - Réponse : `6` : des parametrize empilés font le produit cartésien des valeurs (2 × 3).
 
-## 8. pytest : fixture avec yield
+## 15. pytest : fixture avec yield
 - Sous-thème : fixtures
 - Niveau : 2
 - Définition : Une fixture qui fait `yield` prépare avant, livre la valeur au test, puis nettoie après (≈ `beforeEach` + `afterEach` réunis).
@@ -291,7 +514,7 @@ def test_ecrit(dossier):
 - [ ] Non, la fixture est abandonnée
 - Réponse : Oui, toujours : pytest exécute la partie après `yield` (teardown) que le test passe ou échoue ; pas besoin de `try/finally`.
 
-## 9. conftest.py : des fixtures par dossier
+## 16. conftest.py : des fixtures par dossier
 - Sous-thème : fixtures
 - Niveau : 2
 - Définition : Les fixtures d'un `conftest.py` sont visibles, sans import, par tous les tests de son dossier et de ses sous-dossiers.
@@ -330,7 +553,7 @@ def export_rows(export_text):
 - [ ] `ImportError` sur `conftest`
 - Réponse : `fixture 'export_rows' not found` : un `conftest.py` ne sert que son dossier et ses sous-dossiers ; les dossiers frères ne le voient pas.
 
-## 10. caplog : vérifier les logs
+## 17. caplog : vérifier les logs
 - Sous-thème : fixtures
 - Niveau : 2
 - Définition : La fixture `caplog` capture les logs émis pendant le test : `caplog.records` (objets `LogRecord`), `caplog.text` (texte formaté).
@@ -357,7 +580,7 @@ def test_log_retry(caplog):
 - [ ] `AttributeError`
 - Réponse : `[]` : le logger hérite du niveau `WARNING` du root, l'`info` est filtré avant d'atteindre le handler de `caplog`.
 
-## 11. --import-mode=importlib : des tests homonymes
+## 18. --import-mode=importlib : des tests homonymes
 - Sous-thème : config
 - Niveau : 2
 - Source : data-platform · S1-03
@@ -389,7 +612,7 @@ addopts = "-q --import-mode=importlib"
 - [ ] Import réussi, avec un avertissement
 - Réponse : `ModuleNotFoundError` : `importlib` ne met plus le dossier du test dans `sys.path` ; partager via une fixture de `conftest.py` ou un vrai module.
 
-## 12. addopts : des options invisibles
+## 19. addopts : des options invisibles
 - Sous-thème : config
 - Niveau : 2
 - Source : data-platform · S1-03
@@ -422,7 +645,7 @@ pytest -o addopts="" \
 - [ ] Rien du tout
 - Réponse : `..` seul : en `-qq`, pytest supprime aussi la ligne de résumé ; le code retour (0) reste le seul verdict.
 
-## 13. pytest.approx : comparer des flottants
+## 20. pytest.approx : comparer des flottants
 - Sous-thème : assertions
 - Niveau : 2
 - Définition : `x == pytest.approx(attendu)` compare des flottants à une tolérance près (relative `1e-6` par défaut), aussi dans des listes et des dicts.
@@ -454,7 +677,7 @@ taux == pytest.approx(
 - [ ] `ValueError` : approx de zéro
 - Réponse : `False` : relatif à zéro, la tolérance tombe à l'absolu `1e-12` ; passer `abs=1e-6` pour comparer à zéro.
 
-## 14. @pytest.mark : exclure par défaut
+## 21. @pytest.mark : exclure par défaut
 - Sous-thème : marqueurs
 - Niveau : 2
 - Source : data-platform · S1-06
@@ -484,7 +707,7 @@ uv run pytest -m integration
 - [ ] Oui, sans rien signaler
 - Réponse : oui, avec `PytestUnknownMarkWarning` : le marqueur inconnu ne matche pas `not integration` ; `--strict-markers` en fait une erreur de collecte.
 
-## 15. xfail : un échec attendu
+## 22. xfail : un échec attendu
 - Sous-thème : marqueurs
 - Niveau : 2
 - Définition : `@pytest.mark.xfail(reason=…)` déclare un test qui doit échouer (bug connu) : son échec ne casse pas la suite, il est compté `xfailed`.
@@ -515,7 +738,7 @@ xfail_strict = true
 - [ ] `1 skipped`
 - Réponse : `1 xpassed`, code retour 0 : sans `strict`, un xfail qui passe reste vert ; le marqueur oublié ment ensuite sur l'état du code.
 
-## 16. respx : une réponse par appel
+## 23. respx : une réponse par appel
 - Sous-thème : mocks
 - Niveau : 2
 - Source : data-platform · S1-06
@@ -560,7 +783,7 @@ with respx.mock:
 - [ ] `AllMockedAssertionError`
 - Réponse : `StopIteration` : la liste de `side_effect` est épuisée ; elle ne reboucle pas et ne réutilise pas la dernière réponse.
 
-## 17. monkeypatch : env et attributs
+## 24. monkeypatch : env et attributs
 - Sous-thème : mocks
 - Niveau : 2
 - Définition : La fixture `monkeypatch` remplace le temps d'un test une variable d'environnement (`setenv`) ou un attribut (`setattr`), et restaure tout après.
@@ -598,7 +821,7 @@ time.time() > 0  # → True  (restauré)
 - [ ] `ImportError`
 - Réponse : le vrai `now` : `use` a copié la référence à l'import ; patcher `use.now`, là où le nom est utilisé.
 
-## 18. injection : un faux plutôt qu'un patch
+## 25. injection : un faux plutôt qu'un patch
 - Sous-thème : mocks
 - Niveau : 2
 - Définition : Passer la dépendance en paramètre (`sleep=`, `http=`) permet au test d'injecter un faux simple, sans patcher de module.
@@ -627,7 +850,596 @@ delais  # → [1, 2]  (aucune attente réelle)
 - [ ] Le test dort vraiment 3 s
 - Réponse : `TypeError` (`list.append() takes exactly one argument (0 given)`) : on passe la fonction elle-même, sans l'appeler.
 
-## 19. couverture : lignes ou branches
+## 26. raises : vérifier la cause
+- Sous-thème : assertions
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Après `with pytest.raises(…) as exc:`, `exc.value.__cause__` donne l'exception d'origine d'un `raise … from` : le chaînage se teste aussi.
+- Contexte : `match=` ne lit que `str(exc.value)`, le message de l'erreur levée. Pour vérifier que la traduction garde bien sa cause (et qu'un refactoring n'a pas supprimé le `from exc`), on teste `exc.value.__cause__` : son type, ou son message. Utile quand l'appelant ou les logs comptent sur cette cause.
+- Usage : ✅ fonction qui traduit une erreur technique en erreur métier · ❌ tester la cause partout : seulement là où elle fait partie du contrat.
+
+```python
+# Exemple 1 : la cause d'origine
+import pytest
+from datetime import date
+def lire(raw):
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as e:
+        raise ValueError("date invalide") from e
+with pytest.raises(ValueError) as exc:
+    lire("hier")
+type(exc.value.__cause__).__name__
+# → "ValueError"
+```
+
+- Quiz : Même `lire`, `pytest.raises(ValueError, match="Invalid isoformat")` : le test passe-t-il ?
+- [ ] Oui : la cause contient ce texte
+- [x] Non : `match` ne lit que le message levé
+- [ ] Oui, `match` cherche dans toute la trace
+- [ ] Non : `TypeError`
+- Réponse : non : `match` cherche dans `str(exc.value)` (`date invalide`) ; la cause se vérifie via `exc.value.__cause__`.
+
+## 27. match : casse et ancres
+- Sous-thème : assertions
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `match=` applique `re.search` au message : sensible à la casse, sans ancre implicite ; `(?i)` ignore la casse, `^` et `$` ancrent.
+- Contexte : `match="date invalide"` passe sur `date invalide 'hier', attendu YYYY-MM-DD` : une sous-chaîne suffit. Mais `"Date invalide"` échoue : la casse compte. Viser un fragment stable du message (`"date invalide"`, `"fuseau"`), pas la phrase entière, laisse le message évoluer sans casser les tests ; les valeurs reçues (`'hier'`) se vérifient à part si besoin.
+- Usage : ✅ fragment court et stable du message · ❌ message complet recopié : chaque reformulation casse le test.
+
+```python
+# Exemple 1 : la casse compte
+import pytest
+def f():
+    raise ValueError("date invalide 'hier'")
+with pytest.raises(ValueError,
+                   match="Date invalide"):
+    f()   # ❌ AssertionError
+```
+
+```python
+# Exemple 2 : (?i) ignore la casse
+import pytest
+
+def f():
+    raise ValueError("date invalide 'hier'")
+
+with pytest.raises(ValueError,
+                   match="(?i)Date INVALIDE"):
+    f()
+"ok"   # → "ok"
+```
+
+- Quiz : Le message vaut `date invalide 'hier'`. `match="^invalide"` : le test passe-t-il ?
+- [ ] Oui : `invalide` est dans le message
+- [x] Non : `^` exige le début du message
+- [ ] Oui : `match` ignore les ancres
+- [ ] Non : `^` est interdit dans `match`
+- Réponse : non : `re.search` respecte `^`, qui ancre au début ; le message commence par `date`.
+
+## 28. ExceptionInfo : type, value, match()
+- Sous-thème : assertions
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `with pytest.raises(E) as exc:` remplit `exc` à la sortie du bloc : `exc.type`, `exc.value` (l'exception), `exc.match(regex)`.
+- Contexte : `exc.match()` vérifie le message après coup, utile pour plusieurs assertions sur la même erreur ; il lève `AssertionError` si la regex ne trouve rien. `exc.value` permet de lire les attributs d'une exception métier (`exc.value.raw == "hier"`). Les assertions se placent **après** le `with`, jamais dedans : la ligne qui lève termine le bloc.
+- Usage : ✅ vérifier plusieurs propriétés d'une erreur (message, attribut, cause) · ❌ assertion dans le `with` après la ligne qui lève : jamais exécutée.
+
+```python
+# Exemple 1 : lire l'erreur après le bloc
+import pytest
+from datetime import date
+with pytest.raises(ValueError) as exc:
+    date.fromisoformat("2026-13-01")
+exc.type is ValueError   # → True
+exc.match("month")       # → True
+str(exc.value)  # → "month must be in 1..12"
+```
+
+- Quiz : Que fait `exc.value` lu **dans** le bloc `with pytest.raises(ValueError) as exc:`, avant la ligne qui lève ?
+- [ ] Renvoie `None`
+- [x] `AssertionError`
+- [ ] Renvoie l'exception à venir
+- [ ] `NameError`
+- Réponse : `AssertionError` (`.value can only be used after the context manager exits`) : `exc` n'est rempli qu'à la sortie du bloc.
+
+## 29. parametrize : les ids générés
+- Sous-thème : marqueurs
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Chaque cas d'un `parametrize` reçoit un id (`test_x[hier]`) : la chaîne elle-même pour un texte ou un nombre, `nom` + index pour un objet.
+- Contexte : `test_date_invalide[2026-13-01]` se lit directement dans le rapport et se relance avec `-k`. Pour une `date`, un tuple ou un dict, pytest génère `d0`, `d1`… : illisible. `ids=["mois-13", "vide"]` (ou `pytest.param(…, id=…)`) nomme les cas à la main. Les ids servent aussi à cibler un cas : `pytest "test_x.py::test_x[hier]"`.
+- Usage : ✅ `ids=` dès que les valeurs sont des objets ou des chaînes peu parlantes · ❌ ids recopiés à la main pour des valeurs déjà lisibles.
+
+```python
+# Exemple 1 : des ids nommés
+import pytest
+@pytest.mark.parametrize(
+    "raw", ["2026-13-01", "20/10/2026"],
+    ids=["mois-13", "format-fr"])
+def test_invalide(raw):
+    assert raw
+# test_invalide[mois-13]
+# test_invalide[format-fr]
+```
+
+```python
+# Exemple 2 : objets : nom + index
+import pytest
+from datetime import date
+
+@pytest.mark.parametrize("d", [
+    date(2026, 10, 24), None, 3])
+def test_ids(d):
+    assert d != 0
+# test_ids[d0] test_ids[None] test_ids[3]
+```
+
+- Quiz : `parametrize("raw", ["hier", ""])` : quel id prend le cas de la chaîne vide ?
+- [ ] `test_x[raw1]`
+- [ ] `test_x['']`
+- [x] `test_x[]`
+- [ ] `test_x[1]`
+- Réponse : `test_x[]` : une chaîne sert telle quelle d'id, même vide ; d'où `ids=` pour un cas lisible (`"vide"`).
+
+## 30. pytest.param : un cas marqué
+- Sous-thème : marqueurs
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `pytest.param(valeur, marks=pytest.mark.xfail, id="…")` attache un marqueur ou un id à un seul cas d'un `parametrize`.
+- Contexte : Les autres cas restent normaux. Cas typique : documenter une limite connue sans casser la suite (`"2026-W43-1"` accepté par `fromisoformat` alors que le contrat dit `AAAA-MM-JJ`), ou sauter un cas sur une plateforme (`marks=pytest.mark.skipif(…)`). `pytest.param` prend autant de valeurs positionnelles que de noms de paramètres.
+- Usage : ✅ un cas en échec connu, un cas propre à une plateforme · ❌ marquer tout le test : décorateur `@pytest.mark.xfail` au-dessus.
+
+```python
+# Exemple 1 : un cas en échec connu
+import pytest
+@pytest.mark.parametrize("raw", [
+    "2026-10-20",
+    pytest.param("2026-W43-1", id="semaine",
+        marks=pytest.mark.xfail(reason="accepté")),
+])
+def test_format(raw):
+    assert "-W" not in raw
+# 1 passed, 1 xfailed
+```
+
+- Quiz : `parametrize("raw", [pytest.param("2026-W43-1", "2026-10-19")])` : que se passe-t-il ?
+- [ ] Deux cas : un par valeur
+- [ ] Le second argument devient l'id
+- [x] Erreur à la collecte
+- [ ] Un cas avec un tuple
+- Réponse : erreur à la collecte : un nom de paramètre (`raw`) pour deux valeurs ; le nombre de valeurs doit égaler le nombre de noms.
+
+## 31. horloge injectée : choisir les instants
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Avec `now` injecté, on teste les instants où le code peut se tromper : minuit passé à Paris, un lundi, un changement d'heure.
+- Contexte : Un test à 12:00 UTC ne verrait jamais le bug `.date()` sans conversion : à midi, UTC et Paris ont la même date. `resolve_day` est testé à 22:30 UTC le 24 (00:30 le 25 à Paris) : seul un instant entre 22:00 et minuit UTC (l'été) révèle l'écart. Chaque test nomme le piège qu'il vise : `test_sans_date_veille_a_paris_meme_si_utc_est_encore_la_veille`.
+- Usage : ✅ cas limites nommés : minuit, lundi, DST, fin de mois, 1er janvier · ❌ un seul instant « au hasard » en milieu de journée.
+
+```python
+# Exemple 1 : l'instant qui révèle le bug
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+P = ZoneInfo("Europe/Paris")
+def bug(now):    # .date() sans conversion
+    return now.date() - timedelta(1)
+def juste(now):
+    return now.astimezone(P).date() - timedelta(1)
+t = datetime(2026, 10, 24, 22, 30,
+             tzinfo=timezone.utc)
+bug(t) == juste(t)   # → False
+```
+
+- Quiz : Quel instant de test fait échouer `bug` (exemple 1) en hiver ?
+- [ ] 08:00 à Paris
+- [ ] 12:00 UTC
+- [ ] 01:00 UTC
+- [x] 23:30 UTC
+- Réponse : 23:30 UTC : en hiver (UTC+1) il est 00:30 le lendemain à Paris ; les autres instants ont la même date en UTC et à Paris.
+
+## 32. raises(Exception) : trop large
+- Sous-thème : assertions
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `pytest.raises(Exception)` passe pour n'importe quelle erreur, y compris une faute de frappe dans le test : un faux vert.
+- Contexte : Un `NameError` (fonction mal nommée), un `TypeError` (mauvais argument), un `KeyError` dans un fixture : tous héritent d'`Exception` et satisfont le test. Le code n'a peut-être jamais été appelé. Viser le type exact, plus `match=` sur un fragment du message, garantit qu'on teste bien le refus voulu. Ruff le signale (règle `PT011`, `raises` trop large sans `match`).
+- Usage : ✅ type précis + `match` · ❌ `raises(Exception)` ou `raises(BaseException)` dans un test métier.
+
+```python
+# Exemple 1 : faute de frappe, test vert
+import pytest
+with pytest.raises(Exception):
+    resolve_dya({})   # NameError
+"vert"   # → "vert"  (faux positif)
+```
+
+- Quiz : Même faute de frappe, mais `pytest.raises(ValueError)` : résultat ?
+- [ ] Vert : une erreur a été levée
+- [x] Rouge : `NameError` remonte
+- [ ] Rouge : `DID NOT RAISE`
+- [ ] Ignoré
+- Réponse : rouge sur `NameError` : seul `ValueError` est attendu ; la faute de frappe devient visible.
+
+## 33. AWS_PROFILE : un profil absent plante
+- Sous-thème : fixtures
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Un `AWS_PROFILE` qui nomme un profil inconnu de la machine fait lever `ProfileNotFound` à la création du client, même sous `mock_aws`.
+- Contexte : moto remplace les clés (`FOOBARKEY`) mais laisse `AWS_PROFILE` : boto3 charge ce profil dès `boto3.client(...)` et plante s'il n'existe pas. Sur ton poste, `AWS_PROFILE=dp-dev` exporté dans le shell passe ; en CI ou chez un collègue, les tests cassent avant le premier `assert`. Le retirer rend les tests indépendants de la machine.
+- Usage : ✅ `monkeypatch.delenv("AWS_PROFILE", raising=False)` dans la fixture de faux identifiants · ❌ compter sur le profil du poste pour faire tourner les tests.
+
+```python
+# Exemple 1 : moto ne sauve pas le profil
+import os, boto3
+from moto import mock_aws
+os.environ["AWS_PROFILE"] = "ci-absent"
+m = mock_aws(); m.start()
+boto3.client("s3", "eu-west-3")  # ❌ ProfileNotFound
+m.stop()
+del os.environ["AWS_PROFILE"]
+```
+
+- Quiz : `monkeypatch.delenv("AWS_PROFILE")`, sans `raising=False`, sur une machine où la variable n'existe pas : que se passe-t-il ?
+- [ ] Rien, la variable est déjà absente
+- [x] `KeyError` : le test échoue
+- [ ] Un avertissement pytest
+- [ ] `ProfileNotFound`
+- Réponse : `KeyError` (mesuré) : par défaut `delenv` exige que la variable existe ; `raising=False` rend l'appel sûr partout, CI comprise.
+
+## 34. moto ne prouve pas l'ordre : un faux qui enregistre
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Un faux client qui note chaque appel (`calls.append`) prouve l'ordre des écritures, que l'état final de moto ne montre pas.
+- Contexte : Après le test, moto contient les deux objets, quel que soit leur ordre d'arrivée : l'état final est le même. Or le contrat de `publish` est « données puis manifest ». Comme `sleep` injecté dans le client BODACC, le client S3 est un paramètre : le test passe un objet maison avec les deux seules méthodes utilisées. Le duck typing suffit, sans héritage ni patch.
+- Usage : ✅ ordre, nombre d'appels, arguments envoyés · ❌ contenu relu, types de contenu, vraies erreurs S3 (`NoSuchKey`) : moto.
+
+```python
+# Exemple 1 : l'ordre, enregistré
+class RecordingS3:
+    def __init__(self):
+        self.calls = []
+    def upload_file(self, f, bucket, key,
+                    ExtraArgs=None):
+        self.calls.append(("upload_file", key))
+    def put_object(self, **kwargs):
+        self.calls.append(("put_object", kwargs["Key"]))
+
+def publish(s3):
+    s3.upload_file("p.gz", "raw", "part-0001.jsonl.gz")
+    s3.put_object(Bucket="raw", Key="_MANIFEST.json")
+
+s3 = RecordingS3()
+publish(s3)
+[nom for nom, _ in s3.calls]
+# → ["upload_file", "put_object"]
+```
+
+- Quiz : Un `publish` bogué écrit le manifest **puis** le fichier : quel test moto le détecte ?
+- [ ] Le test qui relit le `count` du manifest
+- [ ] Le test du rejeu (`KeyCount == 2`)
+- [ ] Le test des types de contenu
+- [x] Aucun : l'état final est identique
+- Réponse : aucun : les deux objets existent avec le bon contenu, seul un faux qui enregistre les appels voit l'ordre inversé.
+
+## 35. faux client : la signature de boto3
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Le faux client reprend la signature exacte des méthodes boto3 utilisées : `upload_file(filename, bucket, key, ExtraArgs=None)` et `put_object(**kwargs)`.
+- Contexte : Un faux plus permissif que le vrai fait passer le test et planter la production : `put_object("raw", "k")` en positionnel marche sur `def put_object(self, *args)`, alors que boto3 lève `TypeError`. `**kwargs` reproduit « nommés seulement », et lire `kwargs["Key"]` échoue si le code oublie `Key=`. Reprendre les noms (`ExtraArgs`) attrape aussi les fautes de frappe.
+- Usage : ✅ faux minimal : une méthode par appel réel, mêmes noms de paramètres · ❌ `MagicMock()` comme client : il accepte n'importe quel nom et n'importe quels arguments.
+
+```python
+# Exemple 1 : nommés seulement, comme boto3
+class FauxS3:
+    def put_object(self, **kwargs):
+        return kwargs["Key"]
+
+s3 = FauxS3()
+s3.put_object(Bucket="raw", Key="_MANIFEST.json")
+# → "_MANIFEST.json"
+s3.put_object("raw", "_MANIFEST.json")  # ❌ TypeError
+```
+
+- Quiz : `s3 = MagicMock()` ; le code appelle `s3.put_objet(...)` (faute de frappe) : que fait le test ?
+- [ ] `AttributeError` : méthode inconnue
+- [ ] `TypeError` à l'appel
+- [x] Il passe sans erreur
+- [ ] `ParamValidationError`
+- Réponse : il passe (mesuré) : un `MagicMock` crée tout attribut demandé ; `create_autospec` ou un faux explicite fait échouer la faute.
+
+## 36. faux client : simuler une panne
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Un drapeau du faux (`fail_upload=True`) lève une exception au milieu du flux, pour vérifier ce qui ne doit **pas** arriver ensuite.
+- Contexte : moto réussit tout appel valide : il ne coupe jamais le réseau. Pour prouver « échec du fichier → pas de manifest », le faux lève `ConnectionError` dans `upload_file` ; le test attend l'exception (`pytest.raises`), puis vérifie que `put_object` n'a jamais été appelé. On teste l'absence d'un effet, pas seulement la remontée de l'erreur.
+- Usage : ✅ ordre de publication, nettoyage après échec, absence d'écriture partielle · ❌ couper le réseau ou modifier moto pour simuler une panne : injecter le faux.
+
+```python
+# Exemple 1 : l'upload échoue, rien après
+import pytest
+
+class RecordingS3:
+    def __init__(self, fail_upload=False):
+        self.calls, self.fail = [], fail_upload
+    def upload_file(self, f, b, key, ExtraArgs=None):
+        self.calls.append("upload_file")
+        if self.fail:
+            raise ConnectionError("coupure réseau")
+    def put_object(self, **kwargs):
+        self.calls.append("put_object")
+def publish(s3):
+    s3.upload_file("p.gz", "raw", "part")
+    s3.put_object(Bucket="raw", Key="_MANIFEST.json")
+
+s3 = RecordingS3(fail_upload=True)
+with pytest.raises(ConnectionError):
+    publish(s3)
+s3.calls   # → ["upload_file"]
+```
+
+- Quiz : Le test ne garde que `pytest.raises(ConnectionError)`, sans regarder `s3.calls` : quel bug laisse-t-il passer ?
+- [ ] Une exception d'un autre type
+- [x] Un manifest écrit avant le fichier qui échoue
+- [ ] Un fichier envoyé deux fois
+- [ ] Aucun : l'exception suffit
+- Réponse : un manifest écrit avant le fichier : `publish` lève toujours `ConnectionError`, mais la partition est déjà déclarée complète ; seul `s3.calls` le montre.
+
+## 37. caplog.at_level(logger=…) : le niveau du bon logger
+- Sous-thème : fixtures
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `with caplog.at_level(logging.INFO, logger="ingest_bodacc.handler"):` abaisse le niveau de ce logger le temps du bloc, puis remet l'ancien.
+- Contexte : Sans `logger=`, `caplog.set_level` règle le root. Or un module qui fait lui-même `logger.setLevel(WARNING)` ne regarde plus le root : son `info` reste filtré, `caplog.records` est vide. `logger=` vise le logger qui émet. La forme `with` limite le changement au bloc ; `set_level` dure jusqu'à la fin du test. Dans les deux cas pytest remet le niveau d'origine.
+- Usage : ✅ `at_level(…, logger=__name__ du module testé)` autour de l'appel · ❌ `set_level(INFO)` sans `logger=` sur un module qui fixe son propre niveau.
+
+```python
+# Exemple 1 : le root ne suffit pas
+import logging
+log = logging.getLogger("ingest.h")
+log.setLevel(logging.WARNING)  # module
+
+def test_root(caplog):
+    caplog.set_level(logging.INFO)
+    log.info("x")
+    assert caplog.records == []
+
+def test_logger(caplog):
+    with caplog.at_level(logging.INFO,
+                         logger="ingest.h"):
+        log.info("x")
+    assert len(caplog.records) == 1
+    assert log.level == logging.WARNING
+# pytest -q : 2 passed
+```
+
+- Quiz : Après le `with caplog.at_level(…, logger="ingest.h")` de l'exemple, que vaut `log.level` ?
+- [ ] `20` : `INFO` reste en place
+- [x] `30` : remis à `WARNING`
+- [ ] `0` : remis à `NOTSET`
+- Réponse : `30` (mesuré) : `at_level` mémorise le niveau du logger visé et le restaure à la sortie du bloc.
+
+## 38. caplog.records : filtrer par nom de logger
+- Sous-thème : fixtures
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `caplog.records` contient les logs de **tous** les loggers ; filtrer par `r.name == "ingest_bodacc.handler"` isole ceux du module testé.
+- Contexte : Dès que le niveau passe à `INFO`, les bibliothèques parlent aussi : httpx écrit `HTTP Request: GET … "HTTP/1.1 200 OK"` à chaque requête, même mockée par respx (mesuré). Un `caplog.records[0]` lit alors la ligne de httpx, pas la vôtre. Filtrer par nom rend le test indépendant de ce que font les dépendances.
+- Usage : ✅ `[r for r in caplog.records if r.name == "…"]` avant tout `assert` · ❌ `caplog.records[0]` ou `len(caplog.records)` dans un test qui fait des appels httpx ou boto3.
+
+```python
+# Exemple 1 : httpx parle aussi
+import logging, httpx, respx
+def test_bruit(caplog):
+    caplog.set_level(logging.INFO)
+    with respx.mock:
+        respx.get("https://b.test/x").mock(
+            return_value=httpx.Response(200))
+        httpx.get("https://b.test/x")
+    noms = [r.name for r in caplog.records]
+    assert noms == ["httpx"]
+# pytest -q : 1 passed
+```
+
+- Quiz : Test de l'exemple, mais `logger="ingest_bodacc.handler"` passé à `set_level` : que vaut `noms` ?
+- [ ] `["httpx"]`
+- [x] `[]`
+- [ ] `["ingest_bodacc.handler"]`
+- Réponse : `[]` : seul le module testé passe à `INFO` ; httpx garde le `WARNING` hérité du root et son `info` est filtré.
+
+## 39. respx.mock(…) : toutes les routes doivent servir
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `respx.mock(...)` (appelé) crée un routeur qui vérifie à la sortie que chaque route a été appelée ; `assert_all_called=False` lève cette vérification.
+- Contexte : Mesuré : `with respx.mock() as m:` avec une route jamais appelée échoue à la sortie (`AssertionError: RESPX: some routes were not called!`), utile pour prouver qu'une requête part. Une fixture partagée qui déclare la route pour tous les tests doit mettre `assert_all_called=False` : le test « date invalide, aucun appel réseau » ne l'appelle pas. Le routeur global `with respx.mock:` (sans parenthèses) ne vérifie pas.
+- Usage : ✅ défaut `True` dans un test qui doit appeler l'API, `False` dans une fixture commune · ❌ `False` partout : une requête oubliée passe inaperçue.
+
+```python
+# Exemple 1 : la route non appelée échoue
+import httpx, respx
+try:
+    with respx.mock() as m:
+        m.get("https://b.test/x").mock(
+            return_value=httpx.Response(200))
+except AssertionError as e:
+    msg = str(e)
+msg  # → "RESPX: some routes were not called!"
+```
+
+```python
+# Exemple 2 : la fixture commune
+import httpx, respx
+with respx.mock(assert_all_called=False) as m:
+    m.get("https://b.test/x").mock(
+        return_value=httpx.Response(200))
+"sortie sans erreur"  # → "sortie sans erreur"
+```
+
+- Quiz : `with respx.mock as m:` (sans parenthèses), une route jamais appelée : le bloc échoue-t-il à la sortie ?
+- [ ] Oui : `AssertionError`
+- [x] Non : le routeur global ne vérifie pas
+- [ ] Oui : `AllMockedAssertionError`
+- Réponse : non (mesuré) : seul un routeur créé par l'appel `respx.mock(...)` vérifie par défaut ; le global sert sans contrôle.
+
+## 40. respx : lire les paramètres envoyés
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `route.calls.last.request.url.params` donne les paramètres de requête du dernier appel, pour vérifier ce que le client a vraiment demandé.
+- Contexte : Une route sans `params=` répond à toute requête vers l'URL, quels que soient les paramètres : la réponse ne prouve rien sur `where` ou `order_by`. Lire la requête enregistrée le prouve : `params["where"] == "dateparution=date'2026-10-20'"`. `params` est un `QueryParams` : `["clé"]` lève `KeyError` si absent, `.get` renvoie `None`.
+- Usage : ✅ vérifier date, filtre, tri, pagination envoyés · ❌ comparer l'URL complète en chaîne : l'ordre et l'encodage des paramètres la rendent fragile.
+
+```python
+# Exemple 1 : ce qui est parti
+import httpx, respx
+URL = "https://b.test/exports/jsonl"
+with respx.mock:
+    route = respx.get(URL).mock(
+        return_value=httpx.Response(200))
+    httpx.get(URL, params={"order_by": "id",
+        "where": "dateparution=date'2026-10-20'"})
+p = route.calls.last.request.url.params
+p["order_by"]  # → "id"
+p.get("limit")  # → None
+```
+
+- Quiz : Même route, mais le client oublie `order_by` : que fait `p["order_by"]` dans le test ?
+- [ ] Renvoie `None`
+- [ ] Renvoie `""`
+- [x] `KeyError`
+- Réponse : `KeyError` (mesuré) : comme un dict, `QueryParams[...]` lève si la clé manque, et le test échoue en le disant.
+
+## 41. respx : prouver qu'aucun appel n'est parti
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `assert route.call_count == 0` après un appel qui doit échouer prouve que la validation a eu lieu avant toute requête réseau.
+- Contexte : Test « date invalide » du handler : `pytest.raises(ValueError)` montre qu'il échoue, `call_count == 0` montre qu'il échoue **avant** l'export, donc sans coût ni effet. C'est la preuve du fail fast. Sous `respx.mock`, une requête vers une URL sans route lève `AllMockedAssertionError` : aucun appel réel ne s'échappe, mais il faut une route pour compter.
+- Usage : ✅ toute erreur de paramètre qui doit sortir avant le réseau ou S3 · ❌ seulement `pytest.raises` : une validation placée après l'appel passerait aussi.
+
+```python
+# Exemple 1 : la validation passe d'abord
+import httpx, respx
+from datetime import date
+URL = "https://b.test/x"
+def lire(raw):
+    jour = date.fromisoformat(raw)
+    return httpx.get(URL, params={"d": str(jour)})
+with respx.mock:
+    route = respx.get(URL).mock(
+        return_value=httpx.Response(200))
+    try:
+        lire("20/10/2026")
+    except ValueError:
+        pass
+route.call_count  # → 0
+```
+
+- Quiz : Sous `with respx.mock:`, `httpx.get("https://autre.test/")` sans route correspondante : que se passe-t-il ?
+- [ ] La requête part sur le vrai réseau
+- [ ] Réponse `404` simulée
+- [x] `AllMockedAssertionError`
+- [ ] `httpx.ConnectError`
+- Réponse : `AllMockedAssertionError` (mesuré) : tout est intercepté ; une requête sans route est une erreur de test, pas un appel réel.
+
+## 42. respx : changer la réponse en cours de test
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Rappeler `route.mock(return_value=…)` sur une route existante remplace sa réponse pour les appels suivants, sans perdre l'historique des appels.
+- Contexte : Sert au test « coupure au rejeu » : la fixture renvoie l'export complet, une première invocation publie, puis `export_route.mock(…)` fait couper le flux, et la seconde invocation doit échouer sans toucher la partition. `call_count` cumule les deux phases. Plus lisible qu'un `side_effect=[…]` quand les deux phases sont séparées par des `assert`.
+- Usage : ✅ scénario en deux temps (succès puis panne, ou l'inverse) autour d'assertions intermédiaires · ❌ suite d'appels rapides dans une même fonction : `side_effect=[r1, r2]`.
+
+```python
+# Exemple 1 : 200, puis 503
+import httpx, respx
+URL = "https://b.test/x"
+with respx.mock:
+    route = respx.get(URL).mock(
+        return_value=httpx.Response(200))
+    a = httpx.get(URL).status_code
+    route.mock(return_value=httpx.Response(503))
+    b = httpx.get(URL).status_code
+(a, b)  # → (200, 503)
+route.call_count  # → 2
+```
+
+- Quiz : Après le second `route.mock(…)`, `route.calls[0].response.status_code` vaut…
+- [x] `200` : l'historique garde la réponse d'alors
+- [ ] `503` : la nouvelle réponse remplace tout
+- [ ] `IndexError` : l'historique est remis à zéro
+- Réponse : `200` : chaque appel enregistre la réponse rendue à ce moment ; `mock` ne change que les appels à venir.
+
+## 43. respx + moto : deux mocks qui cohabitent
+- Sous-thème : mocks
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : respx n'intercepte que httpx, moto que botocore : dans un même test, l'API BODACC est mockée par l'un et S3 par l'autre, sans interférence.
+- Contexte : Les deux se branchent à des endroits différents : respx remplace le transport de httpx, moto s'insère dans botocore (qui n'utilise pas httpx). Sous `respx.mock`, un appel boto3 n'est donc pas une « requête sans route ». C'est ce qui permet le test de bout en bout du handler : vraie lecture du flux, vraie écriture gzip, faux S3, sans réseau.
+- Usage : ✅ test bout en bout d'une Lambda qui lit une API (httpx) et écrit dans S3 (boto3) · ❌ espérer que respx bloque un appel `requests` ou boto3 : il ne les voit pas.
+
+```python
+# Exemple 1 : les deux mocks à la fois
+import os, boto3, httpx, respx
+from moto import mock_aws
+os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+with respx.mock, mock_aws():
+    respx.get("https://b.test/x").mock(
+        return_value=httpx.Response(200))
+    s3 = boto3.client("s3", "eu-west-3")
+    s3.create_bucket(Bucket="dp-raw",
+        CreateBucketConfiguration={
+            "LocationConstraint": "eu-west-3"})
+    httpx.get("https://b.test/x").status_code
+    noms = [b["Name"] for b in
+            s3.list_buckets()["Buckets"]]
+noms  # → ["dp-raw"]
+```
+
+- Quiz : Sous `with respx.mock:` seul (sans `mock_aws`), un `s3.list_buckets()` boto3 : que se passe-t-il ?
+- [ ] `AllMockedAssertionError` : requête sans route
+- [x] Il part vers AWS : respx ne voit pas boto3
+- [ ] Il renvoie une liste vide simulée
+- Réponse : il part vers AWS (ou échoue faute d'identifiants) : respx ne mocke que httpx ; d'où `mock_aws` et de faux identifiants dans la fixture.
+
+## 44. fixture : cache_clear avant et après
+- Sous-thème : fixtures
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Une fixture qui appelle `fn.cache_clear()` avant `yield` et après donne à chaque test un état neuf pour une fonction en cache (`s3_client`).
+- Contexte : Le cache vit dans le module, donc dure toute la session pytest. Sans `cache_clear`, le premier test qui appelle `s3_client()` fige un client (créé sous son `mock_aws`, avec son environnement) que tous les suivants réutilisent. Avant : ne pas hériter d'un test précédent ; après : ne rien laisser au suivant, même s'il ne passe pas par la fixture.
+- Usage : ✅ toute fonction `@cache` qui dépend de l'environnement ou d'un mock · ❌ vider le cache dans le test lui-même : un oubli, et l'ordre des tests change le résultat.
+
+```python
+# Exemple 1 : un client neuf par test
+import pytest
+from functools import cache
+@cache
+def s3_client():
+    return object()  # ≈ boto3.client
+@pytest.fixture
+def client_neuf():
+    s3_client.cache_clear()
+    yield s3_client()
+    s3_client.cache_clear()
+s3_client.cache_clear()
+s3_client.cache_info().currsize  # → 0
+```
+
+- Quiz : Sans la ligne `cache_clear()` d'après `yield`, un test suivant qui **n'utilise pas** la fixture appelle `s3_client()` : que reçoit-il ?
+- [ ] Un client neuf
+- [x] Le client créé pendant le test précédent
+- [ ] `None`
+- Réponse : le client du test précédent : le cache garde l'objet créé dans la fixture, éventuellement sous un `mock_aws` déjà arrêté.
+
+## 45. couverture : lignes ou branches
 - Sous-thème : couverture
 - Niveau : 3
 - Source : data-platform · S1-06
@@ -671,7 +1483,7 @@ fetch_day(0)   # ❌ ValueError
 - [ ] `50%`
 - Réponse : `100%` : les 3 lignes sont exécutées par `fetch_day()` ; seule la mesure des branches voit la sortie de boucle jamais prise.
 
-## 20. scope : partager une fixture coûteuse
+## 46. scope : partager une fixture coûteuse
 - Sous-thème : fixtures
 - Niveau : 3
 - Définition : `scope="module"` ou `"session"` crée la fixture une seule fois pour plusieurs tests, au lieu d'une fois par test (`function`).
@@ -699,7 +1511,7 @@ def test_2(client):
 - [ ] Avertissement, puis le test passe
 - Réponse : `ScopeMismatch` : une fixture large ne peut pas dépendre d'une plus étroite, qui serait détruite avant elle.
 
-## 21. fixture paramétrée : params et request.param
+## 47. fixture paramétrée : params et request.param
 - Sous-thème : fixtures
 - Niveau : 3
 - Définition : `@pytest.fixture(params=[...])` rejoue chaque test qui l'utilise une fois par valeur, lue dans la fixture par `request.param`.
@@ -725,7 +1537,7 @@ def test_bulletin(bulletin):
 - [ ] `TypeError` à la collecte
 - Réponse : `AttributeError` (`'SubRequest' object has no attribute 'param'`) : `param` n'existe que pour une fixture paramétrée.
 
-## 22. autouse : une fixture pour tous
+## 48. autouse : une fixture pour tous
 - Sous-thème : fixtures
 - Niveau : 3
 - Définition : `@pytest.fixture(autouse=True)` s'applique à tous les tests de sa portée sans qu'ils la demandent : un `beforeEach` global.
@@ -754,3 +1566,258 @@ def test_lambda():   # sans paramètre
 - [ ] Oui, si `test_b.py` est dans le même dossier
 - [ ] Non, et `test_a.py` lève une erreur
 - Réponse : non : une fixture `autouse` a la portée de l'endroit où elle est définie ; pour tout un dossier, la mettre dans son `conftest.py`.
+
+## 49. parametrize sur une classe
+- Sous-thème : marqueurs
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `@pytest.mark.parametrize` posé sur une classe `Test…` s'applique à chacune de ses méthodes de test.
+- Contexte : Toutes les méthodes reçoivent le paramètre, en argument après `self`. Pratique quand plusieurs vérifications partagent le même jeu d'entrées (plusieurs instants testés sur plusieurs propriétés). Chaque méthode est multipliée par le nombre de valeurs. Même effet au niveau du module avec `pytestmark = pytest.mark.parametrize(…)`, plus rare.
+- Usage : ✅ même jeu d'entrées pour plusieurs assertions séparées · ❌ une seule méthode : décorer la fonction.
+
+```python
+# Exemple 1 : deux méthodes, deux instants
+import pytest
+@pytest.mark.parametrize("h", [0, 23])
+class TestVeille:
+    def test_entier(self, h):
+        assert isinstance(h, int)
+    def test_borne(self, h):
+        assert 0 <= h < 24
+# 4 passed : test_entier[0], [23]…
+```
+
+- Quiz : Une classe paramétrée de 4 valeurs contient 2 méthodes de test : combien de tests ?
+- [ ] 4
+- [ ] 6
+- [x] 8
+- [ ] 2
+- Réponse : 8 : chaque méthode est lancée une fois par valeur, soit 2 × 4.
+
+## 50. parametrize indirect : passer par une fixture
+- Sous-thème : fixtures
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `parametrize("jour", [...], indirect=True)` envoie chaque valeur à la fixture `jour` (dans `request.param`) au lieu du test.
+- Contexte : La fixture transforme la valeur brute (`"2026-10-24"`) en objet prêt (`date`, client, fichier) avant le test. Utile quand la préparation est commune et coûteuse, et que seuls quelques tests veulent la varier. `indirect=["jour"]` ne vise que certains noms. Sans `indirect`, une valeur de `parametrize` prend le pas sur la fixture de même nom.
+- Usage : ✅ varier l'entrée d'une fixture pour quelques tests · ❌ tous les tests veulent les variantes : `@pytest.fixture(params=…)`.
+
+```python
+# Exemple 1 : la chaîne devient une date
+import pytest
+from datetime import date
+@pytest.fixture
+def jour(request):
+    return date.fromisoformat(request.param)
+@pytest.mark.parametrize(
+    "jour", ["2026-10-24"], indirect=True)
+def test_jour(jour):
+    assert jour == date(2026, 10, 24)
+# 1 passed
+```
+
+- Quiz : Même test **sans** `indirect=True` : que reçoit `test_jour(jour)` ?
+- [ ] `date(2026, 10, 24)` : la fixture s'applique
+- [x] La chaîne `"2026-10-24"`
+- [ ] Une erreur : nom en double
+- [ ] `request.param`
+- Réponse : la chaîne : la valeur de `parametrize` remplace la fixture de même nom ; le test échoue alors sur `==`.
+
+## 51. parametrize : un objet partagé entre cas
+- Sous-thème : marqueurs
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Les valeurs de `parametrize` sont créées une fois, à la collecte : un objet mutable modifié par un cas est vu modifié par les suivants.
+- Contexte : `pytest` ne copie pas les valeurs. Une même liste passée deux fois, ou un dict de module réutilisé, fuit d'un cas à l'autre : le second échoue seul, ou pire, passe grâce au premier. Comme les valeurs par défaut mutables d'une fonction. Parade : valeurs immuables (tuples, chaînes), ou fixture qui fabrique un objet neuf par test.
+- Usage : ✅ valeurs immuables dans `parametrize` · ❌ liste ou dict modifié par le test : le fabriquer dans le test ou une fixture.
+
+```python
+# Exemple 1 : la même liste, deux cas
+import pytest
+LOT = []
+@pytest.mark.parametrize("lot", [LOT, LOT])
+def test_ajout(lot):
+    lot.append("A1")
+    assert lot == ["A1"]
+# test_ajout[lot0] passed
+# test_ajout[lot1] FAILED : ['A1', 'A1']
+```
+
+- Quiz : `parametrize("lot", [[]] * 2)` et chaque cas fait `lot.append(1)` puis `assert lot == [1]` : résultat ?
+- [ ] 2 passed : deux listes vides
+- [x] 1 passed, 1 failed
+- [ ] 2 failed
+- [ ] Erreur à la collecte
+- Réponse : 1 passed, 1 failed : `[[]] * 2` répète la même liste ; le second cas la reçoit déjà remplie.
+
+## 52. moto : les droits du rôle ne sont pas vérifiés
+- Sous-thème : mocks
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : moto n'évalue pas les politiques IAM de l'appelant : un test vert ne prouve pas que le rôle de la Lambda a les droits.
+- Contexte : Les identifiants bidon sont acceptés tels quels, l'appelant est le compte `123456789012`, et un utilisateur sans aucune politique écrit partout. Les droits se vérifient ailleurs : relecture du `terraform plan`, IAM Access Analyzer, test d'intégration sur `dev` avec le vrai rôle. moto a un mode d'autorisation expérimental (`INITIAL_NO_AUTH_ACTION_COUNT`), rarement utilisé.
+- Usage : ✅ tester la logique : clés, contenu, erreurs S3 · ❌ conclure qu'un rôle à moindre privilège pourra écrire dans `raw` : test d'intégration.
+
+```python
+# Exemple 1 : un utilisateur sans politique
+import boto3
+from moto import mock_aws
+m = mock_aws(); m.start()
+iam = boto3.client("iam", "us-east-1")
+iam.create_user(UserName="ingest")
+k = iam.create_access_key(
+    UserName="ingest")["AccessKey"]
+s3 = boto3.client("s3", "us-east-1",
+    aws_access_key_id=k["AccessKeyId"],
+    aws_secret_access_key=k["SecretAccessKey"])
+s3.create_bucket(Bucket="dp-raw")
+r = s3.put_object(Bucket="dp-raw", Key="k", Body=b"x")
+r["ResponseMetadata"]["HTTPStatusCode"]  # → 200
+m.stop()
+```
+
+- Quiz : Le test pose une politique de **bucket** `Deny s3:PutObject` pour `"*"`, puis écrit : que se passe-t-il sous moto ?
+- [ ] L'écriture réussit : moto ignore toute politique
+- [x] L'écriture est refusée (403)
+- [ ] `NoSuchBucket`
+- [ ] `MalformedPolicy` : `"*"` interdit
+- Réponse : refusée en 403 (mesuré avec moto 5.2) : moto applique un `Deny` de politique de bucket, mais pas les politiques IAM de l'appelant.
+
+## 53. moto : start et stop sans with
+- Sous-thème : mocks
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `m = mock_aws(); m.start()` puis `m.stop()` active moto hors d'un `with`, par exemple dans `setUp` / `tearDown` ou pour toute une session.
+- Contexte : `stop()` efface l'état : buckets et objets disparaissent, le démarrage suivant repart de zéro. Oublier `stop()` (exception avant, pas de `finally`) laisse le mock actif pour les tests suivants, qui partagent alors un état. Un mock de portée `session` partage volontairement l'état : chaque test doit utiliser ses propres clés ou nettoyer.
+- Usage : ✅ `unittest.TestCase` (`setUp` / `tearDown`), mock global d'une session de tests · ❌ test pytest ordinaire : fixture à `yield` dans `with mock_aws()`, qui arrête toujours.
+
+```python
+# Exemple 1 : stop efface tout
+import boto3
+from moto import mock_aws
+m = mock_aws(); m.start()
+s3 = boto3.client("s3", "us-east-1")
+s3.create_bucket(Bucket="dp-raw")
+len(s3.list_buckets()["Buckets"])  # → 1
+m.stop()
+m.start()
+len(s3.list_buckets()["Buckets"])  # → 0
+m.stop()
+```
+
+- Quiz : `@mock_aws` sur une fonction qui crée `dp-raw` en `eu-west-3`, appelée deux fois : que fait le second appel ?
+- [ ] `BucketAlreadyOwnedByYou`
+- [ ] `BucketAlreadyExists`
+- [x] Il réussit : l'état repart vide
+- [ ] Il n'est pas mocké : le décorateur ne sert qu'une fois
+- Réponse : il réussit (mesuré) : chaque appel de la fonction décorée démarre et arrête le mock, donc repart d'un compte vide.
+
+## 54. Stubber : des réponses écrites d'avance
+- Sous-thème : mocks
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `botocore.stub.Stubber` remplace les réponses d'un client par une file de réponses déclarées, et vérifie les paramètres attendus de chaque appel.
+- Contexte : Rien n'est simulé, contrairement à moto : chaque appel consomme la réponse suivante (`add_response`) ou une erreur (`add_client_error`), dans l'ordre déclaré. Des paramètres différents lèvent `StubAssertionError`, un appel en trop `UnStubbedResponseError`. Pas d'état : écrire puis relire demande deux réponses écrites à la main. Mal adapté à `upload_file`, qui enchaîne plusieurs appels.
+- Usage : ✅ vérifier les paramètres exacts d'un appel, provoquer une erreur rare (`SlowDown`, `500`) · ❌ code qui écrit puis relit, ou qui passe par `upload_file` : moto.
+
+```python
+# Exemple 1 : une réponse, des paramètres
+import boto3
+from botocore.stub import Stubber
+s3 = boto3.client("s3", "eu-west-3",
+    aws_access_key_id="x", aws_secret_access_key="x")
+st = Stubber(s3)
+st.add_response("head_object", {"ContentLength": 6},
+    {"Bucket": "dp-raw", "Key": "k"})
+st.activate()
+s3.head_object(Bucket="dp-raw",
+               Key="k")["ContentLength"]  # → 6
+```
+
+```python
+# Exemple 2 : provoquer une erreur rare
+import boto3
+from botocore.stub import Stubber
+from botocore.exceptions import ClientError
+s3 = boto3.client("s3", "eu-west-3",
+    aws_access_key_id="x", aws_secret_access_key="x")
+st = Stubber(s3)
+st.add_client_error("put_object", "SlowDown",
+                    http_status_code=503)
+st.activate()
+s3.put_object(Bucket="dp-raw", Key="k",
+              Body=b"x")  # ❌ ClientError
+```
+
+- Quiz : Dans l'exemple 1, que fait un `head_object(Bucket="dp-raw", Key="autre")` à la place de l'appel prévu ?
+- [ ] Il renvoie quand même `ContentLength: 6`
+- [ ] `ClientError` au code `"404"`
+- [x] `StubAssertionError` : paramètres inattendus
+- [ ] `UnStubbedResponseError`
+- Réponse : `StubAssertionError` (mesuré) : les paramètres attendus sont comparés à l'appel ; `UnStubbedResponseError` arrive quand la file de réponses est vide.
+
+## 55. raises(KeyError, match=…) : les guillemets du message
+- Sous-thème : assertions
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `str(KeyError("RAW_BUCKET"))` vaut `"'RAW_BUCKET'"`, avec guillemets : `match="RAW_BUCKET"` passe, `match="^RAW_BUCKET$"` échoue.
+- Contexte : `KeyError` est la seule exception courante dont `str()` renvoie le `repr` de la clé, pour distinguer `KeyError('')` d'un message vide. `match` applique `re.search` à `str(exc)` : une recherche sans ancre trouve le nom au milieu des guillemets, une ancre stricte non. Même piège en comparant `str(e) == "RAW_BUCKET"`.
+- Usage : ✅ `match="RAW_BUCKET"` sans ancres, ou `exc.value.args[0] == "RAW_BUCKET"` · ❌ `match="^RAW_BUCKET$"` ou `str(e) ==` sur une `KeyError`.
+
+```python
+# Exemple 1 : la clé et son repr
+e = KeyError("RAW_BUCKET")
+str(e)  # → "'RAW_BUCKET'"
+e.args[0]  # → "RAW_BUCKET"
+str(ValueError("x"))  # → "x"
+```
+
+```python
+# Exemple 2 : match = re.search
+import re
+re.search("RAW_BUCKET", "'RAW_BUCKET'") is None
+# → False
+re.search("^RAW_BUCKET$", "'RAW_BUCKET'") is None
+# → True
+```
+
+- Quiz : `pytest.raises(KeyError, match="'RAW_BUCKET'")` (guillemets dans le motif) autour de `os.environ["RAW_BUCKET"]` absente : le test passe-t-il ?
+- [x] Oui
+- [ ] Non : `match` compare à la clé sans guillemets
+- [ ] Non : `os.environ` lève une autre exception
+- Réponse : oui : `str(exc)` contient les guillemets, le motif aussi ; `os.environ[...]` lève bien une `KeyError`.
+
+## 56. SyncByteStream : couper le flux en plein milieu
+- Sous-thème : mocks
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Une sous-classe de `httpx.SyncByteStream` dont `__iter__` rend quelques octets puis lève `httpx.ReadError` simule une coupure réseau après le début de la réponse.
+- Contexte : `side_effect=httpx.ReadError(…)` fait échouer la requête avant toute réponse ; une coupure réelle arrive après le `200`, en pleine lecture. Passée en `stream=` à `httpx.Response`, la classe fait lire une première annonce, puis lève : c'est le seul moyen de tester « rien n'est publié si le flux casse après la première ligne ». Un `httpx.get` non streamé lit tout et lève aussi.
+- Usage : ✅ tester la reprise ou l'abandon d'une lecture en flux (`iter_lines`) · ❌ simuler une erreur de connexion avant la réponse : `side_effect=httpx.ConnectError(…)`.
+
+```python
+# Exemple 1 : une ligne, puis la coupure
+import httpx, respx
+class Coupe(httpx.SyncByteStream):
+    def __iter__(self):
+        yield b"A202602011\n"
+        raise httpx.ReadError("coupé")
+URL = "https://b.test/x"
+lus = []
+with respx.mock:
+    respx.get(URL).mock(return_value=
+        httpx.Response(200, stream=Coupe()))
+    try:
+        with httpx.stream("GET", URL) as r:
+            for ligne in r.iter_lines():
+                lus.append(ligne)
+    except httpx.ReadError:
+        pass
+lus  # → ["A202602011"]
+```
+
+- Quiz : Même route, mais `httpx.get(URL)` (non streamé) à la place de `httpx.stream` : que se passe-t-il ?
+- [ ] Réponse `200` avec le corps partiel
+- [x] `httpx.ReadError`
+- [ ] Réponse `200` avec un corps vide
+- Réponse : `httpx.ReadError` (mesuré) : `get` lit tout le corps avant de rendre la réponse, et la coupure survient pendant cette lecture.

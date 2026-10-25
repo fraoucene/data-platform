@@ -39,6 +39,48 @@
       "page_id": "402ed6f2-40ac-81e7-9c44-c3b411b527cc",
       "url": "https://app.notion.com/p/402ed6f240ac81e79c44c3b411b527cc",
       "synced": "2026-10-23"
+    },
+    "s1-06.md": {
+      "page_id": "402ed6f2-40ac-81e1-9565-d9303d7c5679",
+      "url": "https://app.notion.com/p/402ed6f240ac81e19565d9303d7c5679",
+      "synced": "2026-10-23"
+    },
+    "cours-python-collections.md": {
+      "page_id": "402ed6f2-40ac-814f-9f8e-fd323e5db8e5",
+      "url": "https://app.notion.com/p/402ed6f240ac814f9f8efd323e5db8e5",
+      "synced": "2026-10-23"
+    },
+    "cartes-python-decorateurs.md": {
+      "kind": "cards",
+      "database": "revision-cartes",
+      "cours": "Décorateurs",
+      "synced": "2026-10-23"
+    },
+    "cartes-python-collections.md": {
+      "kind": "cards",
+      "database": "revision-cartes",
+      "cours": "Collections",
+      "synced": "2026-10-23"
+    },
+    "pwa-revision.md": {
+      "page_id": "402ed6f2-40ac-81bf-993d-f4d501d56d1d",
+      "url": "https://app.notion.com/p/402ed6f240ac81bf993df4d501d56d1d",
+      "synced": "2026-10-23"
+    },
+    "s1-07.md": {
+      "page_id": "404ed6f2-40ac-815f-9dd8-c2732986214f",
+      "url": "https://app.notion.com/p/404ed6f240ac815f9dd8c2732986214f",
+      "synced": "2026-10-25"
+    }
+  },
+  "databases": {
+    "revision-cartes": {
+      "title": "Révision · cartes Python",
+      "database_id": "e36fb9e4-230c-4445-b894-de3ac2af7414",
+      "data_source_id": "8e720585-c579-4ed6-b500-89bc24ecbdba",
+      "url": "https://app.notion.com/p/e36fb9e4230c4445b894de3ac2af7414",
+      "views": "Quiz (question, non maîtrisées, groupé par Cours) ; Fiches (Essentiel, groupé par Cours)",
+      "format": "learning/cartes-<langage>-<cours>.md : en-tête langage + cours ; 1 section '## N. titre' (+ Sous-thème / Question / Essentiel) = 1 page ; clé de rapprochement = (Cours, N°) ; ne jamais écraser Maîtrisé au re-sync"
     }
   },
   "rules": "Source de vérité = les .md. Sync = conversion md -> Notion markdown (frontmatter -> callout, '### [ ]' -> '### ☐', indentation 2 espaces -> tab) puis update-page replace_content sur page_id ; fichier sans entrée -> create-pages sous parent puis ajout ici."

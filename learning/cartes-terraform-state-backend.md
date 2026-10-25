@@ -4,7 +4,7 @@ type: cartes
 langage: Terraform
 cours: State et backend
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · State et backend Terraform
@@ -245,7 +245,91 @@ aws s3 ls "s3://$B" --recursive
 - [x] De modifier ou remplacer celles de dev
 - Réponse : de toucher à dev : même clé = même état ; Terraform compare le code de prod aux ressources de dev et veut les renommer, donc les remplacer.
 
-## 8. accès public : tout bloquer
+## 8. couches : une ressource, sa durée de vie
+- Sous-thème : principe
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Chaque ressource vit dans le root Terraform qui a sa durée de vie : bootstrap pour le compte, `infra/` pour l'environnement jetable.
+- Contexte : La question n'est pas « à quoi ressemble la ressource » mais « quand doit-elle disparaître ». Un environnement de dev se détruit (`make down`) et se recrée (`make up`) : tout ce dont `make up` a besoin pour réussir doit lui survivre (état, zips publiés). Ces ressources vont dans `infra/bootstrap/`, appliqué une fois par compte. L'erreur de S1-04 : `artifacts` rangé avec les autres buckets parce qu'il leur ressemblait.
+- Usage : ✅ avant chaque nouvelle ressource, se demander « survit-elle à `make down` ? » · ❌ ranger par type (tous les buckets ensemble) : on détruit ce qui sert à reconstruire.
+
+```bash
+# Exemple 1 : deux couches, deux rythmes
+# infra/bootstrap/  une fois par compte
+#   tfstate    état de infra/
+#   artifacts  zips des Lambdas
+# infra/            make up / make down
+#   kms, raw, processed, out, logs
+#   lambdas, rôles, log groups
+make down    # détruit infra/ seul
+make deploy  # repart des zips intacts
+```
+
+- Quiz : `artifacts` est resté dans `infra/` : après `make down`, que fait `make up` seul ?
+- [ ] Il recrée les Lambdas depuis les zips
+- [ ] Il recrée le bucket, puis les Lambdas sans code
+- [x] Son `plan` échoue : pointeur introuvable
+- [ ] Il recrée tout, zips compris
+- Réponse : le `plan` échoue : le data source lit `current.json` dès le plan, dans un bucket détruit avec l'environnement ; aucun `apply` ne peut le recréer avant cette lecture.
+
+## 9. bootstrap : ce qui y va
+- Sous-thème : principe
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Le bootstrap porte ce que `make up` suppose déjà là : bucket d'état, bucket d'artefacts, plus tard dépôt ECR et rôle OIDC de la CI.
+- Contexte : Critère : l'environnement en dépend, elle ne dépend pas de lui. Le bootstrap reste petit, appliqué à la main avec des droits élevés, rarement modifié : chaque ajout doit se justifier. Tout le reste (clé KMS du projet, buckets de données, Lambdas, rôles d'exécution) suit l'environnement et se recrée avec lui.
+- Usage : ✅ état, artefacts, images ECR, rôle de déploiement de la CI et son fournisseur OIDC · ❌ données métier, clé KMS du projet, Lambdas : elles suivent l'environnement.
+
+```hcl
+# Exemple 1 : infra/bootstrap/
+# main.tf       bucket d'état
+# artifacts.tf  bucket des zips
+# plus tard : ecr.tf, ci_oidc.tf
+locals {
+  artifacts_bucket = (
+    "data-platform-artifacts-${local.account_id}"
+  )
+}
+# → data-platform-artifacts-<account_id>
+```
+
+- Quiz : Le rôle OIDC de la CI est déclaré dans `infra/` : que peut encore faire la CI après un `make down` ?
+- [ ] `make up`, le rôle se recrée au passage
+- [ ] Tout : le rôle n'est pas détruit
+- [x] Rien sur AWS : son rôle a disparu
+- [ ] Seulement `make plan`, en lecture
+- Réponse : rien sur AWS : `make down` a détruit le rôle qu'elle endosse ; seul un humain avec des droits admin peut refaire `make up`. D'où le rôle de la CI dans le bootstrap.
+
+## 10. bucket d'artefacts : un par compte
+- Sous-thème : principe
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Le bucket d'artefacts est nommé par compte (`data-platform-artifacts-<account_id>`), sans environnement : tous les environnements du compte lisent les mêmes zips.
+- Contexte : Le bootstrap n'a pas de variable `environment` : il existe une fois par compte. Les zips étant rangés sous leur hash, dev et int du même compte partagent les octets sans conflit. Le suffixe `<account_id>` rend le nom unique au monde (espace de noms global de S3) et évite la collision avec le même projet sur un autre compte. `infra/` recalcule ce nom par la même convention.
+- Usage : ✅ un bucket par compte, préfixe `lambdas/<nom>/` · ❌ un bucket par environnement : la promotion dev → int copierait les zips au lieu de les réutiliser.
+
+```hcl
+# Exemple 1 : infra/ retrouve le nom
+data "aws_caller_identity" "current" {}
+
+locals {
+  artifacts_bucket = format(
+    "data-platform-artifacts-%s",
+    data.aws_caller_identity.current.account_id,
+  )
+}
+# dev et int du même compte
+# → même bucket, mêmes zips
+```
+
+- Quiz : dev et prod sont sur deux comptes AWS : combien de buckets d'artefacts, et la prod lit-elle ceux de dev ?
+- [ ] Un, lisible par les deux comptes
+- [x] Deux, cloisonnés sans politique de bucket
+- [ ] Deux, lisibles l'un par l'autre
+- [ ] Un, recopié dans chaque compte
+- Réponse : deux, cloisonnés : un bootstrap par compte ; la prod ne lit le zip de dev que si une politique de bucket l'ouvre à son compte, sinon on copie le zip.
+
+## 11. accès public : tout bloquer
 - Sous-thème : bucket
 - Niveau : 2
 - Définition : `aws_s3_bucket_public_access_block` interdit tout accès public au bucket, quelles que soient ses ACL ou sa politique.
@@ -277,7 +361,7 @@ aws s3api get-public-access-block \
 - [ ] Non, seulement si le bucket a une ACL privée
 - Réponse : non : un principal de service restreint à un ARN précis n'est pas public ; seul un `Principal: "*"` sans condition restrictive est bloqué.
 
-## 9. backend : ni variable ni local
+## 12. backend : ni variable ni local
 - Sous-thème : backend
 - Niveau : 2
 - Définition : Le bloc `backend` est lu avant les variables : il n'accepte que des valeurs littérales, jamais `var.` ni `local.`.
@@ -312,7 +396,7 @@ terraform -chdir=infra init \
 - [ ] `Error: Unsupported attribute`
 - Réponse : `Variables not allowed` : même une `local` littérale est une expression, évaluée après le backend ; seul un littéral passe.
 
-## 10. init -reconfigure : changer d'environnement
+## 13. init -reconfigure : changer d'environnement
 - Sous-thème : backend
 - Niveau : 2
 - Définition : `init -reconfigure` réinitialise le backend avec une nouvelle configuration sans copier l'état : indispensable pour passer d'un environnement à l'autre.
@@ -338,7 +422,7 @@ tf-init:
 - [x] `Error: Backend configuration changed`
 - Réponse : `Backend configuration changed` : Terraform exige de choisir entre `-reconfigure` (oublier l'ancienne config) et `-migrate-state` (copier l'état).
 
-## 11. init -backend=false : valider hors AWS
+## 14. init -backend=false : valider hors AWS
 - Sous-thème : backend
 - Niveau : 2
 - Source : revision-pwa · pwa-revision
@@ -364,7 +448,7 @@ terraform init   # backend "s3" {}
 - [ ] Planifie sans rafraîchir les ressources
 - Réponse : il échoue (mesuré) : le bloc `backend "s3"` exige un `init` complet ; Terraform refuse plutôt que de planifier contre un état vide, qui recréerait tout.
 
-## 12. terraform_remote_state : lire les outputs d'un autre root
+## 15. terraform_remote_state : lire les outputs d'un autre root
 - Sous-thème : state
 - Niveau : 2
 - Définition : La data source `terraform_remote_state` lit les `output` de l'état d'un autre root (bootstrap, réseau), sans gérer ses ressources.
@@ -404,7 +488,7 @@ data "terraform_remote_state" "net" {
 - [ ] L'ARN du bucket, lu dans l'état
 - Réponse : `Unsupported attribute` (mesuré) : les outputs ne sont accessibles que sous l'attribut `outputs` de la data source.
 
-## 13. state pull : sauvegarder avant d'opérer
+## 16. state pull : sauvegarder avant d'opérer
 - Sous-thème : state
 - Niveau : 2
 - Définition : `terraform state pull` affiche l'état courant en JSON, quel que soit le backend : la sauvegarde à faire avant toute commande `state`.
@@ -426,7 +510,7 @@ jq -c '{serial, n: (.resources|length)}' \
 - [ ] Accepté, avec une confirmation `yes`
 - Réponse : refusé (`cannot import state with serial 1 over newer state`, mesuré) : `push` protège les écritures récentes ; seul `-force` écraserait.
 
-## 14. workspace : plusieurs états, un seul backend
+## 17. workspace : plusieurs états, un seul backend
 - Sous-thème : backend
 - Niveau : 2
 - Définition : `terraform workspace new prod` crée un état séparé sous le même backend ; `terraform.workspace` donne son nom dans le code.
@@ -452,7 +536,140 @@ find . -name '*.tfstate'
 - [ ] De détruire les ressources de `prod`
 - Réponse : de tout créer (mesuré) : `default` a son propre état, vide ; les ressources de `prod` lui sont invisibles.
 
-## 15. moved : renommer sans recréer
+## 18. états séparés : destroy ne traverse pas
+- Sous-thème : state
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `terraform destroy` ne détruit que les ressources de son propre état : un root séparé est hors de portée de `make down`, même sans `prevent_destroy`.
+- Contexte : Terraform ne connaît d'AWS que ce que son état référence. Le bucket d'artefacts, dans l'état local du bootstrap, n'apparaît jamais dans le plan de `infra/`. C'est la vraie protection ; `prevent_destroy` n'est qu'une seconde ceinture contre un `destroy` lancé par erreur dans le bootstrap lui-même. Contrepartie : chaque root se planifie et s'applique à part, dans le bon ordre.
+- Usage : ✅ isoler dans un autre root ce qui ne doit pas mourir avec l'environnement · ❌ compter sur `-target` ou `prevent_destroy` pour protéger une ressource partagée dans le même état.
+
+```bash
+# Exemple 1 : chaque root, son état
+terraform -chdir=infra state list \
+  | grep -c 'aws_s3_bucket.artifacts'
+# → 0 : pas dans l'état de infra/
+terraform -chdir=infra/bootstrap \
+  state list | grep 'bucket.artifacts'
+# → aws_s3_bucket.artifacts
+```
+
+- Quiz : Dans `infra/`, on ajoute `data "aws_s3_bucket" "artifacts"` qui lit ce bucket, puis `make down` : le bucket est-il détruit ?
+- [ ] Oui : il est maintenant dans l'état
+- [x] Non : un data source n'est jamais détruit
+- [ ] Oui, sauf `prevent_destroy` dans le bootstrap
+- [ ] Non, mais il est vidé de ses objets
+- Réponse : non : un data source est seulement lu ; `destroy` ne supprime que les blocs `resource` de son état, la lecture disparaît sans toucher au bucket.
+
+## 19. dépendance : jamais vers une couche plus courte
+- Sous-thème : principe
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Une ressource durable ne doit rien utiliser d'une couche plus éphémère : le bucket d'artefacts chiffré par la clé KMS de l'environnement mourrait avec elle.
+- Contexte : Les références vont dans un seul sens : l'environnement lit le bootstrap, jamais l'inverse. D'où SSE-S3 sur `artifacts` : la clé KMS du projet vit dans `infra/` ; après `make down`, elle passe en `PendingDeletion` et tout objet qu'elle chiffre devient illisible, même si le bucket survit. Le test : le bootstrap doit pouvoir s'appliquer sur un compte où `infra/` n'existe pas encore.
+- Usage : ✅ SSE-S3, ou une clé KMS créée dans le bootstrap, pour les ressources du bootstrap · ❌ passer au bootstrap l'ARN d'une ressource de `infra/` : dépendance à rebours.
+
+```hcl
+# Exemple 1 : un chiffrement autonome
+rule {
+  apply_server_side_encryption_by_default {
+    sse_algorithm = "AES256" # SSE-S3
+  }
+}
+# ❌ kms_master_key_id = clé de infra/
+# make down → clé en PendingDeletion
+# → GetObject refusé : zips illisibles
+```
+
+- Quiz : Une politique de bucket du bootstrap autorise le rôle `ingest` de `infra/` par son ARN ; `make down` puis `make up` : le rôle recréé a-t-il accès ?
+- [ ] Oui : même nom, donc même ARN
+- [x] Non : la politique visait l'ancien rôle
+- [ ] Oui, après un `refresh` du bootstrap
+- [ ] Non : un bucket refuse les ARN de rôle
+- Réponse : non : IAM enregistre l'identifiant interne du rôle (`AROA…`) ; le rôle recréé en a un autre, et la politique affiche l'ancien identifiant à la place de l'ARN.
+
+## 20. make down : le test de la couche
+- Sous-thème : principe
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Une ressource peut rester dans `infra/` si `make down` puis `make up` la recréent sans perte qui compte ; sinon elle monte au bootstrap.
+- Contexte : Le test se fait ressource par ressource. Rôles, log groups, Lambdas : recréés à l'identique. `raw` de dev : son contenu disparaît, mais BODACC se rejoue par backfill, donc perte acceptable (en prod, `force_destroy = false` bloque). L'état et les zips, eux, sont lus par `make up` lui-même : impossible de les reconstruire après coup. Une perte acceptable se décide et s'écrit dans le README, elle ne se découvre pas.
+- Usage : ✅ revue d'une nouvelle ressource : « qui la recrée, et avec quoi ? » · ❌ garder des données non rejouables (saisies, appels d'API payants) dans un environnement jetable.
+
+```bash
+# Exemple 1 : chaque ressource au test
+# ressource     après down + up
+# lambda, rôle  recréés à l'identique
+# log groups    recréés, logs perdus
+# raw (dev)     vide : backfill BODACC
+# tfstate       lu par up : bootstrap
+# artifacts     lu par up : bootstrap
+```
+
+- Quiz : Un bucket `refs` contient des codes de tribunaux corrigés à la main, sans autre copie : où le ranger ?
+- [ ] Dans `infra/`, `make up` le recrée
+- [ ] Dans `infra/` avec `force_destroy`
+- [x] Hors de l'environnement jetable
+- [ ] Dans `raw`, sous un préfixe `refs/`
+- Réponse : hors de l'environnement jetable (bootstrap ou root de données durable) : `make up` recréerait un bucket vide, et ces corrections ne se rejouent pas comme BODACC.
+
+## 21. for_each : grouper par forme, le piège
+- Sous-thème : principe
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Un `for_each` sur une liste de noms crée des ressources jumelles : des buckets de durées de vie différentes y subissent le même sort.
+- Contexte : L'erreur de S1-04 : `names = ["raw", "processed", "out", "artifacts", "logs"]` dans `modules/s3-buckets`, même clé KMS, même `force_destroy` en dev. La forme commune cachait une différence de cycle de vie. Une boucle est saine quand chaque élément se crée, se modifie et se détruit avec les autres ; dès qu'un élément demande un réglage à part, il sort de la boucle.
+- Usage : ✅ buckets jumeaux d'une même couche (`raw`, `processed`, `out`) · ❌ glisser dans la boucle une ressource à protéger ou à garder plus longtemps.
+
+```hcl
+# Exemple 1 : la boucle d'origine
+variable "names" {
+  type    = list(string)
+  default = ["raw", "processed", "out",
+             "artifacts", "logs"]
+}
+resource "aws_s3_bucket" "this" {
+  for_each      = toset(var.names)
+  bucket        = "${var.prefix}-${each.key}"
+  force_destroy = var.force_destroy
+}
+# make down → les 5 détruits ensemble
+```
+
+- Quiz : Pour protéger `artifacts` seul dans la boucle, on écrit `prevent_destroy = each.key == "artifacts"` : résultat ?
+- [ ] Seul `artifacts` est protégé
+- [ ] Les cinq buckets sont protégés
+- [x] Erreur : `Variables not allowed`
+- [ ] Ignoré sans erreur ni effet
+- Réponse : `Variables not allowed` (vérifié avec `terraform validate`) : les arguments de `lifecycle` doivent être des littéraux ; la ressource à protéger sort de la boucle.
+
+## 22. couches : se retrouver par convention
+- Sous-thème : principe
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `infra/` retrouve le bucket du bootstrap en recalculant son nom (`data-platform-artifacts-<account_id>`), sans lire l'état du bootstrap.
+- Contexte : Trois façons de relier deux roots : une convention de nom (rien à lire, mais deux endroits à garder alignés), `terraform_remote_state` (lit les outputs, mais exige l'accès à l'état de l'autre root), un data source (`aws_s3_bucket`) qui vérifie l'existence au plan. L'output `artifacts_bucket` du bootstrap sert aux humains et aux scripts (`build_lambda.py --publish`).
+- Usage : ✅ convention de nom pour une ressource unique par compte, au nom stable · ❌ copier le nom en dur dans trois fichiers : un `local` unique par root.
+
+```bash
+# Exemple 1 : le même nom, deux sources
+terraform -chdir=infra/bootstrap \
+  output -raw artifacts_bucket
+# → data-platform-artifacts-<account_id>
+grep artifacts_bucket infra/lambdas.tf
+# → "data-platform-artifacts-${
+#    data.aws_caller_identity.current
+#    .account_id}"
+```
+
+- Quiz : Pourquoi `infra/` ne lit-il pas ce nom par `terraform_remote_state` vers le bootstrap ?
+- [x] L'état du bootstrap est local, absent en CI
+- [ ] `terraform_remote_state` est interdit entre roots
+- [ ] Il ne lit que des ressources, pas des outputs
+- [ ] Il recréerait le bucket du bootstrap
+- Réponse : l'état du bootstrap est local, sur le poste qui l'a appliqué : la CI ne peut pas le lire ; la convention de nom ne dépend d'aucun fichier.
+
+## 23. moved : renommer sans recréer
 - Sous-thème : state
 - Niveau : 3
 - Définition : Un bloc `moved` déclare qu'une adresse a changé (`from` → `to`) : Terraform déplace l'objet dans le state au lieu de le recréer.
@@ -488,7 +705,7 @@ moved {
 - [ ] Un second bucket `raw[0]`
 - Réponse : `raw has moved to raw[0]` : Terraform déduit seul ce déplacement entre l'adresse sans index et l'index `[0]`.
 
-## 16. state rm : oublier sans détruire
+## 24. state rm : oublier sans détruire
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform state rm` retire une ressource du state sans la toucher dans AWS : Terraform cesse simplement de la gérer.
@@ -522,7 +739,7 @@ removed {
 - [ ] `aws_s3_bucket.raw will be imported`
 - Réponse : `will be created` : Terraform ne connaît plus le bucket ; l'apply échouera car le nom existe déjà dans AWS (`import` pour le reprendre).
 
-## 17. verrou : use_lockfile natif S3
+## 25. verrou : use_lockfile natif S3
 - Sous-thème : backend
 - Niveau : 3
 - Définition : `use_lockfile = true` pose un objet `<key>.tflock` à côté de l'état pendant `plan` et `apply`, pour qu'une seule exécution l'écrive à la fois.
@@ -553,7 +770,7 @@ terraform -chdir=infra \
 - [ ] Il lit l'ancien état et continue
 - Réponse : il échoue (`Error acquiring the state lock`) : `plan` verrouille aussi, et l'attente par défaut est nulle ; `-lock-timeout=60s` attendrait.
 
-## 18. prevent_destroy : ce qu'il protège
+## 26. prevent_destroy : ce qu'il protège
 - Sous-thème : garde-fous
 - Niveau : 3
 - Définition : `lifecycle { prevent_destroy = true }` fait échouer tout plan qui détruirait la ressource, `destroy` compris.
@@ -592,7 +809,7 @@ resource "aws_s3_bucket" "tfstate" {
 - [ ] `No changes.`
 - Réponse : il propose la destruction, sans erreur : avec le bloc disparaît son `lifecycle` ; pour oublier sans détruire, un bloc `removed` avec `destroy = false`.
 
-## 19. import : rattacher l'existant
+## 27. import : rattacher l'existant
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform import adresse id` rattache une ressource AWS existante à l'état sans la recréer : la parade à un état local perdu.
@@ -628,7 +845,7 @@ import {
 - [ ] L'état est écrit, puis `plan` veut détruire
 - Réponse : erreur `resource address … does not exist in the configuration` : `import` remplit un bloc existant ; écrire le code d'abord, ou `plan -generate-config-out` avec un bloc `import`.
 
-## 20. init -migrate-state : déplacer un état
+## 28. init -migrate-state : déplacer un état
 - Sous-thème : backend
 - Niveau : 3
 - Définition : `init -migrate-state` copie l'état de l'ancien backend vers le nouveau, pour déplacer un état sans réimporter les ressources.
@@ -653,7 +870,7 @@ terraform -chdir=infra plan
 - [ ] Remplacé par un renvoi vers le bucket
 - Réponse : vidé : Terraform efface l'état local migré mais laisse `terraform.tfstate.backup`, l'état complet en clair, à mettre à la corbeille ; entre deux backends (changement de `key`), la source reste intacte (mesuré, Terraform 1.14).
 
-## 21. state mv : déplacer tout de suite
+## 29. state mv : déplacer tout de suite
 - Sous-thème : state
 - Niveau : 3
 - Définition : `terraform state mv A B` change l'adresse d'un objet dans l'état immédiatement, sans plan : la version impérative du bloc `moved`.
@@ -679,3 +896,59 @@ terraform state mv -dry-run \
 - [x] Détruire `brut`, créer `raw`
 - [ ] Modifier `brut` en place
 - Réponse : détruire `brut`, créer `raw` (mesuré) : le code déclare toujours `raw` ; l'état a bougé, pas la configuration.
+
+## 30. changer de couche : moved ne traverse pas
+- Sous-thème : state
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `moved` ne déplace une ressource qu'à l'intérieur d'un même état ; vers un autre root, il faut la sortir d'un état puis l'importer dans l'autre.
+- Contexte : Un bloc `moved` réécrit une adresse dans l'état courant : il ne voit aucun autre root. Pour garder un bucket en changeant de couche : bloc `removed` avec `destroy = false` dans `infra/`, puis `import` dans le bootstrap, en deux `apply`. Ici, rien à garder (un zip se republie) : détruire et recréer était plus simple, et changeait au passage nom et chiffrement.
+- Usage : ✅ `removed` + `import` pour déplacer une ressource à garder (données, nom imposé) · ❌ ce détour pour une ressource jetable : la recréer dans la bonne couche.
+
+```hcl
+# Exemple 1 : infra/, sortir sans détruire
+removed {
+  from = module.s3.aws_s3_bucket.this["artifacts"]
+  lifecycle {
+    destroy = false
+  }
+}
+# Exemple 1 (suite) : bootstrap, reprendre
+import {
+  to = aws_s3_bucket.artifacts
+  id = "data-platform-dev-artifacts-<account_id>"
+}
+```
+
+- Quiz : On fait l'`import` dans le bootstrap, mais on oublie le bloc `removed` dans `infra/` : que fait le `make down` suivant ?
+- [ ] Rien : le bootstrap protège le bucket
+- [x] Il détruit le bucket, géré par deux états
+- [ ] Il échoue : bucket verrouillé par l'autre état
+- [ ] Il le retire de l'état sans le détruire
+- Réponse : il le détruit : les deux états le référencent, chacun se croit propriétaire ; `prevent_destroy` du bootstrap ne joue que dans le bootstrap. Une ressource, un seul état.
+
+## 31. couches : au-delà de deux
+- Sous-thème : principe
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : En entreprise, les roots s'empilent par durée de vie et rythme de changement : socle du compte, réseau, données, applications.
+- Contexte : Chaque couche a son état, ses droits de déploiement et son rythme : le socle (état, artefacts, OIDC) bouge une fois par an, le réseau rarement, les Lambdas à chaque commit. Séparer réduit le rayon d'explosion : un `apply` raté sur une Lambda ne peut pas toucher un VPC. Le coût : des valeurs à passer d'une couche à l'autre (convention de nom, paramètre SSM, `terraform_remote_state`) et un ordre de déploiement à tenir.
+- Usage : ✅ séparer ce qui change à des rythmes très différents ou ce qu'une autre équipe possède · ❌ un root par ressource : des dizaines d'états et d'ordres à orchestrer pour rien.
+
+```bash
+# Exemple 1 : quatre couches, de bas en haut
+# 0-socle    état, artefacts, OIDC
+#            1 apply par an, admin
+# 1-reseau   VPC, endpoints
+# 2-donnees  buckets prod, catalogue
+#            prevent_destroy partout
+# 3-app      lambdas, step functions
+#            1 apply par commit, CI
+```
+
+- Quiz : Les buckets `raw` et `processed` de prod doivent survivre à une refonte complète des Lambdas : où les placer ?
+- [ ] Dans le root des Lambdas, avec `prevent_destroy`
+- [x] Dans une couche données, sous les applications
+- [ ] Dans le socle, avec l'état
+- [ ] Un root par bucket
+- Réponse : une couche données, sous les applications : elle a la durée de vie des données, ses propres droits, et la refonte des Lambdas ne touche plus son état.

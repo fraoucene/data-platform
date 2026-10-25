@@ -4,7 +4,7 @@ type: cartes
 langage: Terraform
 cours: Langage HCL
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Langage HCL (Terraform)
@@ -325,7 +325,91 @@ resource "aws_s3_object" "export" {
 - [ ] `0`
 - Réponse : `1` : le nombre `1` est converti en chaîne `"1"`, le type commun, puis le doublon disparaît.
 
-## 10. Types : conversion automatique
+## 10. aws_s3_object : data ou resource
+- Sous-thème : blocs
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `resource "aws_s3_object"` écrit un objet et le gère ; `data "aws_s3_object"` lit un objet déposé par un autre outil, sans jamais le modifier.
+- Contexte : Même type, deux rôles. Le pointeur `current.json` est écrit par `make lambdas-publish` (Python, boto3) : Terraform ne fait que le lire, à chaque plan. Le data source expose `body`, `etag`, `version_id`, `content_type`, `metadata`, `last_modified`. Un objet lu n'est pas dans les ressources de l'état : `make down` ne le supprime pas.
+- Usage : ✅ `data` pour un fichier produit par un script, une CI ou une autre équipe · ❌ `resource` sur un fichier que quelqu'un d'autre réécrit : deux propriétaires.
+
+```hcl
+# Exemple 1 : lire le pointeur publié
+data "aws_s3_object" "lambda_pointer" {
+  for_each = local.lambdas
+
+  bucket = local.artifacts_bucket
+  key    = "lambdas/${each.key}/current.json"
+}
+# → .body = "{\"key\": \"lambdas/…zip\", …}"
+```
+
+- Quiz : Le pointeur est déclaré en `resource "aws_s3_object"` (`content = jsonencode(...)`), puis le script le réécrit : que propose le `plan` suivant ?
+- [ ] Rien : Terraform relit l'objet
+- [x] Remettre l'ancien contenu
+- [ ] Supprimer l'objet
+- [ ] Adopter le nouveau contenu
+- Réponse : remettre l'ancien contenu : pour une `resource`, le code fait foi ; la réécriture par le script est une dérive que Terraform « corrige », d'où le `data`.
+
+## 11. aws_s3_object : body selon le Content-Type
+- Sous-thème : blocs
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Le data source `aws_s3_object` ne remplit `body` que pour un `Content-Type` lisible : `text/*`, `application/json`, YAML, XML ; sinon `body` reste vide.
+- Contexte : Le provider refuse de charger du binaire dans l'état. Le test porte sur l'en-tête `Content-Type` de l'objet, jamais sur son extension : un `current.json` envoyé sans type reçoit `binary/octet-stream` de S3, et `body` est vide. D'où `ContentType="application/json"` dans le `put_object` du script de publication. Pour un zip, on lit `etag` ou des métadonnées, jamais `body`.
+- Usage : ✅ fixer `ContentType` à l'envoi de tout fichier que Terraform doit lire · ❌ lire un binaire par `body` : vide ; utiliser `etag`, `metadata` ou un pointeur JSON.
+
+```python
+# Exemple 1 : le type que S3 met par défaut
+import boto3
+from moto import mock_aws
+
+with mock_aws():
+    s3 = boto3.client("s3", region_name="eu-west-3")
+    s3.create_bucket(
+        Bucket="artefacts",
+        CreateBucketConfiguration={
+            "LocationConstraint": "eu-west-3"})
+    s3.put_object(Bucket="artefacts",
+                  Key="current.json", Body=b"{}")
+    h = s3.head_object(Bucket="artefacts",
+                       Key="current.json")
+h["ContentType"]  # → 'binary/octet-stream'
+```
+
+- Quiz : Le pointeur est envoyé avec `ContentType="text/plain"` : `body` est-il rempli ?
+- [x] Oui : tout `text/*` est lisible
+- [ ] Non : seul `application/json` l'est
+- [ ] Non : il faut l'extension `.txt`
+- [ ] Oui, mais encodé en base64
+- Réponse : oui : le provider accepte `text/*`, `application/json`, YAML, XML et quelques autres (vérifié dans le provider AWS 6.69) ; `jsondecode` lit ensuite le texte.
+
+## 12. jsondecode : du JSON vers HCL
+- Sous-thème : expressions
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `jsondecode(chaîne)` transforme un texte JSON en valeur HCL (objet, tuple, nombre, booléen), dont on lit ensuite les champs avec `.` (≈ `JSON.parse`).
+- Contexte : L'inverse de `jsonencode`. Les types JSON sont conservés : un nombre reste un nombre, `true` un booléen. Un champ absent lève `Unsupported attribute` au plan, comme une propriété manquante en TS strict ; `lookup(obj, "champ", défaut)` ou `try(obj.champ, défaut)` donnent une valeur de repli. Une chaîne vide n'est pas du JSON : `Call to function "jsondecode" failed: EOF`.
+- Usage : ✅ lire un pointeur, un manifest ou un output JSON d'un autre outil · ❌ construire du JSON à la main par interpolation de chaînes : `jsonencode`.
+
+```hcl
+# Exemple 1 : terraform console
+jsondecode("{\"size\": 21180000}").size
+# → 21180000 (un nombre)
+jsondecode("{\"key\":\"k\"}").base64sha256
+# → Error: Unsupported attribute
+jsondecode("")
+# → Error: … jsondecode failed: EOF
+```
+
+- Quiz : Que vaut `jsondecode("{\"git_dirty\": true}").git_dirty == "true"` ?
+- [ ] `true`
+- [x] `false`
+- [ ] Erreur de type
+- [ ] `"true"`
+- Réponse : `false` (vérifié dans `terraform console`) : `==` compare aussi les types, sans conversion ; un booléen n'est jamais égal à la chaîne `"true"`.
+
+## 13. Types : conversion automatique
 - Sous-thème : expressions
 - Niveau : 2
 - Définition : Terraform convertit automatiquement entre chaîne, nombre et booléen selon le type attendu (`"5"` accepté pour un argument `number`).
@@ -357,7 +441,7 @@ locals {
 - [ ] `null`
 - Réponse : `false` : `==` compare type et valeur sans conversion (≈ `===` en TS) ; écrire `tostring(x) == "5"`.
 
-## 11. Condition : un type commun
+## 14. Condition : un type commun
 - Sous-thème : expressions
 - Niveau : 2
 - Définition : `cond ? a : b` choisit une valeur (≈ ternaire TS) ; Terraform convertit les deux branches vers un type commun, ou échoue.
@@ -390,7 +474,7 @@ resource "aws_s3_bucket" "logs" {
 - [x] `Error: Inconsistent conditional result types`
 - Réponse : `Error: Inconsistent conditional result types` : un tuple vide et un objet vide n'ont aucun type commun.
 
-## 12. merge : fusionner des tags
+## 15. merge : fusionner des tags
 - Sous-thème : expressions
 - Niveau : 2
 - Définition : `merge` fusionne plusieurs maps ou objets en un seul (≈ `{ ...a, ...b }`), pratique pour compléter des tags communs.
@@ -416,7 +500,7 @@ locals {
 - [ ] `Error: Duplicate object key`
 - Réponse : `{ t = { b = 2 } }` : `merge` est superficiel, la valeur entière de `t` est remplacée, sans fusion en profondeur.
 
-## 13. can : une erreur en booléen
+## 16. can : une erreur en booléen
 - Sous-thème : expressions
 - Niveau : 2
 - Définition : `can(expr)` renvoie `true` si l'expression s'évalue sans erreur, sinon `false` : la forme idéale d'une condition de `validation`.
@@ -451,7 +535,7 @@ variable "account_id" {
 - [ ] `null`
 - Réponse : `Error: Reference to undeclared input variable` : `can` ne rattrape que les erreurs d'évaluation, pas une référence invalide, vérifiée avant.
 
-## 14. for : construire une map
+## 17. for : construire une map
 - Sous-thème : boucles
 - Niveau : 2
 - Définition : `{for x in coll : clé => valeur}` construit une map à partir d'une collection (≈ `Object.fromEntries`).
@@ -490,7 +574,7 @@ locals {
 - [ ] `{ "4" = ["4a", "4b"] }`
 - Réponse : `Error: Duplicate object key` : deux éléments donnent la clé `"4"` ; `=> s...` (avec `...`) les regroupe en liste.
 
-## 15. count : instances indexées
+## 18. count : instances indexées
 - Sous-thème : boucles
 - Niveau : 2
 - Définition : `count = n` crée n instances d'une ressource, adressées `res[0]`, `res[1]`… et distinguées par `count.index`.
@@ -526,7 +610,7 @@ resource "aws_s3_object" "export" {
 - [ ] Tout détruire puis tout recréer
 - Réponse : Changer `export[1]` en `mer` et détruire `export[2]` : les index se décalent ; `for_each` éviterait de toucher `mer`.
 
-## 16. for_each : instances par clé
+## 19. for_each : instances par clé
 - Sous-thème : boucles
 - Niveau : 2
 - Définition : `for_each` crée une instance par clé d'une map ou d'un set, adressée `res["clé"]` : retirer un élément ne touche que lui.
@@ -576,7 +660,7 @@ resource "aws_s3_bucket_versioning" "this" {
 - [ ] Un `Warning`, puis la conversion en set
 - Réponse : `Error: Invalid for_each argument` : `for_each` exige une map ou un set de chaînes ; une liste peut contenir des doublons, d'où `toset()`.
 
-## 17. default_tags : taguer tout le root
+## 20. default_tags : taguer tout le root
 - Sous-thème : provider
 - Niveau : 2
 - Définition : `default_tags` dans le provider pose des tags sur toutes les ressources taggables, sans les répéter dans chaque `resource`.
@@ -619,7 +703,7 @@ resource "aws_s3_bucket" "this" {
 - [ ] `Error: duplicate tag`
 - Réponse : `"etat"` : le tag de la ressource l'emporte sur `default_tags` ; `tags_all` est la fusion des deux.
 
-## 18. allowed_account_ids : le bon compte
+## 21. allowed_account_ids : le bon compte
 - Sous-thème : provider
 - Niveau : 2
 - Définition : `allowed_account_ids` dans le provider fait échouer Terraform si les credentials pointent sur un compte absent de la liste.
@@ -655,7 +739,7 @@ variable "account_id" {
 - [ ] Il affiche un avertissement et continue
 - Réponse : il échoue tout de suite (`AWS account ID not allowed`) : le provider vérifie le compte dès sa configuration, avant toute data source ou ressource.
 
-## 19. output -raw : la valeur brute
+## 22. output -raw : la valeur brute
 - Sous-thème : blocs
 - Niveau : 2
 - Définition : `terraform output -raw nom` affiche la valeur d'une sortie sans guillemets, prête pour une variable shell ou un Makefile.
@@ -685,7 +769,7 @@ SITE_BUCKET ?= $(shell $(TF) output -raw site_bucket)
 - [ ] Le JSON `{"value": …}`
 - Réponse : la valeur avec ses guillemets : sans option, `output` affiche du HCL ; `s3://$B` désignerait alors un bucket au nom invalide.
 
-## 20. required_version : la version de la CLI
+## 23. required_version : la version de la CLI
 - Sous-thème : blocs
 - Niveau : 2
 - Source : data-platform · S1-01
@@ -719,7 +803,148 @@ terraform init
 - [ ] Il télécharge une 1.9.x
 - Réponse : erreur `Unsupported Terraform Core version` : `~> 1.9.0` n'autorise que le dernier chiffre (1.9.x), et Terraform ne télécharge jamais sa propre CLI.
 
-## 21. cycle : sortir la politique de la ressource
+## 24. filebase64sha256 : l'empreinte d'un binaire
+- Sous-thème : expressions
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `filebase64sha256("x.zip")` rend le sha256 d'un fichier en base64, le format qu'attend `source_code_hash` ; `filesha256` le rend en hexadécimal.
+- Contexte : `base64sha256(file("x.zip"))` paraît équivalent, mais `file()` exige de l'UTF-8 : sur un zip, erreur `contents of "f.zip" are not valid UTF-8` (mesuré). Les fonctions `file…` hachent les octets bruts. La valeur est calculée au `plan`, sur le fichier présent à ce moment : construire le zip avant (`make lambdas-build`, puis `make plan`).
+- Usage : ✅ `source_code_hash` d'une Lambda ou d'une couche · ❌ `base64sha256(file(…))` sur un binaire ; `filesha256` là où la base64 est attendue.
+
+```hcl
+# Exemple 1 : terraform console (mesuré)
+> filebase64sha256("a.txt")   # "A1\n"
+"T8k6fjtH5CEuk451ZcVrh/6mlRRo9Zsf0ZzEwdg0PyI="
+> filesha256("a.txt")
+"4fc93a7e3b47e4212e938e7565c56b87fea6951468f59b1fd19cc4c1d8343f22"
+> filebase64sha256("build/ingest-bodacc.zip")
+"SIF3hiDVJCLXmMcvSwLBVm/BF/UEfFYHQLbbbqsinz8="
+```
+
+```python
+# Exemple 2 : le même calcul en Python
+import base64, hashlib
+d = hashlib.sha256(b"A1\n").digest()
+base64.b64encode(d).decode()
+# → 'T8k6fjtH5CEuk451ZcVrh/6mlRRo9Zsf0ZzEwdg0PyI='
+```
+
+- Quiz : Que donne `base64encode(filesha256("a.txt"))` ?
+- [ ] La même valeur que `filebase64sha256("a.txt")`
+- [x] Une chaîne de 88 caractères, différente
+- [ ] Une erreur de type
+- [ ] L'hexadécimal, inchangé
+- Réponse : 88 caractères, différente (mesuré) : c'est la base64 du **texte** hexadécimal (64 caractères), pas des 32 octets de l'empreinte.
+
+## 25. data source : lu au plan
+- Sous-thème : blocs
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Un data source dont tous les arguments sont connus est lu pendant le `plan` : un objet absent fait échouer le plan, avant toute création.
+- Contexte : D'où l'ordre `bootstrap → lambdas-publish → plan → up`, réuni dans `make deploy`. Au tout premier déploiement d'une Lambda, son pointeur doit déjà exister. La lecture n'est reportée à l'`apply` que si un argument est inconnu au plan (référence à une ressource pas encore créée) ou si le data source dépend d'une ressource qui change.
+- Usage : ✅ publier tout ce que les data sources lisent avant le `plan` · ❌ compter sur l'`apply` pour créer ce qu'un data source du même plan lit : il échoue avant.
+
+```makefile
+# Exemple 1 : l'ordre est dans la cible
+deploy: lambdas-publish up
+# 1. zip + current.json dans artifacts
+# 2. plan : data source lit current.json
+# 3. apply : la fonction copie le zip
+```
+
+- Quiz : Une nouvelle Lambda est ajoutée à `local.lambdas` sans être publiée ; `make plan` : résultat ?
+- [ ] Un plan sans la nouvelle Lambda
+- [x] Tout le plan échoue
+- [ ] La Lambda est créée sans code
+- [ ] Le plan passe, l'`apply` échoue
+- Réponse : tout le plan échoue : une seule lecture de data source en erreur arrête le plan entier, même pour les ressources qui n'en dépendent pas.
+
+## 26. data source : relu à chaque plan
+- Sous-thème : blocs
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Terraform relit chaque data source à chaque `plan` : un pointeur republié change `s3_key` et `source_code_hash`, donc la fonction, sans toucher au code.
+- Contexte : Le code Terraform ne contient aucune version : il dit « déploie ce que désigne le pointeur ». Le plan affiche alors `~ update in-place` sur `aws_lambda_function`, ancienne et nouvelle clé côte à côte. Conséquence : deux `plan` du même commit peuvent différer si quelqu'un a publié entre-temps ; le dépôt seul ne dit plus ce qui sera déployé.
+- Usage : ✅ un pointeur relu pour suivre la dernière publication en dev · ❌ en prod sans contrôle : passer la clé en variable, versionnée avec le pipeline.
+
+```bash
+# Exemple 1 : republier, puis planifier
+make lambdas-publish   # nouveau zip
+make plan
+# ~ module.lambda["ingest-bodacc"]
+#   .aws_lambda_function.this
+#   ~ s3_key = "lambdas/…/4881…zip"
+#           -> "lambdas/…/9c02…zip"
+# Plan: 0 to add, 1 to change
+```
+
+- Quiz : On lance `terraform plan -out=tfplan`, quelqu'un republie, puis `terraform apply tfplan` : quel zip est déployé ?
+- [x] Celui lu au moment du plan
+- [ ] Le nouveau, relu à l'`apply`
+- [ ] Aucun : plan périmé, erreur
+- [ ] Les deux, en deux versions
+- Réponse : celui lu au plan : un plan sauvé fige les valeurs des data sources ; l'`apply` exécute ce plan sans relire le pointeur.
+
+## 27. for + jsondecode : décoder une seule fois
+- Sous-thème : boucles
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `{ for k, o in data.aws_s3_object.lambda_pointer : k => jsondecode(o.body) }` décode chaque pointeur une fois, dans un `local` réutilisable.
+- Contexte : `lambdas.tf` appelle `jsondecode(...body)` deux fois par fonction (`key`, `base64sha256`) : correct, mais répétitif. Un `local` construit une map nom → pointeur décodé (`local.pointers[each.key].key`), lisible dans `terraform console`. Les clés de la map viennent du `for_each` du data source, donc de `local.lambdas` : les deux restent alignées.
+- Usage : ✅ plusieurs champs lus dans le même JSON, pour plusieurs instances · ❌ un `jsondecode` par attribut recopié : une erreur de chemin à corriger partout.
+
+```hcl
+# Exemple 1 : terraform console
+{ for k, o in {
+    a = { body = "{\"key\":\"x\"}" }
+  } : k => jsondecode(o.body) }["a"].key
+# → "x"
+```
+
+```hcl
+# Exemple 2 : dans lambdas.tf
+locals {
+  pointers = {
+    for k, o in data.aws_s3_object.lambda_pointer :
+    k => jsondecode(o.body)
+  }
+}
+# key = local.pointers[each.key].key
+```
+
+- Quiz : La même expression écrite entre `[ ]` au lieu de `{ }`, avec `k =>` : résultat ?
+- [ ] Une liste de pointeurs décodés
+- [ ] Une liste de paires `[clé, valeur]`
+- [x] Erreur : pas de clé dans un tuple
+- [ ] Une map, comme avec `{ }`
+- Réponse : erreur `Key expression is not valid when building a tuple` (vérifié dans `terraform console`) : `[for …]` construit un tuple, `k =>` n'est permis qu'entre `{ }`.
+
+## 28. for_each : lire une instance, ou toutes
+- Sous-thème : boucles
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Un data source en `for_each` se lit par clé (`data.aws_s3_object.lambda_pointer["ingest-bodacc"]`) ; sans clé, `Missing resource instance key`.
+- Contexte : Le bloc devient une map d'instances : `data.aws_s3_object.lambda_pointer` seul est cette map, pas un objet. Dans un autre bloc en `for_each` sur la même map, `[each.key]` relie les instances deux à deux. Pour toutes les valeurs : `values(...)` donne une liste, sur laquelle le splat `[*]` marche. L'erreur sans clé tombe dès `terraform validate`.
+- Usage : ✅ `[each.key]` entre deux blocs bouclés sur la même map, `values()` pour un output global · ❌ `[0]` sur un `for_each` : les instances n'ont pas d'index.
+
+```hcl
+# Exemple 1 : sans clé d'instance
+output "o" {
+  value = data.aws_s3_object.lambda_pointer.body
+}
+# terraform validate
+# → Error: Missing resource instance key
+# → … use: lambda_pointer[each.key]
+```
+
+- Quiz : Quelle expression donne la liste des `key` de toutes les instances d'une ressource en `for_each` ?
+- [ ] `res[*].key`
+- [x] `values(res)[*].key`
+- [ ] `res["*"].key`
+- [ ] `res.key`
+- Réponse : `values(res)[*].key` : le splat n'itère que sur une liste ; sur la map d'instances, `[*]` l'enveloppe telle quelle et `.key` échoue (`Unsupported attribute`, vérifié en console).
+
+## 29. cycle : sortir la politique de la ressource
 - Sous-thème : blocs
 - Niveau : 3
 - Définition : Terraform refuse deux ressources qui se référencent mutuellement (`Error: Cycle`) ; on casse la boucle en sortant l'attribut fautif dans une ressource à part.
@@ -763,7 +988,7 @@ resource "terraform_data" "cdn" {
 - [ ] Aucune : il crée les deux en deux passes
 - Réponse : `terraform validate` (mesuré, Terraform 1.14) : le graphe des références est construit hors ligne ; un cycle bloque avant tout appel à AWS.
 
-## 22. dynamic : zéro ou un bloc
+## 30. dynamic : zéro ou un bloc
 - Sous-thème : boucles
 - Niveau : 3
 - Source : data-platform · S1-04
@@ -803,3 +1028,52 @@ dynamic "rule" {
 - [ ] 0 : `rule.value` est l'index
 - [ ] Aucun : `Error: Unsupported attribute`
 - Réponse : 1 : `rule.value` est l'élément de la liste, ici `1` ; mesuré au `plan` (`days = 1`), `raw` expirerait en un jour.
+
+## 31. try : ne rattrape pas un data source
+- Sous-thème : expressions
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `try()` rattrape une erreur d'expression (champ absent, JSON invalide), jamais l'échec de lecture d'un data source : un pointeur absent fait toujours échouer le plan.
+- Contexte : L'erreur de lecture vient du provider, pendant la lecture du data source, avant toute évaluation d'expression : ni `try`, ni `can`, ni `lookup` ne la voient. Pour qu'une Lambda soit facultative, il faut qu'aucune instance de son data source n'existe, en agissant sur la map du `for_each`. `try` sert pour ce qui suit la lecture : `body` vide, champ manquant.
+- Usage : ✅ `try` sur un champ facultatif du JSON lu · ❌ `try` autour d'un data source pour tolérer un objet absent : la lecture échoue avant.
+
+```hcl
+# Exemple 1 : terraform console
+try(jsondecode("").key, "absent")
+# → "absent" : erreur d'expression
+# try(jsondecode(data.aws_s3_object
+#   .p["x"].body).key, "absent")
+# objet absent → le plan échoue
+#   quand même, à la lecture
+```
+
+- Quiz : `local.lambdas` est filtré par `{ for k, v in local.lambdas : k => v if v.enabled }` et `enabled = false` pour la Lambda non publiée : le plan passe-t-il ?
+- [ ] Non : le pointeur est quand même lu
+- [x] Oui : aucune instance, aucune lecture
+- [ ] Oui, avec un avertissement
+- [ ] Non : `for_each` refuse un filtre
+- Réponse : oui : le filtre retire la clé avant le `for_each`, donc l'instance du data source n'existe pas et rien n'est lu.
+
+## 32. data source : son résultat dans l'état
+- Sous-thème : blocs
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Les attributs lus par un data source sont écrits dans l'état : le `body` du pointeur figure en clair dans `terraform.tfstate`.
+- Contexte : Terraform garde la dernière lecture pour calculer et afficher le plan. Sans danger pour un pointeur (clé, hash, commit), dangereux pour un secret : le lire par `aws_s3_object` ou `aws_secretsmanager_secret_version` le recopie dans l'état. Depuis Terraform 1.10, une ressource `ephemeral` lit une valeur sans l'écrire dans l'état, mais seulement pour des arguments eux aussi éphémères.
+- Usage : ✅ lire par data source des métadonnées sans valeur secrète · ❌ lire un secret pour le passer à une ressource : le code le lit à l'exécution (Secrets Manager, SSM).
+
+```bash
+# Exemple 1 : la lecture est dans l'état
+terraform -chdir=infra state show \
+  'data.aws_s3_object.lambda_pointer["ingest-bodacc"]' \
+  | grep content_type
+# → content_type = "application/json"
+# body = "{ \"key\": …, \"git_commit\": … }"
+```
+
+- Quiz : Le token INSEE est lu par `data "aws_secretsmanager_secret_version"` et posé en variable d'environnement de la Lambda : où apparaît-il en clair ?
+- [ ] Nulle part : Secrets Manager le chiffre
+- [ ] Seulement dans la console Lambda
+- [x] Dans l'état et dans la config de la fonction
+- [ ] Seulement dans les logs du plan
+- Réponse : dans l'état (lecture du data source et attribut `environment` de la fonction) et dans la configuration Lambda, visible par tout lecteur de la fonction ; le code doit lire le secret lui-même.

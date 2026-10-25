@@ -4,7 +4,7 @@ type: cartes
 langage: Python
 cours: Fichiers et formats
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Fichiers et formats Python
@@ -159,44 +159,3 @@ buf.getvalue()
 - [ ] `KeyError`
 - [x] `ValueError`
 - Réponse : `ValueError` : une clé absente de `fieldnames` est refusée ; `extrasaction="ignore"` la laisse tomber.
-
-## 5. gzip : texte ou octets
-- Sous-thème : fichiers
-- Niveau : 2
-- Définition : `gzip.open` lit et écrit un fichier compressé comme un fichier normal ; les modes `"rt"` et `"wt"` travaillent en texte.
-- Contexte : Un export `.jsonl.gz` se lit sans décompresser sur disque : `gzip.open` décompresse à la volée, ligne par ligne, en mémoire constante. En mode texte, préciser `encoding="utf-8"`, sinon l'encodage de la machine s'applique. `gzip.compress` et `gzip.decompress` travaillent sur des `bytes` en mémoire (objet S3, corps HTTP).
-- Usage : ✅ archiver des journées d'annonces sur S3, lire un export compressé · ❌ lecture aléatoire au milieu du fichier : gzip se lit du début ; analytique : Parquet.
-
-```python
-# Exemple 1 : compresser en mémoire
-import gzip
-
-b = gzip.compress(b'{"nb": 1}\n')
-b[:2]   # → b"\x1f\x8b"  (signature)
-gzip.decompress(b)
-# → b'{"nb": 1}\n'
-```
-
-```python
-# Exemple 2 : fichier en mode texte
-import gzip
-import tempfile
-from pathlib import Path
-
-d = Path(tempfile.mkdtemp())
-p = d / "j.jsonl.gz"
-with gzip.open(p, "wt",
-               encoding="utf-8") as f:
-    f.write('{"nb": 1}\n')
-with gzip.open(p, "rt",
-               encoding="utf-8") as f:
-    l = f.readline()
-l          # → '{"nb": 1}\n'
-```
-
-- Quiz : Ouvert avec `gzip.open(p)`, sans mode : que vaut `f.readline()` ?
-- [ ] `'{"nb": 1}\n'`
-- [x] `b'{"nb": 1}\n'`
-- [ ] `UnicodeDecodeError`
-- [ ] `'{"nb": 1}'`
-- Réponse : `b'{"nb": 1}\n'` : le mode par défaut est `"rb"`, on reçoit des `bytes`, et `json.loads` ou `split(",")` dessus surprennent.

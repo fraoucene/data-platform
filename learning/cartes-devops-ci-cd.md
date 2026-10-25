@@ -4,7 +4,7 @@ type: cartes
 langage: DevOps
 cours: CI-CD
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · CI-CD
@@ -194,7 +194,117 @@ deploy:
 - [ ] Non : un tag n'est jamais un `push`
 - Réponse : non : quand `on.push` ne définit que `branches`, les push de tags sont ignorés ; ajouter `tags: ["v*"]` pour les inclure (doc GitHub).
 
-## 7. CI=true : le lockfile fait foi
+## 7. artefacts de job : ils expirent
+- Sous-thème : déploiement
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Un artefact de job GitLab passe un fichier aux jobs suivants, puis expire : le livrable gardé pour un rollback va dans un bucket S3.
+- Contexte : Pour redéployer la version de la semaine dernière, il faut le zip déployé ce jour-là. Sur S3, rangé sous son hash, il reste disponible tant qu'une règle de cycle de vie ne le supprime pas. Côté GitLab, `expire_in` règle la durée ; seuls les artefacts du dernier pipeline réussi d'une branche sont gardés au-delà, par défaut.
+- Usage : ✅ artefact de job pour transmettre dans le pipeline, bucket `artifacts` pour conserver · ❌ un rollback qui compte sur l'artefact d'un vieux pipeline : expiré.
+
+```yaml
+# Exemple 1 : passer, puis publier
+build:
+  stage: build
+  script: [make lambdas-build]
+  artifacts:
+    paths: [build/]
+    expire_in: 1 day     # le temps du pipeline
+publish:
+  stage: deploy
+  needs: [build]
+  script: [make lambdas-publish]   # vers S3
+```
+
+- Quiz : Sur gitlab.com, un job sans `expire_in` : combien de temps son artefact reste-t-il ?
+- [ ] Pour toujours
+- [x] 30 jours
+- [ ] Une semaine
+- [ ] Jusqu'au pipeline suivant
+- Réponse : 30 jours : c'est le réglage par défaut de l'instance gitlab.com (doc GitLab) ; une instance auto-hébergée peut en fixer un autre.
+
+## 8. pointeur : désigner l'artefact courant
+- Sous-thème : déploiement
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Un pointeur est un petit fichier mutable (`lambdas/<nom>/current.json`) qui désigne l'artefact immuable à déployer (≈ un dist-tag `latest` npm).
+- Contexte : Les zips ne changent jamais sous leur clé ; seul le pointeur bouge. Il contient la clé, le `base64sha256` attendu par Terraform, la taille, le commit et la date. Déployer une autre version revient à réécrire le pointeur, puis `make up`. Même logique qu'une branche git vers un commit : le nom bouge, le contenu désigné reste figé.
+- Usage : ✅ même commande de déploiement sur le poste et en CI, sans hash à recopier · ❌ réécrire le zip lui-même sous une clé fixe : on perd ce qui tournait avant.
+
+```json
+# Exemple 1 : lambdas/ingest-bodacc/current.json
+{
+  "key": "lambdas/ingest-bodacc/4881…f3f.zip",
+  "base64sha256": "SIF3hiDV…",
+  "size": 21180000,
+  "git_commit": "c75b13b…",
+  "git_dirty": true,
+  "published_at": "2026-10-25T…"
+}
+```
+
+- Quiz : Le pointeur est supprimé du bucket, les zips restent : que fait le `make up` suivant ?
+- [ ] Il redéploie le dernier zip trouvé
+- [ ] Rien : la fonction garde son code
+- [x] Il échoue dès le plan
+- [ ] Il supprime la fonction
+- Réponse : il échoue dès le plan : le data source `aws_s3_object` ne trouve plus `current.json` ; il faut republier (`make lambdas-publish`) pour réécrire le pointeur.
+
+## 9. make deploy : publier, puis appliquer
+- Sous-thème : chaîne
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `deploy: lambdas-publish up` enchaîne la publication des zips et du pointeur, puis `terraform apply` : la même cible sert au poste et à la CI.
+- Contexte : L'ordre est imposé par Terraform : le plan lit le pointeur, il doit donc exister et être à jour avant. `PROFILE=` vide en CI laisse la CLI prendre le rôle du job ; `LAMBDA=` vide publie toutes les Lambdas trouvées par convention (`lambdas/*/pyproject.toml`). La publication est idempotente : relancer `make deploy` sans changement n'envoie rien et ne modifie rien.
+- Usage : ✅ `make deploy` après tout changement de code d'une Lambda · ❌ `make up` seul après un changement de code : rien ne republie le zip.
+
+```makefile
+# Exemple 1 : les cibles du Makefile
+lambdas-publish:
+	uv run infra/scripts/build_lambda.py \
+	  --publish \
+	  $(if $(PROFILE),--profile $(PROFILE)) \
+	  $(LAMBDA)
+
+deploy: lambdas-publish up
+```
+
+- Quiz : Le code du handler change, puis on lance `make up` sans `lambdas-publish` : que montre le plan pour la fonction ?
+- [ ] Une mise à jour du code
+- [x] Aucun changement
+- [ ] Une erreur : zip périmé
+- [ ] Un remplacement de la fonction
+- Réponse : aucun changement : Terraform lit le pointeur, qui désigne toujours l'ancien zip ; il ne voit ni le code source ni `build/`.
+
+## 10. clé : le hash en hexadécimal
+- Sous-thème : déploiement
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : La clé S3 de l'artefact porte le sha256 en hexadécimal (`<64 caractères>.zip`) ; le base64, attendu par Terraform, reste dans le pointeur.
+- Contexte : Le base64 contient `/` et `+` : dans une clé S3, `/` crée un faux sous-dossier et `+` s'encode mal dans une URL. L'hexadécimal n'a que `0-9a-f`, se compare d'un coup d'œil à `sha256sum` et se tape sans échappement. Les deux écritures décrivent les mêmes 32 octets ; le script calcule l'une et l'autre depuis un seul `hashlib.sha256`.
+- Usage : ✅ hexadécimal dans les noms (clés, tags d'image), base64 là où l'outil l'exige · ❌ le base64 dans un chemin ou une URL.
+
+```python
+# Exemple 1 : deux écritures, un hash
+import base64
+import hashlib
+
+d = hashlib.sha256(b"PK v1")
+cle = f"lambdas/ingest-bodacc/{d.hexdigest()}.zip"
+b64 = base64.b64encode(d.digest()).decode()
+"/" in b64        # → True
+"/" in d.hexdigest()  # → False
+len(d.hexdigest()), len(b64)  # → (64, 44)
+```
+
+- Quiz : Avec la clé `lambdas/ingest-bodacc/<base64>.zip` et ce `b64`, que liste `aws s3 ls s3://<bucket>/lambdas/ingest-bodacc/` ?
+- [ ] Le zip, comme prévu
+- [x] Un préfixe `7GpJDi6MgFQ6xHBo40d68Cfeu5JA/`
+- [ ] Rien : la clé est refusée
+- [ ] Le zip, avec `/` échappé en `%2F`
+- Réponse : un préfixe : S3 n'a pas de dossiers, mais `ls` coupe la clé au `/` du base64 et affiche la première moitié comme un sous-dossier.
+
+## 11. CI=true : le lockfile fait foi
 - Sous-thème : dépendances
 - Niveau : 2
 - Définition : `CI: "true"` fait passer `pnpm install` en `--frozen-lockfile` : le build installe exactement le lockfile commité, ou échoue.
@@ -219,7 +329,7 @@ env:
 - [ ] Installe la dernière version publiée
 - Réponse : il échoue (`ERR_PNPM_OUTDATED_LOCKFILE`) : mieux vaut un build rouge qu'un déploiement avec des versions jamais vérifiées.
 
-## 8. cache : clé sur le lockfile
+## 12. cache : clé sur le lockfile
 - Sous-thème : dépendances
 - Niveau : 2
 - Définition : Le cache garde un dossier (store pnpm, `~/.cache/uv`) d'un pipeline au suivant ; sa clé, calculée sur le lockfile, change dès qu'une dépendance change.
@@ -254,7 +364,7 @@ test:
 - [ ] Des dépendances d'un autre lockfile
 - Réponse : un job rouge : le cache n'est jamais garanti (autre runner, expiration) ; l'installation reste dans le script, le cache ne fait que l'accélérer (doc GitLab et GitHub).
 
-## 9. artefacts : construire une fois
+## 13. artefacts : construire une fois
 - Sous-thème : déploiement
 - Niveau : 2
 - Définition : Un artefact est un fichier produit par un job (`dist/`, `tfplan`) et transmis aux suivants : on déploie exactement ce qui a été testé.
@@ -281,7 +391,7 @@ deploy:
 - [ ] Ceux du dernier pipeline réussi
 - Réponse : tous ceux des étapes précédentes : c'est le défaut GitLab ; `dependencies: [build]` restreint, `dependencies: []` n'en prend aucun (doc GitLab).
 
-## 10. needs : sortir de l'ordre des stages
+## 14. needs : sortir de l'ordre des stages
 - Sous-thème : chaîne
 - Niveau : 2
 - Définition : `needs` fait démarrer un job dès que les jobs listés ont réussi, sans attendre la fin de toute l'étape précédente (graphe de dépendances).
@@ -309,7 +419,7 @@ deploy-site:
 - [ ] Il n'est jamais lancé
 - Réponse : il démarre tout de suite : une liste vide veut dire « aucune dépendance », le job ignore l'ordre des étapes (doc GitLab).
 
-## 11. rules : la première qui correspond
+## 15. rules : la première qui correspond
 - Sous-thème : déclencheurs
 - Niveau : 2
 - Définition : `rules` décide si un job entre dans le pipeline : les règles sont lues dans l'ordre, la première qui correspond fixe son `when`.
@@ -336,7 +446,7 @@ deploy:
 - [ ] Le pipeline échoue
 - Réponse : absent : aucune règle ne correspond, le job n'est pas ajouté ; une dernière règle `- when: on_success` sans `if` servirait de cas par défaut (doc GitLab).
 
-## 12. matrix : un job, plusieurs variantes
+## 16. matrix : un job, plusieurs variantes
 - Sous-thème : chaîne
 - Niveau : 2
 - Définition : Une matrice génère un job par combinaison de valeurs (versions de Python, environnements) à partir d'une seule définition.
@@ -373,7 +483,7 @@ plan:
 - [ ] Il continue, mais son résultat est ignoré
 - Réponse : annulé : par défaut `fail-fast: true` arrête les jobs en cours de la matrice au premier échec ; `fail-fast: false` les laisse finir (doc GitHub).
 
-## 13. OIDC : un rôle AWS sans clé
+## 17. OIDC : un rôle AWS sans clé
 - Sous-thème : secrets
 - Niveau : 2
 - Définition : Avec OIDC, la CI reçoit un jeton signé décrivant le pipeline (dépôt, branche) et l'échange contre les identifiants temporaires d'un rôle IAM.
@@ -414,7 +524,7 @@ deploy:
 - [ ] `make deploy`, faute de droits S3
 - Réponse : `actions/checkout` : dès qu'un bloc `permissions` existe, toute permission non listée vaut `none`, le jeton ne peut plus lire le dépôt (doc GitHub).
 
-## 14. environnement : approbation avant la prod
+## 18. environnement : approbation avant la prod
 - Sous-thème : déploiement
 - Niveau : 2
 - Définition : Un environnement (`dev`, `prod`) nomme la cible d'un job de déploiement ; la CI y attache historique, URL, secrets dédiés et approbation manuelle.
@@ -451,7 +561,7 @@ deploy-prod:
 - [ ] Oui, pendant une heure puis il continue
 - Réponse : non : un job `when: manual` a `allow_failure: true` par défaut et ne bloque rien ; `allow_failure: false` (défaut d'un `manual` dans `rules`) fait attendre (doc GitLab).
 
-## 15. déploiement idempotent : rejouable sans risque
+## 19. déploiement idempotent : rejouable sans risque
 - Sous-thème : déploiement
 - Niveau : 2
 - Définition : Un déploiement idempotent donne le même état final lancé une ou dix fois : relancer un job raté ne crée ni doublon ni dérive.
@@ -473,7 +583,7 @@ make deploy ENV=dev   # même commit
 - [ ] Le `sync` échoue : conflit de noms
 - Réponse : il reste : `sync` ne fait qu'ajouter et mettre à jour ; seul `--delete` retire de la destination ce qui n'est plus dans `dist/` (doc AWS CLI).
 
-## 16. rollback : redéployer l'ancien commit
+## 20. rollback : redéployer l'ancien commit
 - Sous-thème : déploiement
 - Niveau : 2
 - Définition : Un rollback remet en service la dernière version saine : on redéploie un commit connu, jamais on ne corrige à la main en prod.
@@ -495,7 +605,304 @@ git push origin main
 - [ ] La version d'hier plus le dernier commit
 - Réponse : le dernier commit de `main` : le rollback ne touche pas Git ; sans `git revert`, le prochain push redéploie le bug (doc GitLab, environnements).
 
-## 17. concurrence : un déploiement à la fois
+## 21. artefact par hash : la clé est l'empreinte
+- Sous-thème : déploiement
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : L'artefact est rangé sous son sha256 (`lambdas/ingest-bodacc/<sha256>.zip`) : même contenu, même clé ; une clé déjà présente n'est pas renvoyée.
+- Contexte : Avec un build reproductible, deux pipelines sur le même code produisent le même hash : l'envoi est sauté (`head-object` répond 200) et Terraform ne voit aucun changement de `s3_key`. Un objet ne change jamais sous sa clé : on sait ce qui tourne, et revenir en arrière revient à remettre l'ancienne clé. Sans build reproductible, chaque pipeline crée une clé neuve et redéploie.
+- Usage : ✅ zips de Lambda, couches, tout artefact promu entre environnements · ❌ clé fixe (`latest.zip`) écrasée à chaque build : on ne sait plus quelle version est déployée.
+
+```python
+# Exemple 1 : la clé dérivée du contenu
+import hashlib
+def cle(nom, zip_bytes):
+    h = hashlib.sha256(zip_bytes).hexdigest()
+    return f"lambdas/{nom}/{h}.zip"
+a = cle("ingest-bodacc", b"PK v1")
+a == cle("ingest-bodacc", b"PK v1")  # → True
+a == cle("ingest-bodacc", b"PK v2")  # → False
+```
+
+```yaml
+# Exemple 2 : envoyer seulement si absent
+publish:
+  stage: deploy
+  script:
+    - SHA=$(sha256sum build/ingest-bodacc.zip | cut -d' ' -f1)
+    - KEY="lambdas/ingest-bodacc/$SHA.zip"
+    - aws s3api head-object --bucket "$ARTIFACTS" --key "$KEY"
+      || aws s3 cp build/ingest-bodacc.zip "s3://$ARTIFACTS/$KEY"
+```
+
+- Quiz : Deux pipelines du même commit, zip non reproductible (dates des fichiers) : combien d'objets sous `lambdas/ingest-bodacc/` ?
+- [ ] 1 : même commit, même clé
+- [x] 2 : deux hashs différents
+- [ ] 1, écrasé par le second pipeline
+- [ ] 0 : `head-object` bloque l'envoi
+- Réponse : 2 : des octets différents donnent deux sha256, donc deux clés ; d'où le zip reproductible avant l'adressage par contenu.
+
+## 22. promotion : le même artefact de dev à prod
+- Sous-thème : déploiement
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : On construit une fois, puis chaque environnement (dev, int, prod) déploie la même clé S3 : la prod reçoit les octets testés en dev.
+- Contexte : Reconstruire par environnement réintroduit le doute : runner différent, résolution différente, build non reproductible. La promotion ne change que la configuration (tfvars, variables) ; la clé passe au Terraform de chaque environnement par une variable. Les comptes de dev et de prod lisent le même bucket `artifacts` (politique de bucket entre comptes si besoin).
+- Usage : ✅ pipeline multi-environnements, approbation manuelle avant la prod · ❌ un job `build` par environnement : trois artefacts peut-être différents.
+
+```yaml
+# Exemple 1 : une clé, plusieurs environnements
+.deploy:
+  stage: deploy
+  script:
+    - make up ENV=$ENV TF_VAR_lambda_s3_key=$KEY
+deploy-dev:
+  extends: .deploy
+  variables: { ENV: dev }
+deploy-prod:
+  extends: .deploy
+  variables: { ENV: prod }
+  when: manual             # approbation
+```
+
+```hcl
+# Exemple 2 : la clé en variable
+variable "lambda_s3_key" { type = string }
+resource "aws_lambda_function" "ingest" {
+  s3_bucket = "data-platform-artifacts"
+  s3_key    = var.lambda_s3_key
+  # autres arguments omis
+}
+```
+
+- Quiz : `s3_key` contient le hash du zip : faut-il encore `source_code_hash` pour redéployer ?
+- [ ] Oui : sinon le code n'est jamais mis à jour
+- [x] Non : une nouvelle clé suffit à déclencher la mise à jour
+- [ ] Oui : S3 l'exige pour Lambda
+- [ ] Non : Lambda surveille le bucket
+- Réponse : non : un nouveau contenu donne une nouvelle clé, et Terraform voit `s3_key` changer ; `source_code_hash` sert quand le chemin ou la clé restent fixes.
+
+## 23. rules: changes : les vraies sources du zip
+- Sous-thème : déclencheurs
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `rules: - changes: [...]` ne crée le job que si le push modifie l'un de ces fichiers : on ne reconstruit que la Lambda touchée.
+- Contexte : Avec dix Lambdas, tout reconstruire à chaque push coûte des minutes. Le piège : le code d'une Lambda ne vit pas que dans son dossier. `ingest_bodacc` importe `packages/bodacc-client` et dépend de `uv.lock` : un filtre sur son seul dossier rate ces changements, et la Lambda n'est pas reconstruite. Lister toutes les sources : dossier, paquets internes, lock, script de build.
+- Usage : ✅ monorepo à plusieurs Lambdas, filtres qui listent les dépendances internes · ❌ filtre sur le seul dossier de la fonction quand elle importe un paquet partagé.
+
+```yaml
+# Exemple 1 : GitLab
+build-ingest:
+  stage: build
+  script: [make lambdas-build LAMBDA=ingest-bodacc]
+  rules:
+    - changes:
+        - lambdas/ingest_bodacc/**/*
+        - packages/bodacc-client/**/*
+        - uv.lock
+        - infra/scripts/build_lambda.py
+```
+
+- Quiz : Premier push d'une nouvelle branche : le job `build-ingest` est-il créé ?
+- [ ] Non : aucun fichier filtré n'a changé
+- [x] Oui : `changes` vaut vrai sur une branche neuve
+- [ ] Seulement si la branche part de `main`
+- [ ] Non : `changes` exige une merge request
+- Réponse : oui : sans référence de comparaison, GitLab évalue `changes` à vrai pour une branche ou un tag neufs (doc GitLab) ; `compare_to: refs/heads/main` corrige.
+
+## 24. matrix : un build par Lambda
+- Sous-thème : chaîne
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `parallel: matrix` avec `LAMBDA: [ingest-bodacc, normalize-bodacc]` lance un job de build par fonction, en parallèle, à partir d'une seule définition.
+- Contexte : Le script de build est générique (`build_lambda.py <membre>`) : la matrice ne fait varier que son argument. Chaque variante est un job à part, avec ses logs et ses artefacts ; une variante en échec n'empêche pas les autres de finir. Un job suivant peut viser une seule variante avec `needs: - job: build` et `parallel: matrix:`. La liste reste écrite à la main.
+- Usage : ✅ quelques Lambdas construites par le même script · ❌ des dizaines de fonctions ajoutées souvent : un pipeline enfant généré évite de tenir la liste.
+
+```yaml
+# Exemple 1 : GitLab
+build:
+  stage: build
+  parallel:
+    matrix:
+      - LAMBDA: [ingest-bodacc, normalize-bodacc]
+  script: [make lambdas-build LAMBDA=$LAMBDA]
+  artifacts:
+    paths: [build/]
+```
+
+- Quiz : Quel nom GitLab affiche-t-il pour la variante `ingest-bodacc` de ce job ?
+- [ ] `build 1/2`
+- [ ] `build-ingest-bodacc`
+- [x] `build: [ingest-bodacc]`
+- [ ] `build`, deux fois
+- Réponse : `build: [ingest-bodacc]` : une matrice nomme chaque job avec ses valeurs entre crochets (doc GitLab) ; `build 1/2` est le nom donné par `parallel: 2`.
+
+## 25. Pants : reconstruire ce qui dépend du changement
+- Sous-thème : chaîne
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Pants lit les imports du code pour connaître les dépendances : `--changed-since=origin/main --changed-dependents=transitive` ne reconstruit que les cibles touchées.
+- Contexte : Là où un filtre de chemins se trompe dès qu'un paquet partagé change, Pants sait que `ingest_bodacc` importe `bodacc_client`. La cible `python_aws_lambda_function` produit le zip pour un runtime et une plateforme, avec un cache partagé entre runners. Coût : un outil de plus, des fichiers `BUILD`, un apprentissage ; rentable avec beaucoup de fonctions.
+- Usage : ✅ gros monorepo Python (dizaines de Lambdas, paquets partagés) · ❌ deux ou trois Lambdas : un script et des filtres de chemins suffisent.
+
+```bash
+# Exemple 1 : seulement ce qui a changé
+pants --changed-since=origin/main \
+  --changed-dependents=transitive package
+# → zips des Lambdas qui importent
+#   le code modifié, et rien d'autre
+```
+
+```text
+# Exemple 2 : lambdas/ingest_bodacc/BUILD
+python_aws_lambda_function(
+    name="lambda",
+    handler="ingest_bodacc/handler.py:lambda_handler",
+    runtime="python3.12",
+)
+```
+
+- Quiz : On modifie seulement `packages/bodacc-client` : `ingest_bodacc` est-il reconstruit par la commande de l'exemple 1 ?
+- [x] Oui : il dépend du paquet modifié
+- [ ] Non : son dossier n'a pas changé
+- [ ] Oui, mais toutes les Lambdas aussi
+- [ ] Non : `--changed-since` ignore les paquets
+- Réponse : oui : `--changed-dependents=transitive` ajoute tout ce qui importe, directement ou non, les fichiers modifiés.
+
+## 26. SAM et CDK : le build intégré
+- Sous-thème : chaîne
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `sam build --use-container` et `PythonFunction` (CDK) construisent eux-mêmes le zip d'une Lambda Python, dans un conteneur Linux à l'image du runtime.
+- Contexte : Les dépendances s'installent dans l'image de build officielle du runtime : binaires Linux, bonne architecture, sans `--python-platform`, et même compilation d'un paquet sans roue. Les deux supposent leur outil de déploiement (CloudFormation) et Docker sur le runner. Avec Terraform, on garde un script de build et on passe le zip à `aws_lambda_function`.
+- Usage : ✅ projet déjà sur SAM ou CDK, dépendance à compiler faute de roue · ❌ infrastructure en Terraform : SAM pour le seul build mélange deux outils de déploiement.
+
+```bash
+# Exemple 1 : SAM
+sam build --use-container
+# → .aws-sam/build/IngestFunction/
+#   dépendances installées dans
+#   l'image public.ecr.aws/sam/build-python3.12
+```
+
+- Quiz : Une dépendance n'a pas de roue `aarch64` : laquelle de ces méthodes peut quand même la construire ?
+- [ ] `uv pip install --only-binary :all:`
+- [ ] `--python-platform aarch64-manylinux2014`
+- [x] `sam build --use-container` en arm64
+- [ ] `uv export --no-editable`
+- Réponse : `sam build --use-container` : il compile dans un vrai Linux de la bonne architecture ; uv sur le Mac ne peut que choisir des roues existantes.
+
+## 27. publication idempotente : rien si déjà là
+- Sous-thème : déploiement
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : La publication n'envoie le zip que s'il manque, et ne réécrit le pointeur que s'il change : relancée, elle ne fait rien.
+- Contexte : Deux contrôles, deux bénéfices. Sauter l'envoi d'un zip déjà présent économise 20 Mo par pipeline. Ne pas réécrire un pointeur identique évite une nouvelle version S3 (le bucket est versionné) et garde `published_at` et `git_commit` de la vraie publication. Le résultat se lit en trois états : `envoyé`, `déjà envoyé, pointeur →`, `à jour`.
+- Usage : ✅ tout script de publication relancé par une CI ou un humain · ❌ envoyer et réécrire à chaque fois : versions inutiles, historique du pointeur illisible.
+
+```python
+# Exemple 1 : la logique, sur un dict
+bucket = {}
+
+def publier(nom, sha):
+    cle = f"lambdas/{nom}/{sha}.zip"
+    deja = cle in bucket
+    if not deja:
+        bucket[cle] = b"zip"
+    ptr = f"lambdas/{nom}/current.json"
+    if bucket.get(ptr) == cle:
+        return "à jour"
+    bucket[ptr] = cle
+    return "déjà envoyé" if deja else "envoyé"
+
+publier("ingest-bodacc", "4881")  # → 'envoyé'
+publier("ingest-bodacc", "4881")  # → 'à jour'
+```
+
+- Quiz : Après ces deux appels, `publier("ingest-bodacc", "9c02")` puis `publier("ingest-bodacc", "4881")` : que renvoie le dernier ?
+- [ ] `'à jour'`
+- [ ] `'envoyé'`
+- [x] `'déjà envoyé'`
+- [ ] `KeyError`
+- Réponse : `'déjà envoyé'` : le zip `4881` est toujours dans le bucket, mais le pointeur désigne `9c02` ; seul le pointeur est réécrit, c'est un retour arrière.
+
+## 28. git_dirty : publié depuis un arbre modifié
+- Sous-thème : déploiement
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `git_dirty: true` dans le pointeur signale un zip construit avec des modifications non commitées : `git_commit` ne suffit pas à le reconstruire.
+- Contexte : Le script lance `git status --porcelain` : toute ligne, même un fichier non suivi, rend l'arbre « sale ». En dev, publier avant de commiter est normal (étape 8 : `git_dirty: true`). En CI, l'arbre est un clone propre : un `true` y révèle un fichier généré par le build et non ignoré. La règle d'entreprise : seul un zip `git_dirty: false` part en prod.
+- Usage : ✅ tracer d'où vient chaque zip, refuser la prod si `git_dirty` · ❌ ne garder que la date : impossible de relier un incident à un commit.
+
+```python
+# Exemple 1 : la sortie porcelain
+def sale(porcelain):
+    return bool(porcelain.strip())
+
+sale("")                    # → False
+sale(" M Makefile\n")       # → True
+sale("M  infra/lambdas.tf\n")  # → True
+```
+
+- Quiz : Seul `out.json`, non suivi et non ignoré, traîne à la racine : que vaut `git_dirty` ?
+- [ ] `False` : le fichier n'est pas suivi
+- [x] `True` : porcelain liste `?? out.json`
+- [ ] `False` : il n'est pas dans le zip
+- [ ] `None` : état indéterminé
+- Réponse : `True` : `git status --porcelain` affiche aussi les fichiers non suivis (`??`) ; l'ignorer ou le supprimer remet `git_dirty` à `false`.
+
+## 29. rollback : une ancienne version du pointeur
+- Sous-thème : déploiement
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Le bucket d'artefacts versionné garde chaque version du pointeur : revenir en arrière, c'est remettre l'ancienne valeur, puis `make up`.
+- Contexte : Les zips n'étant jamais réécrits ni expirés, toute ancienne clé reste déployable. Le versioning ajoute l'historique : qui a pointé vers quoi, et quand (`published_at`, `git_commit`). La règle de cycle de vie supprime les versions non courantes après 90 jours : l'historique du pointeur est borné, pas les zips. Le rollback ne reconstruit rien : il redéploie des octets déjà testés.
+- Usage : ✅ incident en dev ou en prod : remettre le pointeur précédent, `make up` · ❌ reconstruire l'ancien commit en urgence : autre machine, autres octets possibles.
+
+```bash
+# Exemple 1 : les versions du pointeur
+aws s3api list-object-versions \
+  --bucket "$ARTIFACTS" \
+  --prefix lambdas/ingest-bodacc/current.json \
+  --query 'Versions[].[VersionId,IsLatest]'
+# → [["v2…", true], ["v1…", false]]
+aws s3api get-object --bucket "$ARTIFACTS" \
+  --key lambdas/ingest-bodacc/current.json \
+  --version-id "v1…" old.json
+```
+
+- Quiz : On veut revenir au zip d'il y a 4 mois ; la version du pointeur a expiré (90 jours) : est-ce encore possible ?
+- [ ] Non : le zip a expiré avec elle
+- [x] Oui : le zip reste, on réécrit le pointeur
+- [ ] Non : il faut reconstruire l'ancien commit
+- [ ] Oui, en restaurant la version expirée
+- Réponse : oui : seuls les objets non courants expirent ; le zip, objet courant sous sa clé, est toujours là ; on écrit un pointeur avec sa clé et son `base64sha256`.
+
+## 30. pointeur ou hash en TF_VAR_ : le compromis
+- Sous-thème : déploiement
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Le pointeur rend `make deploy` identique partout ; passer la clé en `TF_VAR_` par la CI rend chaque déploiement traçable au pipeline qui l'a lancé.
+- Contexte : Avec le pointeur, ce qui est déployé dépend d'un fichier S3 au moment du plan, pas du dépôt : deux plans du même commit peuvent différer. Avec la clé en variable, le pipeline qui construit transmet le hash au job de déploiement (dotenv, artefact), et le plan ne dépend que de ses entrées. Le plan du projet : pointeur tant que tout part du poste, variable et pointeur supprimé quand la CI existera.
+- Usage : ✅ pointeur en dev, avec un seul déployeur à la fois · ❌ pointeur partagé quand plusieurs pipelines déploient : la dernière écriture gagne.
+
+```bash
+# Exemple 1 : la clé passée par la CI
+KEY=$(jq -r .key build/publish.json)
+TF_VAR_lambda_keys="{\"ingest-bodacc\":\"$KEY\"}" \
+  make up ENV=dev
+# plan = f(commit, variables du pipeline)
+# rien n'est relu dans un fichier S3
+```
+
+- Quiz : Deux branches publient à une minute d'écart, puis chacune lance `make up` : quel zip tourne à la fin ?
+- [ ] Celui de la branche `main`
+- [ ] Celui du premier `make up`
+- [x] Celui du dernier pointeur écrit
+- [ ] Les deux, en deux versions
+- Réponse : celui du dernier pointeur écrit : chaque `make up` lit le pointeur courant ; sans verrou de déploiement, les deux plans peuvent même déployer le même zip.
+
+## 31. concurrence : un déploiement à la fois
 - Sous-thème : déploiement
 - Niveau : 3
 - Définition : `concurrency` (GitHub) et `resource_group` (GitLab) empêchent deux déploiements simultanés sur un même environnement : le second attend.
@@ -523,7 +930,7 @@ deploy-dev:
 - [ ] 1 : le 3e seulement
 - Réponse : 2 : le 1er tourne, le 2e attend puis est annulé quand le 3e arrive ; un seul run en attente par groupe, le plus récent (doc GitHub).
 
-## 18. masquage : pas une protection
+## 32. masquage : pas une protection
 - Sous-thème : secrets
 - Niveau : 3
 - Définition : Le masquage remplace dans les logs la valeur exacte d'un secret par `[MASKED]` (GitLab) ou `***` (GitHub) ; toute variante transformée apparaît en clair.
@@ -545,7 +952,7 @@ env | grep INSEE
 - [ ] Le job échoue : secret détecté
 - Réponse : la valeur encodée : elle ne ressemble plus au secret, rien ne la masque ; `base64 -d` la rend (doc GitLab : une sortie modifiée n'est pas masquée).
 
-## 19. PR de fork : pas de secrets
+## 33. PR de fork : pas de secrets
 - Sous-thème : secrets
 - Niveau : 3
 - Définition : Un workflow `pull_request` venu d'un fork tourne sans les secrets du dépôt, avec un `GITHUB_TOKEN` en lecture seule.
@@ -570,7 +977,7 @@ jobs:
 - [ ] Le secret, en lecture seule
 - Réponse : une chaîne vide : hors `GITHUB_TOKEN`, aucun secret n'est transmis à un workflow déclenché depuis un fork (doc GitHub).
 
-## 20. clone superficiel : historique tronqué
+## 34. clone superficiel : historique tronqué
 - Sous-thème : chaîne
 - Niveau : 3
 - Définition : La CI clone peu de commits pour aller vite : `actions/checkout` un seul et sans tags, GitLab 20 par défaut (`GIT_DEPTH`).
@@ -600,3 +1007,166 @@ git rev-list --count HEAD   # → 1
 - [x] `20`
 - [ ] `50`
 - Réponse : `20` : la profondeur de clone par défaut d'un projet GitLab récent vaut 20, modifiable par `GIT_DEPTH` (doc GitLab).
+
+## 35. pipeline enfant généré : un job par Lambda trouvée
+- Sous-thème : chaîne
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Un job écrit un YAML (un job par dossier de `lambdas/`) en artefact, puis `trigger: include: - artifact:` lance ce pipeline enfant.
+- Contexte : Résout ce que la matrice ne fait pas : la liste des fonctions vient du dépôt (convention `lambdas/*`), et le générateur peut n'émettre que les fonctions modifiées (`git diff --name-only`). Le parent prend le statut de l'enfant avec `strategy: depend`. Plus de code à maintenir : à réserver aux dépôts qui ont beaucoup de fonctions.
+- Usage : ✅ monorepo à dizaines de Lambdas, ajoutées sans toucher au `.gitlab-ci.yml` · ❌ deux ou trois fonctions : une matrice écrite à la main se lit mieux.
+
+```yaml
+# Exemple 1 : générer puis déclencher
+generate:
+  stage: build
+  script: [python ci/gen_jobs.py > child.yml]
+  artifacts: { paths: [child.yml] }
+lambdas:
+  stage: build
+  needs: [generate]
+  trigger:
+    include:
+      - artifact: child.yml
+        job: generate
+    strategy: depend
+```
+
+```python
+# Exemple 2 : le générateur, simplifié
+import tempfile
+from pathlib import Path
+root = Path(tempfile.mkdtemp())
+for n in ["ingest_bodacc", "normalize_bodacc"]:
+    (root / "lambdas" / n).mkdir(parents=True)
+dirs = sorted((root / "lambdas").iterdir())
+jobs = [f"build-{d.name}:\n  script: [make "
+        f"lambdas-build LAMBDA={d.name.replace('_', '-')}]"
+        for d in dirs]
+jobs[0].splitlines()[0]   # → 'build-ingest_bodacc:'
+len(jobs)                 # → 2
+```
+
+- Quiz : Sans `strategy: depend`, l'enfant échoue : quel statut prend le job `lambdas` du parent ?
+- [x] Succès : il a seulement déclenché
+- [ ] Échec, comme l'enfant
+- [ ] En attente, jusqu'à relance
+- [ ] Annulé
+- Réponse : succès : sans `depend`, le job de déclenchement réussit dès que l'enfant est créé (doc GitLab) ; le parent peut passer au vert avec un enfant rouge.
+
+## 36. dotenv : passer une valeur au job suivant
+- Sous-thème : dépendances
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `artifacts: reports: dotenv: build.env` publie les variables (`NOM=valeur`) écrites par un job ; les jobs qui en dépendent les reçoivent dans leur environnement.
+- Contexte : La clé du zip n'est connue qu'après le build : le job de publication l'écrit dans `build.env`, les déploiements la lisent en `$LAMBDA_KEY` sans recalcul. Format : une variable par ligne. Les variables suivent `needs` et `dependencies`, comme les artefacts. GitHub Actions fait la même chose avec les `outputs` d'un job, lus par `needs.<job>.outputs`.
+- Usage : ✅ transmettre une clé d'artefact, un numéro de version, une URL de préproduction · ❌ un secret : il est lisible dans les artefacts du pipeline ; variables protégées à la place.
+
+```yaml
+# Exemple 1 : de publish à deploy
+publish:
+  stage: build
+  script:
+    - make lambdas-build
+    - echo "LAMBDA_KEY=lambdas/ingest-bodacc/$(sha256sum build/ingest-bodacc.zip | cut -d' ' -f1).zip" > build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+deploy-dev:
+  stage: deploy
+  needs: [publish]
+  script: [echo "$LAMBDA_KEY"]
+```
+
+- Quiz : `deploy-dev` déclare `needs: [{ job: publish, artifacts: false }]` : reçoit-il `$LAMBDA_KEY` ?
+- [ ] Oui : dotenv passe toujours
+- [ ] Oui, mais vide
+- [x] Non : plus d'artefacts, dotenv compris
+- [ ] Erreur de syntaxe du pipeline
+- Réponse : non : les variables dotenv voyagent comme un artefact ; `artifacts: false` (ou `dependencies: []`) les coupe aussi (doc GitLab).
+
+## 37. pointeur partagé : int déploie l'inédit
+- Sous-thème : déploiement
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Un pointeur par Lambda et par compte sert à tous ses environnements : `make up ENV=int` déploie le dernier zip publié, testé ou non.
+- Contexte : Le chemin `lambdas/<nom>/current.json` ne contient pas l'environnement. Tant qu'il n'y a que dev, c'est sans effet. Dès qu'un second environnement partage le compte, la promotion exige un pointeur par environnement (`current-<env>.json`) ou la clé passée en variable : promouvoir revient alors à copier la valeur de dev vers int, jamais à republier.
+- Usage : ✅ un pointeur par environnement, ou la clé en variable, dès deux environnements par compte · ❌ un pointeur commun : int suit dev sans validation.
+
+```bash
+# Exemple 1 : promouvoir dev vers int
+aws s3 cp \
+  "s3://$ARTIFACTS/lambdas/ingest-bodacc/current-dev.json" \
+  "s3://$ARTIFACTS/lambdas/ingest-bodacc/current-int.json"
+make up ENV=int
+# int reçoit les octets testés en dev
+```
+
+- Quiz : Juste après cette copie, dev republie un nouveau zip ; on relance `make up ENV=int` : quel zip tourne en int ?
+- [ ] Le nouveau zip de dev
+- [x] Celui copié, toujours désigné
+- [ ] Aucun : pointeurs incohérents
+- [ ] Le plus récent des deux
+- Réponse : celui copié : la republication ne réécrit que `current-dev.json` ; int ne change qu'à la prochaine copie, donc à la prochaine promotion décidée.
+
+## 38. rétention : n'expirer que l'ancien
+- Sous-thème : déploiement
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Le bucket d'artefacts n'expire jamais un objet courant : seules les anciennes versions (du pointeur) et les envois multipart abandonnés sont nettoyés.
+- Contexte : Un zip déployé n'est pas relu par la fonction, mais il l'est par tout `make up` qui recrée la fonction : après `make down`, dans un nouvel environnement, ou pour un retour arrière. Une règle « expirer après 90 jours » sur `lambdas/` casserait ces cas des mois plus tard, en silence. Le nettoyage des zips inutiles se fait à part, en listant les clés encore désignées par un pointeur ou un état.
+- Usage : ✅ `noncurrent_version_expiration` et `abort_incomplete_multipart_upload` seuls · ❌ `expiration { days = 90 }` sur des artefacts : rupture différée.
+
+```hcl
+# Exemple 1 : ce qui expire, ce qui reste
+rule {
+  id     = "expire-noncurrent"
+  status = "Enabled"
+  filter {}
+  noncurrent_version_expiration {
+    noncurrent_days = 90
+  }
+}
+# pas de bloc expiration : les zips
+# courants restent indéfiniment
+```
+
+- Quiz : Avec une règle `expiration { days = 90 }` sur `lambdas/`, la fonction n'est pas redéployée pendant 4 mois : que se passe-t-il ?
+- [ ] Elle s'arrête au 91e jour
+- [x] Elle tourne ; le prochain `make up` qui la recrée échoue
+- [ ] Rien : Lambda prolonge l'objet
+- [ ] Elle passe sur l'ancienne version du zip
+- Réponse : elle tourne, Lambda ayant sa copie ; mais une recréation (`make down` puis `make up`) relit une clé disparue et échoue à l'`apply`.
+
+## 39. Prefix : une clé plus longue répond aussi
+- Sous-thème : déploiement
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `list_objects_v2(Prefix=cle, MaxKeys=1)` teste l'existence d'une clé, mais compte aussi toute clé qui commence par elle (`<sha>.zip.part`).
+- Contexte : Le script de publication utilise ce test plutôt que `head_object` : sans droit `s3:ListBucket`, `head_object` sur une clé absente répond `403` au lieu de `404`, et l'on ne sait plus distinguer absent de refusé. Le préfixe a son piège : un envoi interrompu laissé sous `<sha>.zip.tmp` ferait croire le zip présent. Avec une clé terminée par `.zip` et aucun autre outil qui écrit là, le risque reste théorique.
+- Usage : ✅ `Prefix=cle` puis vérifier `Contents[0]["Key"] == cle` pour un test exact · ❌ se fier au seul `KeyCount` quand d'autres clés peuvent prolonger celle-ci.
+
+```python
+# Exemple 1 : le préfixe déborde
+import boto3
+from moto import mock_aws
+
+with mock_aws():
+    s3 = boto3.client("s3", region_name="eu-west-3")
+    s3.create_bucket(
+        Bucket="artefacts",
+        CreateBucketConfiguration={
+            "LocationConstraint": "eu-west-3"})
+    s3.put_object(Bucket="artefacts",
+                  Key="lambdas/x/ab.zip.part", Body=b"")
+    r = s3.list_objects_v2(Bucket="artefacts",
+        Prefix="lambdas/x/ab.zip", MaxKeys=1)
+r["KeyCount"]  # → 1 : le zip n'existe pas
+```
+
+- Quiz : Même bucket, `Prefix="lambdas/x/ab.zip"` et `Delimiter="/"` : que vaut `KeyCount` ?
+- [ ] 0 : le délimiteur exige une clé exacte
+- [x] 1 : aucun `/` après le préfixe
+- [ ] 0 : `.part` est ignoré
+- [ ] 2 : clé et préfixe commun
+- Réponse : 1 : le délimiteur ne regroupe que ce qui contient un `/` après le préfixe ; `.part` n'en a pas, la clé est comptée telle quelle.

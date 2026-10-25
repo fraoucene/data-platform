@@ -4,7 +4,7 @@ type: cartes
 langage: Python
 cours: Classes
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Classes Python
@@ -156,7 +156,86 @@ repr(a)
 - [ ] Tout marche, chaque objet a sa liste
 - Réponse : `ValueError` dès la définition : `dataclass` refuse un défaut `list`, `dict` ou `set`, qui serait partagé entre toutes les instances.
 
-## 5. @x.setter : écrire une propriété
+## 5. dataclass : un résultat nommé plutôt qu'un tuple
+- Sous-thème : dataclass
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Une fonction qui rend plusieurs valeurs rend une dataclass figée (`PartStats`) plutôt qu'un tuple : champs nommés, typés, lisibles à l'appel (≈ `Readonly<interface>` en TS).
+- Contexte : `return count, sha, raw, gz` oblige l'appelant à connaître l'ordre : `stats[2]` ne dit rien et casse en silence si l'ordre change. `PartStats(count=..., sha256=...)` se lit `stats.sha256`, s'affiche lisiblement dans pytest et se compare d'un bloc. Pas d'indexation : une dataclass n'est pas une séquence. `typing.NamedTuple` est l'alternative si l'on veut garder le dépaquetage.
+- Usage : ✅ statistiques d'écriture, résultat d'un parseur, clé composée · ❌ deux valeurs évidentes et locales (`quotient, reste = divmod(…)`) : un tuple suffit.
+
+```python
+# Exemple 1 : des champs, pas des positions
+from dataclasses import dataclass
+@dataclass(frozen=True)
+class PartStats:
+    count: int
+    sha256: str
+s = PartStats(count=3, sha256="bbdf3f0a")
+s.sha256          # → "bbdf3f0a"
+```
+
+```python
+# Exemple 2 : affichage lisible
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class PartStats:
+    count: int
+    gz_bytes: int
+
+repr(PartStats(3, 120))
+# → "PartStats(count=3, gz_bytes=120)"
+```
+
+- Quiz : Avec l'exemple 1, que fait `s[0]` ?
+- [ ] Rend `3`
+- [x] `TypeError` : pas indexable
+- [ ] Rend `"count"`
+- [ ] `IndexError`
+- Réponse : `TypeError` : pas indexable : une dataclass n'est pas une séquence ; `NamedTuple` l'est, ou `dataclasses.astuple(s)[0]`.
+
+## 6. dataclass : comparer d'un bloc dans un test
+- Sous-thème : dataclass
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Le `__eq__` généré compare tous les champs, dans l'ordre, entre objets de la même classe : un test vérifie le résultat entier en une assertion.
+- Contexte : Le test du writer fait `assert stats == PartStats(count=3, sha256=..., raw_bytes=..., gz_bytes=...)` : un seul `assert`, et pytest affiche le champ qui diffère. L'égalité exige la même classe : une dataclass n'est jamais égale à un tuple ni à un dict de mêmes valeurs. C'est une égalité de valeur, pas d'identité (`is`).
+- Usage : ✅ `assert resultat == Attendu(...)` dans les tests · ❌ comparer champ par champ en plusieurs `assert`, ou à un dict : convertir avec `asdict` si besoin.
+
+```python
+# Exemple 1 : égalité champ par champ
+from dataclasses import dataclass
+@dataclass(frozen=True)
+class P:
+    count: int
+    sha256: str
+P(3, "ab") == P(3, "ab")    # → True
+P(3, "ab") is P(3, "ab")    # → False
+```
+
+```python
+# Exemple 2 : une assertion de test
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class P:
+    count: int
+    sha256: str
+
+def ecrire():
+    return P(count=3, sha256="ab")
+
+assert ecrire() == P(count=3, sha256="ab")
+```
+
+- Quiz : Avec l'exemple 1, que vaut `P(3, "ab") == (3, "ab")` ?
+- [ ] `True`
+- [x] `False`
+- [ ] `TypeError`
+- Réponse : `False` : le `__eq__` généré rend `NotImplemented` pour une autre classe, et Python conclut à l'inégalité.
+
+## 7. @x.setter : écrire une propriété
 - Sous-thème : propriétés
 - Niveau : 2
 - Définition : `@nom.setter` ajoute l'écriture à une `@property` existante, avec contrôle de la valeur (≈ `set` en TS).
@@ -189,7 +268,7 @@ s.capital = -5  # ❌ ValueError
 - [ ] Lève `TypeError`
 - Réponse : `AttributeError` (no setter) : la propriété avec setter est rangée sous `set_capital` ; `capital` reste sans setter.
 
-## 6. @dataclass(frozen=True) : objet figé
+## 8. @dataclass(frozen=True) : objet figé
 - Sous-thème : dataclass
 - Niveau : 2
 - Définition : `frozen=True` interdit de modifier les attributs après création et rend l'objet hachable (clé de dict, élément de set).
@@ -230,7 +309,7 @@ c.jour         # → "2026-10-23"
 - [ ] `0`
 - Réponse : `1` : figée, la dataclass a un `__hash__` cohérent avec `__eq__` ; deux valeurs égales ne font qu'un élément.
 
-## 7. @abstractmethod : imposer une méthode
+## 9. @abstractmethod : imposer une méthode
 - Sous-thème : méthodes
 - Niveau : 2
 - Définition : `@abstractmethod` dans une classe `ABC` interdit d'instancier toute sous-classe qui n'implémente pas la méthode (≈ `abstract` en TS).
@@ -273,7 +352,7 @@ Bodacc().lire("2026-10-23")
 - [ ] Lève `AttributeError`
 - Réponse : Crée l'objet : sans `ABC` (métaclasse `ABCMeta`), `@abstractmethod` n'est jamais vérifié, le décorateur ne fait que poser une marque.
 
-## 8. _nom ou __nom : privé par convention
+## 10. _nom ou __nom : privé par convention
 - Sous-thème : propriétés
 - Niveau : 2
 - Source : data-platform · S1-06
@@ -299,7 +378,196 @@ c._Client__cle   # → "s3cr3t"
 - [ ] `PermissionError`
 - Réponse : `AttributeError` : l'attribut n'existe que sous `_Client__cle` ; le renommage n'a lieu que dans le corps de la classe.
 
-## 9. @cached_property : calculer une fois
+## 11. dataclass : sans annotation, pas de champ
+- Sous-thème : dataclass
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Seuls les attributs **annotés** deviennent des champs d'une dataclass ; `x = 5` sans type reste un simple attribut de classe, absent de `__init__`.
+- Contexte : Le décorateur lit `__annotations__` de la classe, pas ses affectations. Oublier l'annotation ne lève rien : le champ manque de `__init__`, de `__repr__` et de `__eq__`. Une constante partagée s'écrit volontairement sans annotation, ou avec `ClassVar[int]` pour l'annoncer. En TS, `x = 5` dans une classe crée bien un champ d'instance : réflexe trompeur.
+- Usage : ✅ annoter chaque champ, `ClassVar` pour une vraie constante de classe · ❌ `niveau = 6` dans une dataclass en pensant ajouter un champ avec défaut : `niveau: int = 6`.
+
+```python
+# Exemple 1 : x n'est pas un champ
+from dataclasses import dataclass, fields
+@dataclass
+class C:
+    x = 5
+    y: int = 1
+[f.name for f in fields(C)]   # → ["y"]
+```
+
+```python
+# Exemple 2 : ClassVar pour une constante
+from dataclasses import dataclass, fields
+from typing import ClassVar
+
+@dataclass
+class Writer:
+    NIVEAU: ClassVar[int] = 6
+    nom: str
+
+[f.name for f in fields(Writer)]  # → ["nom"]
+Writer("part").NIVEAU             # → 6
+```
+
+- Quiz : Avec l'exemple 1, que fait `C(2, 3)` ?
+- [ ] `C(x=2, y=3)`
+- [ ] `C(y=2)` : 3 est ignoré
+- [x] `TypeError`
+- Réponse : `TypeError` : `__init__` n'a qu'un paramètre, `y` ; `x` n'est pas un champ.
+
+## 12. frozen : figé en surface seulement
+- Sous-thème : dataclass
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `frozen=True` interdit de réaffecter un champ, pas de modifier l'objet qu'il contient : une liste dans une dataclass figée reste modifiable.
+- Contexte : Comme `Readonly<T>` en TS, le gel est superficiel : `stats.lignes = []` lève, `stats.lignes.append(...)` passe. Pire, le `__hash__` généré hache les champs : avec une liste dedans, `hash(obj)` lève `TypeError: unhashable type: 'list'`, alors que l'objet est « figé ». Pour un vrai objet immuable : des champs immuables (`tuple`, `frozenset`, `str`).
+- Usage : ✅ champs `tuple` ou `frozenset` dans une dataclass figée · ❌ `list` ou `dict` dans une dataclass figée qu'on veut mettre dans un set ou une clé de dict.
+
+```python
+# Exemple 1 : la liste bouge encore
+from dataclasses import dataclass
+@dataclass(frozen=True)
+class Lot:
+    sirens: list
+lot = Lot(["483609327"])
+lot.sirens.append("552100554")
+len(lot.sirens)       # → 2
+```
+
+```python
+# Exemple 2 : un tuple, vraiment figé
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class Lot:
+    sirens: tuple
+
+a = Lot(("483609327",))
+b = Lot(("483609327",))
+len({a, b})           # → 1
+```
+
+- Quiz : Avec la `Lot` de l'exemple 1, que fait `hash(lot)` ?
+- [ ] Rend un entier : l'objet est figé
+- [x] `TypeError`
+- [ ] Rend `hash(id(lot))`
+- Réponse : `TypeError` : le hash figé combine les hash des champs, et une `list` n'est pas hachable.
+
+## 13. dataclass : un défaut, puis plus de champ sans défaut
+- Sous-thème : dataclass
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Un champ sans valeur par défaut ne peut pas suivre un champ qui en a une : la classe lève `TypeError` dès sa définition.
+- Contexte : Les champs deviennent les paramètres de `__init__`, dans l'ordre : `def __init__(self, a=1, b)` est impossible en Python. Ajouter un champ obligatoire à la fin d'une dataclass dont le dernier champ a un défaut casse donc l'import du module. Solutions : réordonner, ou `kw_only=True` (3.10+), qui rend les paramètres nommés et lève la contrainte.
+- Usage : ✅ champs obligatoires d'abord, puis ceux avec défaut ; `kw_only=True` pour une dataclass qui grandit · ❌ ajouter un champ obligatoire en dernier sans vérifier l'ordre.
+
+```python
+# Exemple 1 : refusé à la définition
+from dataclasses import dataclass
+try:
+    @dataclass
+    class Part:
+        niveau: int = 6
+        chemin: str
+except TypeError as e:
+    erreur = str(e)
+"follows default" in erreur   # → True
+```
+
+```python
+# Exemple 2 : réordonner les champs
+from dataclasses import dataclass
+
+@dataclass
+class Part:
+    chemin: str
+    niveau: int = 6
+
+Part("part-0001.jsonl.gz").niveau   # → 6
+```
+
+- Quiz : Même classe que l'exemple 1, mais `@dataclass(kw_only=True)` : que fait `Part(chemin="p.gz")` ?
+- [ ] `TypeError` : ordre des champs
+- [x] Crée `Part(niveau=6, chemin="p.gz")`
+- [ ] Crée `Part(chemin="p.gz")` sans `niveau`
+- Réponse : Crée `Part(niveau=6, chemin="p.gz")` : avec `kw_only`, tous les paramètres sont nommés, l'ordre défaut / sans défaut ne compte plus.
+
+## 14. kw_only : imposer les noms à l'appel
+- Sous-thème : dataclass
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `@dataclass(kw_only=True)` (Python 3.10+) oblige à nommer chaque argument : `PartStats(count=3, …)` passe, `PartStats(3, …)` lève `TypeError`.
+- Contexte : Avec quatre entiers (`count`, `raw_bytes`, `gz_bytes`…), un appel positionnel `PartStats(3, "…", 120, 40)` inverse facilement deux tailles sans erreur. `kw_only` rend l'appel lisible et robuste à un réordonnancement des champs. `field(kw_only=True)` le fait pour un seul champ, et `_: KW_ONLY` pour tous les champs qui suivent.
+- Usage : ✅ plusieurs champs de même type, dataclass publique d'un package · ❌ petite valeur à 1 ou 2 champs évidents (`Siren("483609327")`) : le positionnel reste clair.
+
+```python
+# Exemple 1 : noms obligatoires
+from dataclasses import dataclass
+@dataclass(kw_only=True, frozen=True)
+class Tailles:
+    raw: int
+    gz: int
+Tailles(raw=556, gz=44).gz   # → 44
+Tailles(556, 44)  # ❌ TypeError
+```
+
+```python
+# Exemple 2 : à partir d'un champ, avec KW_ONLY
+from dataclasses import KW_ONLY, dataclass
+
+@dataclass
+class Part:
+    chemin: str
+    _: KW_ONLY
+    niveau: int = 6
+
+Part("p.gz", niveau=9).niveau    # → 9
+```
+
+- Quiz : Avec l'exemple 2, que fait `Part("p.gz", 9)` ?
+- [ ] Crée `Part(chemin="p.gz", niveau=9)`
+- [x] `TypeError`
+- [ ] Ignore `9` et garde `niveau=6`
+- Réponse : `TypeError` : après `_: KW_ONLY`, `niveau` ne peut être passé que par son nom.
+
+## 15. order=True : trier des dataclasses
+- Sous-thème : dataclass
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `@dataclass(order=True)` génère `<`, `<=`, `>`, `>=` qui comparent les champs dans leur ordre de déclaration, comme des tuples.
+- Contexte : Sans `order`, `sorted(liste_de_dataclasses)` lève `TypeError`. Avec, le premier champ décide, puis le second en cas d'égalité : l'ordre de déclaration devient un ordre de tri, à choisir exprès (`jour` avant `numero`). Pour un tri ponctuel sur un autre critère, `sorted(xs, key=lambda x: x.numero)` sans `order`.
+- Usage : ✅ clé composée triée naturellement (jour, tribunal, numéro), `min` et `max` directs · ❌ `order=True` sur une classe dont l'ordre des champs n'a pas de sens de tri : `key=` explicite.
+
+```python
+# Exemple 1 : trier par jour puis numéro
+from dataclasses import dataclass
+@dataclass(order=True, frozen=True)
+class Cle:
+    jour: str
+    numero: int
+cles = [Cle("2026-10-21", 1), Cle("2026-10-20", 2)]
+min(cles).jour         # → "2026-10-20"
+```
+
+```python
+# Exemple 2 : sans order, pas de tri
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class Cle:
+    jour: str
+
+sorted([Cle("b"), Cle("a")])  # ❌ TypeError
+```
+
+- Quiz : Avec l'exemple 1, que vaut `Cle("2026-10-20", 9) < Cle("2026-10-20", 10)` ?
+- [ ] `False` : `"9"` > `"10"`
+- [x] `True`
+- [ ] `TypeError`
+- Réponse : `True` : à jour égal, on compare `numero`, un `int` : 9 < 10 ; la comparaison n'est lexicale que pour les `str`.
+
+## 16. @cached_property : calculer une fois
 - Sous-thème : propriétés
 - Niveau : 3
 - Définition : `functools.cached_property` calcule l'attribut au premier accès puis stocke le résultat dans l'instance ; les accès suivants ne recalculent plus.
@@ -342,3 +610,163 @@ lot.nb
 - [ ] `2`
 - [ ] `AttributeError`
 - Réponse : `1` : la valeur est figée au premier accès ; `del lot.nb` force le recalcul, sinon préférer `@property`.
+
+## 17. __post_init__ dans une dataclass figée
+- Sous-thème : dataclass
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `__post_init__` s'exécute après le `__init__` généré ; dans une dataclass figée, y affecter `self.x` lève `FrozenInstanceError`, il faut `object.__setattr__`.
+- Contexte : Le gel passe par un `__setattr__` qui lève toujours, y compris pendant la construction. Pour un champ dérivé (`nb = len(sirens)`), déclarer le champ avec `field(init=False)` et l'écrire par `object.__setattr__(self, "nb", …)`, qui contourne le `__setattr__` de la classe. Valider (lever `ValueError`) dans `__post_init__` ne pose aucun problème : seule l'écriture est bloquée.
+- Usage : ✅ valider ou normaliser à la construction (SIREN sur 9 chiffres), champ dérivé d'objet figé · ❌ `object.__setattr__` hors de `__post_init__` : c'est casser le gel.
+
+```python
+# Exemple 1 : écrire un champ dérivé
+from dataclasses import dataclass, field
+@dataclass(frozen=True)
+class Lot:
+    sirens: tuple
+    nb: int = field(init=False)
+    def __post_init__(self):
+        object.__setattr__(self, "nb", len(self.sirens))
+Lot(("483609327", "552100554")).nb   # → 2
+```
+
+```python
+# Exemple 2 : self.x = … est refusé
+from dataclasses import dataclass, field
+
+@dataclass(frozen=True)
+class Lot:
+    sirens: tuple
+    nb: int = field(init=False)
+
+    def __post_init__(self):
+        self.nb = len(self.sirens)
+
+Lot(("483609327",))  # ❌ FrozenInstanceError
+```
+
+- Quiz : `FrozenInstanceError` hérite de quelle exception ?
+- [ ] `TypeError`
+- [ ] `ValueError`
+- [x] `AttributeError`
+- [ ] `RuntimeError`
+- Réponse : `AttributeError` : comme pour une propriété sans setter ; un `except AttributeError` l'attrape.
+
+## 18. slots=True : plus d'attribut inventé
+- Sous-thème : dataclass
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `@dataclass(slots=True)` (3.10+) génère `__slots__` : pas de `__dict__`, moins de mémoire, et un attribut mal orthographié lève au lieu d'être créé.
+- Contexte : Sans slots, `stats.gz_byte = 10` (sans `s`) crée en silence un nouvel attribut : bug invisible, là où TS refuserait la compilation. Avec slots, `AttributeError`. Chaque instance pèse aussi moins (pas de dict), utile pour des millions d'objets en mémoire. Combinable avec `frozen=True`.
+- Usage : ✅ dataclass non figée qu'on modifie (protège des fautes de frappe), très nombreuses instances · ❌ code qui ajoute des attributs dynamiques ou utilise `__dict__` / `vars(obj)`.
+
+```python
+# Exemple 1 : faute de frappe refusée
+from dataclasses import dataclass
+@dataclass(slots=True)
+class Stats:
+    gz_bytes: int = 0
+s = Stats()
+s.gz_byte = 10  # ❌ AttributeError
+```
+
+```python
+# Exemple 2 : sans slots, accepté en silence
+from dataclasses import dataclass
+
+@dataclass
+class Stats:
+    gz_bytes: int = 0
+
+s = Stats()
+s.gz_byte = 10        # crée un attribut
+s.gz_bytes            # → 0
+```
+
+- Quiz : Avec la `Stats` de l'exemple 1, que vaut `hasattr(Stats(), "__dict__")` ?
+- [ ] `True`
+- [x] `False`
+- [ ] `AttributeError`
+- Réponse : `False` : les attributs sont rangés dans des slots fixes, sans dictionnaire par instance.
+
+## 19. field(compare=False) : un champ hors de l'égalité
+- Sous-thème : dataclass
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `field(compare=False)` exclut un champ de `__eq__`, des comparaisons et du hash : deux objets égaux peuvent différer sur ce champ.
+- Contexte : Utile pour une donnée annexe qui ne fait pas l'identité : durée d'écriture, chemin temporaire, cache. Deux `PartStats` du même contenu restent égales même si l'écriture a pris 0,8 s puis 1,1 s. Dans une dataclass figée, un champ `dict` ou `list` doit aussi être exclu du hash, sinon `hash()` lève : `compare=False` le fait (ou `hash=False` seul).
+- Usage : ✅ métadonnée technique (durée, chemin `/tmp`) à côté de champs d'identité · ❌ exclure un champ qui distingue vraiment deux valeurs : l'égalité ment.
+
+```python
+# Exemple 1 : la durée ne compte pas
+from dataclasses import dataclass, field
+@dataclass(frozen=True)
+class Stats:
+    sha256: str
+    duree: float = field(compare=False)
+Stats("bbdf", 0.8) == Stats("bbdf", 1.1)   # → True
+```
+
+```python
+# Exemple 2 : un dict hors du hash
+from dataclasses import dataclass, field
+
+@dataclass(frozen=True)
+class Part:
+    sha256: str
+    meta: dict = field(default_factory=dict,
+                       compare=False)
+
+len({Part("ab", {"t": 1}), Part("ab")})   # → 1
+```
+
+- Quiz : Exemple 2 sans `compare=False` sur `meta` : que fait `hash(Part("ab"))` ?
+- [ ] Rend un entier
+- [ ] Hache seulement `sha256`
+- [x] `TypeError`
+- Réponse : `TypeError` : le hash figé inclut `meta`, un `dict`, qui n'est pas hachable.
+
+## 20. héritage : figée ou pas, toute la lignée
+- Sous-thème : dataclass
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Une dataclass figée ne peut hériter que d'une dataclass figée, et inversement : mélanger les deux lève `TypeError` à la définition.
+- Contexte : Le gel repose sur un `__setattr__` posé sur la classe : une sous-classe non figée d'une classe figée aurait des champs à moitié protégés. Python refuse donc le mélange, dans les deux sens (`cannot inherit non-frozen dataclass from a frozen one`). Ajouter `frozen=True` à une classe de base oblige à le faire sur toutes ses sous-classes.
+- Usage : ✅ décider du gel pour toute une hiérarchie (événements, annonces) · ❌ geler une classe de base partagée sans vérifier ses sous-classes.
+
+```python
+# Exemple 1 : le mélange est refusé
+from dataclasses import dataclass
+@dataclass(frozen=True)
+class Annonce:
+    id: str
+try:
+    @dataclass
+    class Radiation(Annonce):
+        motif: str
+except TypeError as e:
+    erreur = str(e)
+"non-frozen" in erreur      # → True
+```
+
+```python
+# Exemple 2 : figées toutes les deux
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class Annonce:
+    id: str
+
+@dataclass(frozen=True)
+class Radiation(Annonce):
+    motif: str
+
+Radiation("A1", "cessation").id   # → "A1"
+```
+
+- Quiz : Une classe ordinaire (sans `@dataclass`) hérite d'une dataclass figée. Que fait `obj.id = "A2"` sur une instance ?
+- [ ] Réaffecte : la sous-classe n'est pas figée
+- [x] `FrozenInstanceError`
+- [ ] `TypeError` à la définition de la classe
+- Réponse : `FrozenInstanceError` : la sous-classe hérite du `__setattr__` qui lève ; seule une sous-classe `@dataclass` non figée est refusée.

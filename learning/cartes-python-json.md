@@ -4,7 +4,7 @@ type: cartes
 langage: Python
 cours: JSON
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · JSON Python
@@ -209,7 +209,133 @@ echo $?   # 1
 - [ ] `"e"`
 - Réponse : `"\u00e9"` : comme `dumps`, l'outil échappe le non-ASCII par défaut ; `--no-ensure-ascii` garde l'accent.
 
-## 7. JSONDecodeError : lire l'erreur
+## 7. sort_keys : trier les clés
+- Sous-thème : sérialiser
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `sort_keys=True` écrit les clés de chaque objet par ordre alphabétique, à tous les niveaux : deux dicts égaux donnent la même chaîne.
+- Contexte : Sans option, `dumps` suit l'ordre d'insertion du dict, donc l'ordre dans lequel le serveur a envoyé les champs. L'ordre des clés n'a aucun sens en JSON, mais il change la chaîne et donc tout hash calculé dessus. `sort_keys` trie aussi les objets imbriqués ; il ne touche pas aux listes, dont l'ordre est une donnée.
+- Usage : ✅ JSON haché, comparé ou versionné (manifest, ligne de partition, snapshot de test) · ❌ JSON lu par un humain qui attend un ordre logique (`id` d'abord) : garder l'ordre d'insertion.
+
+```python
+# Exemple 1 : même dict, même chaîne
+import json
+a = {"tribunal": "Créteil", "id": "A1"}
+b = {"id": "A1", "tribunal": "Créteil"}
+json.dumps(a) == json.dumps(b)           # → False
+json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)  # → True
+```
+
+```python
+# Exemple 2 : aussi dans les objets imbriqués
+import json
+
+d = {"b": 1, "a": {"d": 1, "c": 2}}
+json.dumps(d, sort_keys=True)
+# → '{"a": {"c": 2, "d": 1}, "b": 1}'
+```
+
+- Quiz : Que vaut `json.dumps({"l": [3, 1, 2]}, sort_keys=True)` ?
+- [ ] `'{"l": [1, 2, 3]}'`
+- [x] `'{"l": [3, 1, 2]}'`
+- [ ] `TypeError`
+- Réponse : `'{"l": [3, 1, 2]}'` : seules les clés d'objets sont triées ; l'ordre d'une liste est une donnée, il est conservé.
+
+## 8. JSONL : écrire une ligne par document
+- Sous-thème : jsonl
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : Écrire un JSONL, c'est `json.dumps(doc) + "\n"` pour chaque document, sans `indent`, dernière ligne comprise.
+- Contexte : Chaque ligne est un document complet, lisible seul : on écrit et on relit en flux, ligne par ligne, et `wc -l` compte les annonces. Le `\n` final de la dernière ligne est la convention POSIX : sans lui, `cat a b` colle deux documents sur une ligne. `dumps` sans `indent` ne produit jamais de retour à la ligne : ceux des valeurs sont échappés.
+- Usage : ✅ partition d'annonces, export, logs structurés · ❌ `json.dumps(liste)` d'un bloc pour une journée : un seul document, illisible en flux.
+
+```python
+# Exemple 1 : une ligne par annonce
+import json
+rows = [{"id": "A1"}, {"id": "A2"}]
+s = "".join(json.dumps(r) + "\n" for r in rows)
+s   # → '{"id": "A1"}\n{"id": "A2"}\n'
+len(s.splitlines())   # → 2
+```
+
+```python
+# Exemple 2 : relire ligne par ligne
+import json
+
+s = '{"id": "A1"}\n{"id": "A2"}\n'
+[json.loads(l)["id"] for l in s.splitlines()]
+# → ["A1", "A2"]
+```
+
+- Quiz : Sans le `+ "\n"`, que fait `json.loads` sur la chaîne obtenue pour ces deux annonces ?
+- [ ] Rend la première annonce
+- [ ] Rend une liste des deux
+- [x] `JSONDecodeError` (Extra data)
+- [ ] Rend la dernière annonce
+- Réponse : `JSONDecodeError` (Extra data) : `{"id": "A1"}{"id": "A2"}` est un document suivi de texte en trop ; `loads` refuse.
+
+## 9. dumps rend une str : encoder pour du binaire
+- Sous-thème : sérialiser
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `json.dumps` rend une `str` ; pour un fichier ouvert en `"wb"` ou un `GzipFile`, il faut `.encode("utf-8")` avant `write`.
+- Contexte : Python distingue texte et octets : un flux binaire refuse une `str` (`TypeError: a bytes-like object is required`). Le writer BODACC encode chaque ligne une fois (`serialize(row) -> bytes`) : les mêmes octets partent dans le gzip et dans le hash. `json.dump(obj, f)` écrit des `str` par morceaux : il ne marche que sur un fichier texte.
+- Usage : ✅ `(json.dumps(r) + "\n").encode("utf-8")` vers un flux binaire · ❌ `json.dump` sur un fichier `"wb"` ou un gzip binaire : ouvrir en `"wt"` ou encoder soi-même.
+
+```python
+# Exemple 1 : str puis bytes
+import json
+s = json.dumps({"id": "A1"})
+type(s).__name__             # → "str"
+(s + "\n").encode("utf-8")   # → b'{"id": "A1"}\n'
+```
+
+```python
+# Exemple 2 : un flux binaire refuse la str
+import io, json
+
+buf = io.BytesIO()
+buf.write(json.dumps({"id": "A1"}))  # ❌ TypeError
+```
+
+- Quiz : Que fait `json.dump({"id": "A1"}, gz)` avec `gz = gzip.GzipFile(fileobj=buf, mode="wb")` ?
+- [ ] Écrit le JSON compressé
+- [x] `TypeError`
+- [ ] Écrit le JSON en ASCII
+- [ ] `ValueError`
+- Réponse : `TypeError` : `json.dump` écrit des `str` dans `gz`, qui n'accepte que des `bytes` ; encoder soi-même ou ouvrir en `"wt"`.
+
+## 10. json et bytes : loads oui, dumps non
+- Sous-thème : parser
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `json.loads` accepte des `bytes` UTF-8 (une ligne lue d'un `.gz`) ; `json.dumps` refuse un `bytes` dans les données à écrire.
+- Contexte : Asymétrie qui surprend : on relit une partition gzip en `"rb"` et chaque ligne, un `bytes`, passe directement à `loads`. Dans l'autre sens, un champ resté en `bytes` (réponse HTTP non décodée) fait lever `TypeError: Object of type bytes is not JSON serializable`. Décoder à l'entrée, encoder à la sortie, `str` entre les deux.
+- Usage : ✅ `json.loads(ligne)` sur les lignes binaires d'un `.gz` · ❌ garder un champ en `bytes` dans un dict destiné à `dumps` : `.decode()` d'abord.
+
+```python
+# Exemple 1 : loads lit des octets
+import json
+ligne = b'{"tribunal": "Cr\xc3\xa9teil"}\n'
+json.loads(ligne)["tribunal"]  # → "Créteil"
+```
+
+```python
+# Exemple 2 : dumps refuse des octets
+import json
+
+json.dumps({"brut": b"A1"})  # ❌ TypeError
+json.dumps({"brut": b"A1".decode()})
+# → '{"brut": "A1"}'
+```
+
+- Quiz : Que vaut `json.loads(b'"A1"')` ?
+- [ ] `b"A1"`
+- [x] `"A1"`
+- [ ] `TypeError`
+- Réponse : `"A1"` : les octets sont décodés en UTF-8 avant d'être parsés ; une chaîne JSON devient une `str`, jamais un `bytes`.
+
+## 11. JSONDecodeError : lire l'erreur
 - Sous-thème : parser
 - Niveau : 2
 - Définition : `json.JSONDecodeError`, sous-classe de `ValueError`, porte `msg`, `lineno`, `colno`, `pos` et `doc` : où et sur quel texte le décodage a échoué.
@@ -247,7 +373,7 @@ extrait   # → "<html>"
 - [ ] Renvoie `""`
 - Réponse : `JSONDecodeError` (Expecting value) : un corps vide (204, timeout) n'est pas du JSON ; tester le corps ou le statut avant de décoder.
 
-## 8. json : les nombres
+## 12. json : les nombres
 - Sous-thème : parser
 - Niveau : 2
 - Définition : `loads` rend un entier JSON en `int` exact, quelle que soit sa taille, et un nombre à virgule ou à exposant en `float`.
@@ -281,7 +407,7 @@ int("012345678")    # → 12345678  (0 perdu)
 - [x] `JSONDecodeError`
 - Réponse : `JSONDecodeError` : JSON interdit les zéros en tête d'un nombre ; un SIREN commençant par 0 doit être une chaîne.
 
-## 9. json : les accents
+## 13. json : les accents
 - Sous-thème : sérialiser
 - Niveau : 2
 - Définition : `ensure_ascii=False` fait écrire à `json.dumps` les caractères non ASCII tels quels au lieu de les échapper en `\uXXXX`.
@@ -318,7 +444,7 @@ json.loads(p.read_text("utf-8")) == t
 - [ ] `6`
 - Réponse : `8` : par défaut `"é"` devient `\u00e9` entre guillemets, soit 6 caractères plus 2 guillemets ; avec `ensure_ascii=False`, ce serait `3`.
 
-## 10. json : dates et default
+## 14. json : dates et default
 - Sous-thème : sérialiser
 - Niveau : 2
 - Définition : `default=` donne à `dumps` une fonction appelée sur chaque objet non sérialisable, typiquement pour les dates.
@@ -359,7 +485,7 @@ json.dumps({"x": object()},
 - [ ] `'{"s": "[1, 2]"}'`
 - Réponse : `'{"s": "{1, 2}"}'` : `str` est appliqué au set entier, qui devient la chaîne `"{1, 2}"` ; pour un tableau, `default` doit renvoyer `list(o)`.
 
-## 11. dataclass vers JSON : asdict
+## 15. dataclass vers JSON : asdict
 - Sous-thème : sérialiser
 - Niveau : 2
 - Définition : `json.dumps` ne sait pas écrire une `dataclass` : `dataclasses.asdict(obj)` la convertit d'abord en dict, récursivement.
@@ -401,7 +527,7 @@ Annonce(**json.loads(s)).lies   # → ["55"]
 - [ ] `ValueError`
 - Réponse : `TypeError` (Object of type Annonce is not JSON serializable) : aucun `toJSON` implicite, il faut `asdict` ou `default=`.
 
-## 12. pydantic : JSON validé en un passage
+## 16. pydantic : JSON validé en un passage
 - Sous-thème : parser
 - Niveau : 2
 - Définition : `Modele.model_validate_json(texte)` parse et valide un JSON en une étape ; `obj.model_dump_json()` le resérialise, dates comprises.
@@ -443,7 +569,7 @@ Annonce.model_validate_json('{"nb": "x"}')  # ❌ ValidationError
 - [ ] `TypeError`
 - Réponse : `ValidationError` (type `json_invalid`) : pydantic parse lui-même, une erreur de syntaxe devient une erreur de validation comme les autres.
 
-## 13. JSON Lines : lire ligne par ligne
+## 17. JSON Lines : lire ligne par ligne
 - Sous-thème : jsonl
 - Niveau : 2
 - Définition : un fichier `.jsonl` contient un document JSON par ligne ; on le lit ligne par ligne, un `json.loads` chacune.
@@ -480,7 +606,7 @@ buf.getvalue().count("\n")   # → 2
 - [ ] Renvoie `{"nb": 1}`
 - Réponse : `JSONDecodeError` (« Extra data ») : `loads` attend un seul document ; du JSONL se parse ligne par ligne.
 
-## 14. JSONL : une ligne corrompue
+## 18. JSONL : une ligne corrompue
 - Sous-thème : jsonl
 - Niveau : 2
 - Définition : Lire un JSONL robuste, c'est décoder chaque ligne dans un `try`, numéroter avec `enumerate`, sauter les lignes vides et compter les rejets.
@@ -511,7 +637,7 @@ rejets                  # → [2]
 - [ ] `None`
 - Réponse : `{"nb": 1}` : les espaces et retours à la ligne autour d'un document sont permis ; `strip()` ne sert qu'à repérer une ligne vide.
 
-## 15. JSONL : un saut de ligne dans une valeur
+## 19. JSONL : un saut de ligne dans une valeur
 - Sous-thème : jsonl
 - Niveau : 2
 - Définition : `json.dumps` échappe les retours à la ligne des chaînes en `\n` : sans `indent`, un document tient toujours sur une seule ligne.
@@ -546,7 +672,7 @@ json.loads(json.dumps({"t": t}))["t"] == t
 - [ ] `4`
 - Réponse : `6` : `"a\nb"` est écrit `"a\\nb"` : `a`, `\`, `n`, `b` et deux guillemets.
 
-## 16. json : du JSON dans une chaîne
+## 20. json : du JSON dans une chaîne
 - Sous-thème : formes
 - Niveau : 2
 - Source : data-platform · S1-05
@@ -589,7 +715,7 @@ decoder("  ")         # → None
 - [ ] `TypeError`
 - Réponse : `False` : dans le texte brut, les guillemets imbriqués sont échappés (`\"nature\"`) ; une recherche textuelle (`grep`, `in`) rate le champ, il faut parser.
 
-## 17. JSON issu de XML : un dict ou une liste
+## 21. JSON issu de XML : un dict ou une liste
 - Sous-thème : formes
 - Niveau : 2
 - Source : data-platform · S1-05
@@ -631,7 +757,105 @@ p2 = {"prenom": ["Noah", "Louis"],
 - [ ] `"NoahLouis MARTIN"`
 - Réponse : `TypeError` (sequence item 0: expected str instance, list found) : `join` n'accepte que des `str`, il ne convertit pas une liste comme le ferait `Array.join` en JS.
 
-## 18. json : tuple et NaN
+## 22. len : caractères ou octets
+- Sous-thème : sérialiser
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `len(s)` compte des caractères, `len(s.encode())` des octets : avec `ensure_ascii=False`, un accent fait 1 caractère mais 2 octets UTF-8.
+- Contexte : La taille qui compte pour S3, une limite Lambda ou un manifest (`raw_bytes`), c'est celle en octets. Le writer BODACC additionne `len(line)` sur la ligne déjà encodée, jamais sur la `str`. Avec `ensure_ascii=True` (défaut), le JSON est pur ASCII : caractères et octets coïncident, mais chaque accent devient 6 caractères `é`.
+- Usage : ✅ mesurer `len(ligne_encodée)` pour une taille de fichier ou une limite de payload · ❌ `len(json.dumps(...))` comme taille en octets d'un JSON accentué.
+
+```python
+# Exemple 1 : 16 caractères, 17 octets
+import json
+s = json.dumps({"t": "Créteil"}, ensure_ascii=False)
+len(s)              # → 16
+len(s.encode())     # → 17
+```
+
+```python
+# Exemple 2 : la taille d'un fichier JSONL
+import json
+
+rows = [{"t": "Créteil"}, {"t": "Nîmes"}]
+lignes = [(json.dumps(r, ensure_ascii=False)
+           + "\n").encode() for r in rows]
+sum(len(l) for l in lignes)   # → 34
+```
+
+- Quiz : Que vaut `len(json.dumps("é", ensure_ascii=False).encode())` ?
+- [ ] `1`
+- [ ] `3`
+- [x] `4`
+- [ ] `8`
+- Réponse : `4` : deux guillemets d'un octet chacun, plus `é` qui fait 2 octets en UTF-8.
+
+## 23. JSONL : split ou splitlines
+- Sous-thème : jsonl
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Un JSONL bien formé finit par `\n` : `split("\n")` rend alors une chaîne vide en dernier, `splitlines()` non.
+- Contexte : Le `\n` final de la dernière ligne (convention POSIX, écrit par le writer) fait que `"A1\nA2\n".split("\n")` vaut `["A1", "A2", ""]` : le `json.loads("")` qui suit lève `JSONDecodeError`. `splitlines()` ne crée pas d'élément vide final et gère aussi `\r\n`. En flux, itérer sur le fichier rend chaque ligne avec son `\n`, que `loads` ignore.
+- Usage : ✅ `splitlines()` sur un JSONL en mémoire, itération sur le fichier sinon · ❌ `split("\n")` suivi de `json.loads` sans filtrer les lignes vides.
+
+```python
+# Exemple 1 : la ligne vide de trop
+s = '{"id": "A1"}\n{"id": "A2"}\n'
+len(s.split("\n"))      # → 3
+len(s.splitlines())     # → 2
+s.split("\n")[-1]       # → ""
+```
+
+```python
+# Exemple 2 : le loads qui casse
+import json
+
+s = '{"id": "A1"}\n'
+[json.loads(l) for l in s.splitlines()]
+# → [{"id": "A1"}]
+[json.loads(l) for l in s.split("\n")]  # ❌ JSONDecodeError
+```
+
+- Quiz : Que vaut `len("A1\r\nA2\r\n".splitlines())` ?
+- [ ] `4`
+- [ ] `3`
+- [x] `2`
+- [ ] `5`
+- Réponse : `2` : `splitlines` traite `\r\n` comme une seule fin de ligne et n'ajoute pas d'élément vide final.
+
+## 24. flottants : la chaîne dépend de la valeur exacte
+- Sous-thème : sérialiser
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `dumps` écrit un `float` sous sa forme la plus courte : `1` et `1.0`, ou `0.3` et `0.1+0.2`, donnent deux chaînes, donc deux hash.
+- Contexte : Pour une empreinte, `{"capital": 1}` et `{"capital": 1.0}` sont deux contenus différents, alors que Python les dit égaux (`1 == 1.0`). Un calcul intermédiaire (`0.1 + 0.2`) laisse `0.30000000000000004`. Normaliser avant de hacher : montants en `Decimal` ou en entiers (centimes), et un seul type par champ.
+- Usage : ✅ entiers ou chaînes pour les montants d'une ligne hachée · ❌ hacher des `float` issus de calculs, ou un champ tantôt `int` tantôt `float`.
+
+```python
+# Exemple 1 : égaux en Python, pas en JSON
+import json
+1 == 1.0                                   # → True
+json.dumps({"c": 1}) == json.dumps({"c": 1.0})  # → False
+json.dumps(0.1 + 0.2)   # → "0.30000000000000004"
+```
+
+```python
+# Exemple 2 : des centimes entiers
+import json
+
+capital = round(1500.10 * 100)    # centimes
+json.dumps({"capital_cts": capital})
+# → '{"capital_cts": 150010}'
+```
+
+- Quiz : Que vaut `json.dumps(1e16)` ?
+- [ ] `"10000000000000000"`
+- [ ] `"1e16"`
+- [x] `"1e+16"`
+- [ ] `"1.0e16"`
+- Réponse : `"1e+16"` : `dumps` reprend `repr(float)`, qui passe en notation scientifique à partir de 1e16 ; un `int` resterait en chiffres.
+
+## 25. json : tuple et NaN
 - Sous-thème : sérialiser
 - Niveau : 3
 - Définition : JSON n'a ni tuple ni NaN : un tuple devient une liste, et NaN produit un JSON invalide pour les autres langages.
@@ -665,7 +889,7 @@ json.dumps({"ca": ca},
 - [x] `'{"ca": NaN}'`
 - Réponse : `'{"ca": NaN}'` : Python l'écrit sans erreur, mais ce n'est pas du JSON valide et `JSON.parse` côté JS plante.
 
-## 19. json : montants en Decimal
+## 26. json : montants en Decimal
 - Sous-thème : parser
 - Niveau : 3
 - Définition : `parse_float=Decimal` fait lire les nombres décimaux d'un JSON en `Decimal` exact, au lieu de `float` arrondi.
@@ -700,7 +924,7 @@ json.dumps(d, default=str)
 - [ ] `"str"`
 - Réponse : `"int"` : `parse_float` ne voit que les nombres à virgule ou exposant ; les entiers passent par `parse_int`.
 
-## 20. object_hook : reconstruire des dates
+## 27. object_hook : reconstruire des dates
 - Sous-thème : parser
 - Niveau : 3
 - Définition : `object_hook` est appelé sur chaque objet décodé et renvoie sa version transformée, par exemple avec des champs date convertis.
@@ -731,7 +955,7 @@ a["parution"]   # → date(2026, 10, 23)
 - [ ] `{}`
 - Réponse : `None` : ce que renvoie le hook remplace l'objet, et une fonction sans `return` renvoie `None`.
 
-## 21. json : clés en double
+## 28. json : clés en double
 - Sous-thème : formes
 - Niveau : 3
 - Définition : Un objet JSON qui contient deux fois la même clé est accepté sans erreur par `loads` : seule la dernière valeur est gardée.
@@ -768,3 +992,99 @@ json.loads('{"a": 1, "a": 2}',
 - [ ] 0
 - [ ] 3
 - Réponse : 2 : le hook est appelé pour chaque objet JSON, l'objet intérieur d'abord, puis l'objet racine.
+
+## 29. sort_keys : l'ordre des points de code
+- Sous-thème : sérialiser
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `sort_keys` trie les clés par point de code Unicode : majuscules avant minuscules, lettres accentuées après `z`.
+- Contexte : C'est l'ordre de `sorted()` sur des `str`, pas l'ordre alphabétique français : `"B" < "a" < "e" < "é"`. Deux implémentations « canoniques » dans d'autres langages peuvent trier autrement (par octets UTF-8, par UTF-16 en JS) : un hash calculé en Python et un autre en TS sur le « même » JSON peuvent diverger. Garder des noms de champs en ASCII minuscule évite le problème.
+- Usage : ✅ clés ASCII en minuscules (`dateparution`, `familleavis`) pour un JSON haché par plusieurs langages · ❌ clés accentuées ou à casse mixte dans un JSON canonique partagé.
+
+```python
+# Exemple 1 : majuscules d'abord, accents à la fin
+import json
+d = {"é": 3, "e": 4, "b": 1, "B": 2}
+json.dumps(d, sort_keys=True, ensure_ascii=False)
+# → '{"B": 2, "b": 1, "e": 4, "é": 3}'
+```
+
+```python
+# Exemple 2 : le même ordre que sorted
+import json
+
+d = {"tribunal": 1, "Tribunal": 2, "id": 3}
+list(json.loads(json.dumps(d, sort_keys=True)))
+# → ["Tribunal", "id", "tribunal"]
+```
+
+- Quiz : Que vaut `sorted(["z", "É", "a"])` ?
+- [ ] `["a", "É", "z"]`
+- [ ] `["É", "a", "z"]`
+- [x] `["a", "z", "É"]`
+- [ ] `["z", "a", "É"]`
+- Réponse : `["a", "z", "É"]` : `É` vaut U+00C9 (201), après `z` (122) ; l'ordre est celui des points de code, pas du dictionnaire.
+
+## 30. sort_keys : clés de types mélangés
+- Sous-thème : sérialiser
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : `sort_keys=True` sur un dict dont les clés mélangent `int` et `str` lève `TypeError` : Python ne sait pas comparer `1` et `"b"`.
+- Contexte : Sans `sort_keys`, `dumps({1: "a", "b": 2})` passe et convertit la clé `1` en `"1"`. Avec, le tri a lieu **avant** la conversion, sur les clés Python d'origine : `'<' not supported between instances of 'str' and 'int'`. Arrive avec un dict construit par compteur (`{annee: n}`) auquel on ajoute une clé texte (`"total"`). Convertir les clés en `str` d'abord.
+- Usage : ✅ `{str(k): v for k, v in d.items()}` avant un `dumps(..., sort_keys=True)` · ❌ mélanger clés numériques et textuelles dans un dict sérialisé canoniquement.
+
+```python
+# Exemple 1 : sans tri, ça passe
+import json
+d = {2026: 12, "total": 12}
+json.dumps(d)   # → '{"2026": 12, "total": 12}'
+json.dumps(d, sort_keys=True)  # ❌ TypeError
+```
+
+```python
+# Exemple 2 : clés en str d'abord
+import json
+
+d = {2026: 12, "total": 12}
+s = {str(k): v for k, v in d.items()}
+json.dumps(s, sort_keys=True)
+# → '{"2026": 12, "total": 12}'
+```
+
+- Quiz : Que vaut `json.dumps({10: "a", 9: "b"}, sort_keys=True)` ?
+- [ ] `'{"10": "a", "9": "b"}'`
+- [x] `'{"9": "b", "10": "a"}'`
+- [ ] `TypeError`
+- Réponse : `'{"9": "b", "10": "a"}'` : le tri porte sur les entiers d'origine (9 < 10), avant leur conversion en chaînes.
+
+## 31. ensure_ascii=False : le surrogate isolé
+- Sous-thème : sérialiser
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Avec `ensure_ascii=False`, une chaîne contenant un surrogate isolé (`"\ud800"`) passe `dumps` mais fait lever `UnicodeEncodeError` à l'`encode("utf-8")`.
+- Contexte : Un surrogate isolé n'est pas un caractère valide : il arrive d'un JSON source mal formé (`"\ud83d"` coupé d'un emoji) lu par `loads`, qui l'accepte. Avec `ensure_ascii=True`, `dumps` le réécrit en `\ud800` ASCII et tout passe ; sans, le caractère brut atteint `encode` et le writer plante au milieu de la journée. Choisir : nettoyer à l'entrée, ou `encode("utf-8", "surrogatepass")` en connaissance de cause.
+- Usage : ✅ tester le writer avec une valeur contenant `"\ud800"` si la source est peu fiable · ❌ supposer que tout ce que `json.loads` a lu se réencode en UTF-8.
+
+```python
+# Exemple 1 : loads l'accepte, encode non
+import json
+v = json.loads('"\\ud800"')
+s = json.dumps(v, ensure_ascii=False)
+s.encode("utf-8")  # ❌ UnicodeEncodeError
+```
+
+```python
+# Exemple 2 : en ASCII, il reste échappé
+import json
+
+v = json.loads('"\\ud800"')
+json.dumps(v)                # → '"\\ud800"'
+json.dumps(v).encode()       # → b'"\\ud800"'
+```
+
+- Quiz : Que vaut `len(json.loads('"\\ud83d\\ude00"'))` (un emoji écrit en paire de surrogates) ?
+- [ ] `2`
+- [x] `1`
+- [ ] `UnicodeDecodeError`
+- [ ] `4`
+- Réponse : `1` : `loads` recombine une paire de surrogates valide en un seul caractère (l'emoji) ; seul un surrogate seul reste invalide.

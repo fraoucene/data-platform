@@ -4,7 +4,7 @@ type: cartes
 langage: Python
 cours: Context managers
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · Context managers Python
@@ -192,7 +192,43 @@ log      # → ["avant"]
 - [ ] Renvoie `None`
 - Réponse : Lève `ValueError` : `int` lève `ValueError`, qui n'est pas dans la liste de `suppress` ; seules les exceptions listées sont avalées.
 
-## 6. __enter__ et __exit__ : un with en classe
+## 6. with open "wb" : le fichier est vidé à l'ouverture
+- Sous-thème : with
+- Niveau : 1
+- Source : data-platform · S1-07
+- Définition : `with open(p, "wb")` tronque le fichier dès l'entrée du bloc : l'ancien contenu est perdu avant la première écriture, même si le bloc échoue.
+- Contexte : `"w"` et `"wb"` signifient « créer ou vider ». C'est voulu pour un job idempotent (un rejeu écrase la partition) mais dangereux si l'écriture échoue en route : l'ancien fichier, valide, est déjà parti. `"x"` refuse d'écraser un fichier existant (`FileExistsError`), `"a"` ajoute à la fin. Pour garder l'ancien fichier jusqu'au succès : écrire ailleurs puis renommer.
+- Usage : ✅ `"wb"` pour réécrire une partition entière à chaque run · ❌ `"wb"` directement sur le seul exemplaire d'un fichier précieux : fichier temporaire puis `os.replace`.
+
+```python
+# Exemple 1 : vidé sans rien écrire
+import tempfile
+from pathlib import Path
+p = Path(tempfile.mkdtemp()) / "part.gz"
+p.write_bytes(b"ancienne journee")
+with open(p, "wb"):
+    pass
+p.read_bytes()      # → b""
+```
+
+```python
+# Exemple 2 : "x" refuse d'écraser
+import tempfile
+from pathlib import Path
+
+p = Path(tempfile.mkdtemp()) / "part.gz"
+p.write_bytes(b"A1")
+open(p, "xb")  # ❌ FileExistsError
+```
+
+- Quiz : Le bloc `with open(p, "wb") as f:` lève une exception avant tout `f.write`. Que contient `p` ensuite ?
+- [ ] L'ancien contenu, intact
+- [x] Rien : un fichier vide
+- [ ] Le fichier n'existe plus
+- [ ] L'ancien contenu suivi de rien
+- Réponse : Rien : un fichier vide : la troncature a eu lieu à l'ouverture ; l'exception n'annule rien.
+
+## 7. __enter__ et __exit__ : un with en classe
 - Sous-thème : classes
 - Niveau : 2
 - Source : data-platform · S1-06
@@ -245,7 +281,7 @@ partage.ouvert   # → True  (à l'appelant)
 - [ ] La classe `Client`
 - Réponse : `None` : `as` reçoit la valeur renvoyée par `__enter__`, pas l'objet placé après `with`.
 
-## 7. @contextmanager : un with maison
+## 8. @contextmanager : un with maison
 - Sous-thème : contextlib
 - Niveau : 2
 - Définition : `contextlib.contextmanager` transforme un générateur en gestionnaire `with` : avant `yield` = entrée, après `yield` = sortie (≈ `try/finally` réutilisable).
@@ -296,7 +332,7 @@ log            # → ["ferme"]
 - [ ] `["ferme"]`
 - Réponse : `["ouvre 2026-10-23"]` : l'exception remonte au point du `yield`, la ligne de sortie n'est jamais atteinte.
 
-## 8. __exit__ : avaler l'exception
+## 9. __exit__ : avaler l'exception
 - Sous-thème : classes
 - Niveau : 2
 - Définition : Si `__exit__` renvoie une valeur vraie, l'exception du bloc est avalée ; s'il renvoie `None` ou faux, elle continue de remonter.
@@ -337,7 +373,7 @@ l.vu is ValueError   # → True  (et avalée)
 - [ ] Elle remonte avant `__exit__`
 - Réponse : Elle remonte après `__exit__` : sans `return`, `__exit__` renvoie `None`, faux, donc l'exception continue son chemin une fois le nettoyage fait.
 
-## 9. __exit__ : commit ou rollback
+## 10. __exit__ : commit ou rollback
 - Sous-thème : classes
 - Niveau : 2
 - Définition : `__exit__(exc_type, exc, tb)` reçoit l'exception du bloc, ou trois `None` si le bloc s'est terminé sans erreur : de quoi valider ou annuler.
@@ -380,7 +416,7 @@ except ValueError:
 - [ ] Non : seulement pour les `Exception`
 - Réponse : Oui, avec `KeyboardInterrupt` : `__exit__` reçoit toute `BaseException`, pas seulement les `Exception` ; le rollback a donc lieu.
 
-## 10. closing : un with pour un objet à close()
+## 11. closing : un with pour un objet à close()
 - Sous-thème : contextlib
 - Niveau : 2
 - Définition : `contextlib.closing(obj)` donne un `with` à tout objet qui a une méthode `close()` mais pas le protocole `__enter__` / `__exit__`.
@@ -424,7 +460,7 @@ log           # → ["fermé"]
 - [x] Lève `TypeError`
 - Réponse : `TypeError` (does not support the context manager protocol) : `with` exige `__enter__` et `__exit__`, une méthode `close` ne suffit pas.
 
-## 11. redirect_stdout : capturer les print
+## 12. redirect_stdout : capturer les print
 - Sous-thème : contextlib
 - Niveau : 2
 - Définition : `with redirect_stdout(buf):` envoie tout ce que `print` écrit vers `buf` (un `io.StringIO`) le temps du bloc.
@@ -459,7 +495,7 @@ err.getvalue()   # → "HTTP 429\n"
 - [ ] `TypeError`
 - Réponse : Rien : le sous-processus écrit sur le descripteur 1 du système, pas dans l'objet Python `sys.stdout` remplacé ; passer `capture_output=True` à `run`.
 
-## 12. ExitStack : un nombre variable de with
+## 13. ExitStack : un nombre variable de with
 - Sous-thème : contextlib
 - Niveau : 2
 - Définition : `contextlib.ExitStack` empile des gestionnaires avec `enter_context()` et des nettoyages avec `callback()` ; tout est défait en ordre inverse à la sortie.
@@ -499,7 +535,7 @@ log  # → ["ferme client", "purge tmp"]
 - [ ] Lève `AttributeError`
 - Réponse : `TypeError` : `enter_context` exige le protocole `with` ; pour un simple `close()`, `pile.enter_context(closing(obj))` ou `pile.callback(obj.close)`.
 
-## 13. nullcontext : un with optionnel
+## 14. nullcontext : un with optionnel
 - Sous-thème : contextlib
 - Niveau : 2
 - Définition : `contextlib.nullcontext(x)` est un gestionnaire qui ne fait rien : il renvoie `x` au `as` et ne ferme rien à la sortie.
@@ -537,42 +573,165 @@ lire().is_closed          # → True
 - [ ] `TypeError` : argument manquant
 - Réponse : `None` : l'argument `enter_result` vaut `None` par défaut, et c'est lui que `__enter__` renvoie au `as`.
 
-## 14. TemporaryDirectory : un dossier jetable
+## 15. with : lire la taille après le bloc
 - Sous-thème : with
 - Niveau : 2
-- Définition : `with tempfile.TemporaryDirectory() as d:` crée un dossier temporaire et le supprime avec tout son contenu à la sortie du bloc.
-- Contexte : Pratique pour un traitement qui écrit des fichiers intermédiaires (télécharger, décompresser, convertir en Parquet, puis envoyer sur S3) sans rien laisser derrière, même sur erreur. Dans une Lambda, seul `/tmp` est accessible en écriture et il est conservé entre invocations du même conteneur : le nettoyer compte. Le `as` reçoit un `str`, pas un `Path`.
-- Usage : ✅ fichiers de travail d'un script ou d'une Lambda · ❌ dans pytest : la fixture `tmp_path` (un `Path`, nettoyé par pytest) ; fichier à garder : un vrai chemin.
+- Source : data-platform · S1-07
+- Définition : Taille, contenu et hash d'un fichier écrit dans un `with` se lisent **après** le bloc : dedans, les tampons ne sont pas encore vidés.
+- Contexte : `f.write` remplit un tampon en mémoire ; un `GzipFile` garde en plus des données dans zlib et n'écrit sa fin (CRC, taille) qu'à la fermeture. Dans le bloc, `path.stat().st_size` peut valoir 0. Le writer BODACC calcule donc `gz_bytes=path.stat().st_size` après le `with`, une fois les deux ressources fermées en ordre inverse.
+- Usage : ✅ `stat()`, `read_bytes()`, envoi S3 après le `with` · ❌ mesurer, relire ou envoyer le fichier depuis l'intérieur du bloc qui l'écrit.
 
 ```python
-# Exemple 1 : supprimé à la sortie
-import os, tempfile
-with tempfile.TemporaryDirectory() as d:
-    p = os.path.join(d, "j.jsonl")
-    open(p, "w").close()
-    vu = os.path.exists(p)
-(vu, os.path.exists(d))  # → (True, False)
+# Exemple 1 : 0 dedans, 10 après
+import tempfile
+from pathlib import Path
+p = Path(tempfile.mkdtemp()) / "a.bin"
+with open(p, "wb") as f:
+    f.write(b"x" * 10)
+    dedans = p.stat().st_size
+dedans, p.stat().st_size     # → (0, 10)
 ```
 
 ```python
-# Exemple 2 : une partition de travail
+# Exemple 2 : un gzip pas encore fini
+import gzip, tempfile
+from pathlib import Path
+
+p = Path(tempfile.mkdtemp()) / "a.gz"
+with (open(p, "wb") as f,
+      gzip.GzipFile(filename="", fileobj=f,
+                    mode="wb", mtime=0) as gz):
+    gz.write(b"A1\n" * 100)
+    dedans = p.stat().st_size
+dedans, p.stat().st_size > 0   # → (0, True)
+```
+
+- Quiz : Dans l'exemple 1, on ajoute `f.flush()` avant `dedans = …`. Que vaut `dedans` ?
+- [ ] `0`
+- [x] `10`
+- [ ] `ValueError` : fichier ouvert
+- Réponse : `10` : `flush` vide le tampon Python vers le système ; pour un `GzipFile`, `flush` ne suffit pas à écrire la fin (CRC).
+
+## 16. GzipFile(fileobj=f) ne ferme pas f
+- Sous-thème : with
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Fermer un `GzipFile` posé sur un fichier déjà ouvert (`fileobj=f`) termine le gzip mais laisse `f` ouvert : il faut fermer les deux.
+- Contexte : Règle générale des enveloppes à `fileobj` : celui qui a ouvert ferme. `GzipFile(fileobj=f)` n'a pas ouvert `f`, il ne le ferme pas ; `gzip.open(chemin)` ouvre lui-même le fichier et le ferme. D'où les deux gestionnaires du writer : `with (path.open("wb") as f, gzip.GzipFile(fileobj=f, ...) as gz):`, fermés en ordre inverse, gzip d'abord.
+- Usage : ✅ un `with` par ressource ouverte, enveloppe en dernier · ❌ un seul `with` sur le `GzipFile` en croyant fermer aussi le fichier sous-jacent.
+
+```python
+# Exemple 1 : le fichier reste ouvert
+import gzip, tempfile
+from pathlib import Path
+f = open(Path(tempfile.mkdtemp()) / "a.gz", "wb")
+with gzip.GzipFile(fileobj=f, mode="wb") as gz:
+    gz.write(b"A1\n")
+gz.closed, f.closed     # → (True, False)
+f.close()
+```
+
+```python
+# Exemple 2 : deux with, tout fermé
+import gzip, tempfile
+from pathlib import Path
+
+p = Path(tempfile.mkdtemp()) / "a.gz"
+with (p.open("wb") as f,
+      gzip.GzipFile(fileobj=f, mode="wb") as gz):
+    gz.write(b"A1\n")
+gz.closed, f.closed     # → (True, True)
+```
+
+- Quiz : Avec `io.BytesIO()` comme `fileobj`, que vaut `buf.getvalue()` après la sortie du `with` du `GzipFile` ?
+- [ ] `ValueError` : `buf` est fermé
+- [x] Le gzip complet
+- [ ] `b""` : rien n'est écrit
+- [ ] Le gzip sans sa fin
+- Réponse : Le gzip complet : `buf` reste ouvert, et la fermeture du gzip y a écrit la fin (CRC, taille).
+
+## 17. with : l'exception laisse un fichier partiel
+- Sous-thème : with
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : `with` ferme le fichier quand une exception interrompt l'écriture, mais ne l'efface pas : un fichier partiel reste sur le disque.
+- Contexte : Une coupure réseau au milieu de `fetch_day` lève dans la boucle d'écriture : le `with` ferme proprement, le gzip est même valide, mais il ne contient qu'une partie de la journée. Ne jamais publier ce fichier : l'exception doit remonter (pas de `except` qui avale) pour que le manifest ne soit pas écrit, et le rejeu réécrira tout. En Lambda, `/tmp` peut garder ce reste d'une invocation à l'autre.
+- Usage : ✅ laisser remonter l'exception, écrire le manifest seulement après succès · ❌ `except Exception: pass` autour de l'écriture, puis envoi du fichier à S3.
+
+```python
+# Exemple 1 : coupure au milieu
+import tempfile
+from pathlib import Path
+def rows():
+    yield b"A1\n"
+    raise ConnectionError("coupure")
+p = Path(tempfile.mkdtemp()) / "part.jsonl"
+try:
+    with open(p, "wb") as f:
+        for r in rows():
+            f.write(r)
+except ConnectionError:
+    pass
+p.read_bytes()      # → b"A1\n"  (partiel)
+```
+
+```python
+# Exemple 2 : nettoyer en cas d'échec
 import tempfile
 from pathlib import Path
 
-with tempfile.TemporaryDirectory() as d:
-    (Path(d) / "dt=2026-10-23").mkdir()
-    noms = [x.name for x in Path(d).iterdir()]
-noms     # → ["dt=2026-10-23"]
+p = Path(tempfile.mkdtemp()) / "part.jsonl"
+try:
+    with open(p, "wb") as f:
+        f.write(b"A1\n")
+        raise ConnectionError
+except ConnectionError:
+    p.unlink(missing_ok=True)
+p.exists()          # → False
 ```
 
-- Quiz : Dans `with TemporaryDirectory() as d:`, que fait `d / "j.jsonl"` ?
-- [ ] Renvoie un `Path`
-- [x] Lève `TypeError`
-- [ ] Renvoie `"d/j.jsonl"`
-- [ ] Lève `AttributeError`
-- Réponse : `TypeError` (unsupported operand / for str) : `d` est un `str` ; écrire `Path(d) / "j.jsonl"` ou `os.path.join`.
+- Quiz : Dans l'exemple 1, le fichier est un `GzipFile` en `"wb"` : `gzip.decompress` du résultat donne…
+- [ ] `EOFError` : gzip tronqué
+- [x] `b"A1\n"` : gzip valide mais partiel
+- [ ] `b""` : rien n'est gardé
+- [ ] `BadGzipFile`
+- Réponse : `b"A1\n"` : gzip valide mais partiel : la sortie du `with` écrit la fin du gzip même sur exception ; seul le contenu permet de voir qu'il manque des lignes.
 
-## 15. __enter__ qui lève : pas de __exit__
+## 18. with multiple : chaque __exit__ voit l'exception
+- Sous-thème : with
+- Niveau : 2
+- Source : data-platform · S1-07
+- Définition : Si le bloc lève, chaque gestionnaire d'un `with` multiple reçoit l'exception dans son `__exit__`, le dernier ouvert d'abord, puis elle remonte.
+- Contexte : `with (a as f, b as gz):` équivaut à deux `with` imbriqués : `gz` sort en premier avec l'exception, puis `f`, qui la reçoit aussi tant que personne ne l'a avalée. Si un `__exit__` renvoie `True`, les gestionnaires extérieurs voient une sortie normale. Chacun peut donc nettoyer selon le cas (annuler, journaliser) sans se soucier des autres.
+- Usage : ✅ ressources empilées qui doivent toutes se fermer sur erreur · ❌ attraper l'exception dans le `__exit__` intérieur sans raison : l'extérieur croira que tout s'est bien passé.
+
+```python
+# Exemple 1 : intérieur puis extérieur
+from contextlib import contextmanager
+log = []
+@contextmanager
+def cm(nom):
+    try:
+        yield
+    except Exception as e:
+        log.append((nom, type(e).__name__))
+        raise
+try:
+    with cm("fichier"), cm("gzip"):
+        raise KeyError("A1")
+except KeyError:
+    pass
+log   # → [("gzip", "KeyError"), ("fichier", "KeyError")]
+```
+
+- Quiz : Même exemple, mais `cm("gzip")` n'a pas de `raise` dans son `except`. Que contient `log` ?
+- [ ] `[("gzip", "KeyError"), ("fichier", "KeyError")]`
+- [x] `[("gzip", "KeyError")]`
+- [ ] `[("fichier", "KeyError")]`
+- [ ] `[]`
+- Réponse : `[("gzip", "KeyError")]` : l'exception est avalée par le gestionnaire intérieur ; l'extérieur voit une sortie normale et `try` ne voit rien.
+
+## 19. __enter__ qui lève : pas de __exit__
 - Sous-thème : classes
 - Niveau : 3
 - Définition : Si `__enter__` lève, le bloc ne s'exécute pas et `__exit__` n'est **pas** appelé : `__enter__` doit nettoyer lui-même ce qu'il a ouvert.
@@ -626,7 +785,7 @@ log  # → ["socket", "ferme socket"]
 - [ ] Seulement `__enter__`
 - Réponse : Aucune : l'objet n'existe même pas ; `Client()` est évalué avant que le `with` ne commence.
 
-## 16. @contextmanager : à usage unique
+## 20. @contextmanager : à usage unique
 - Sous-thème : contextlib
 - Niveau : 3
 - Définition : L'objet renvoyé par une fonction `@contextmanager` ne sert qu'une fois : il enveloppe un générateur, épuisé après le premier `with`.
@@ -670,7 +829,7 @@ len(n)    # → 2
 - [ ] `StopIteration` à l'entrée
 - Réponse : `RuntimeError` (generator didn't stop) : à la sortie, le générateur doit se terminer ; un second `yield` viole le contrat.
 
-## 17. @contextmanager : aussi un décorateur
+## 21. @contextmanager : aussi un décorateur
 - Sous-thème : contextlib
 - Niveau : 3
 - Définition : Un gestionnaire créé par `@contextmanager` s'utilise aussi en décorateur : `@lot()` exécute toute la fonction décorée dans le `with`.
@@ -719,7 +878,7 @@ len(n)    # → 2
 - [ ] Seul `"ingère"` est ajouté
 - Réponse : `TypeError` dès la définition (lot() takes 0 positional arguments) : `@lot` appelle `lot(ingerer)`, et `lot` n'attend aucun argument.
 
-## 18. async with : __aenter__ et __aexit__
+## 22. async with : __aenter__ et __aexit__
 - Sous-thème : async
 - Niveau : 3
 - Définition : `async with` est le `with` des coroutines : il attend (`await`) `__aenter__` à l'entrée et `__aexit__` à la sortie (≈ `await using` en TS).
@@ -767,7 +926,7 @@ asyncio.run(main())   # ❌ TypeError
 - [ ] Il se comporte comme `with`
 - Réponse : `SyntaxError` ('async with' outside async function) : le fichier est refusé avant toute exécution.
 
-## 19. @asynccontextmanager : la version async
+## 23. @asynccontextmanager : la version async
 - Sous-thème : async
 - Niveau : 3
 - Définition : `contextlib.asynccontextmanager` transforme une `async def` qui fait `yield` en gestionnaire pour `async with`.
@@ -821,7 +980,7 @@ asyncio.run(main())   # → (200, True)
 - [ ] Un simple `RuntimeWarning`
 - Réponse : `TypeError` (does not support the asynchronous context manager protocol) : `@contextmanager` produit un gestionnaire synchrone, sans `__aenter__`.
 
-## 20. ExitStack.pop_all : garder si tout réussit
+## 24. ExitStack.pop_all : garder si tout réussit
 - Sous-thème : contextlib
 - Niveau : 3
 - Définition : `pile.pop_all()` transfère les nettoyages enregistrés vers une nouvelle pile : les ressources restent ouvertes à la sortie du `with`, sauf si une erreur survient avant.
@@ -873,3 +1032,101 @@ except ConnectionError:
 - [x] Un nouvel `ExitStack`
 - [ ] La pile elle-même, vidée
 - Réponse : Un nouvel `ExitStack` : il porte les nettoyages retirés de la pile courante ; l'appeler (`close()`) ou s'en servir comme `with` ferme tout plus tard.
+
+## 25. __exit__ qui lève : la vraie cause masquée
+- Sous-thème : classes
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Si `__exit__` lève à son tour, sa nouvelle exception remplace celle du bloc ; l'originale n'est plus accessible que par `__context__`.
+- Contexte : Cas typique : une coupure réseau lève dans le bloc, puis la fermeture échoue (disque plein, flush impossible). Le journal ne montre que `OSError` à la fermeture, et la vraie cause, la coupure, n'apparaît que dans « During handling of the above exception… » de la trace. Un `__exit__` doit nettoyer sans lever, ou chaîner explicitement (`raise … from exc`).
+- Usage : ✅ `__exit__` défensif, qui journalise ses propres erreurs de nettoyage · ❌ `__exit__` qui peut lever sans rien dire, et logs qui ne montrent que la dernière exception.
+
+```python
+# Exemple 1 : OSError remplace ValueError
+class Fermeture:
+    def __enter__(self):
+        return self
+    def __exit__(self, *exc):
+        raise OSError("disque plein")
+try:
+    with Fermeture():
+        raise ValueError("vraie cause")
+except Exception as e:
+    erreur = e
+type(erreur).__name__          # → "OSError"
+type(erreur.__context__).__name__  # → "ValueError"
+```
+
+- Quiz : Dans l'exemple 1, que vaut `type(erreur.__cause__).__name__` ?
+- [ ] `"ValueError"`
+- [x] `"NoneType"`
+- [ ] `"OSError"`
+- Réponse : `"NoneType"` : `__cause__` n'est rempli que par `raise … from …` ; un enchaînement implicite ne remplit que `__context__`.
+
+## 26. écriture atomique : écrire ailleurs, puis renommer
+- Sous-thème : contextlib
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Un gestionnaire `@contextmanager` qui écrit dans un fichier temporaire puis fait `os.replace` vers la destination ne publie le fichier que si le bloc réussit.
+- Contexte : `os.replace` est atomique sur un même système de fichiers : un lecteur voit l'ancien fichier ou le nouveau, jamais un fichier à moitié écrit. Si le bloc lève, le `yield` lève et `os.replace` n'est jamais exécuté : la destination reste intacte. Sur S3, l'équivalent est naturel : un `PutObject` n'est visible qu'une fois complet, d'où l'écriture locale dans `/tmp` puis envoi.
+- Usage : ✅ fichier local lu par d'autres processus (config, état, cache) · ❌ `open(dest, "wb")` direct quand un lecteur peut tomber sur le fichier en cours d'écriture.
+
+```python
+# Exemple 1 : publié seulement si tout réussit
+import os, tempfile
+from contextlib import contextmanager
+from pathlib import Path
+@contextmanager
+def atomique(dest):
+    tmp = dest.with_suffix(".tmp")
+    with open(tmp, "wb") as f:
+        yield f
+    os.replace(tmp, dest)
+dest = Path(tempfile.mkdtemp()) / "etat.json"
+dest.write_bytes(b"v1")
+try:
+    with atomique(dest) as f:
+        f.write(b"v2 parti")
+        raise ValueError
+except ValueError:
+    pass
+dest.read_bytes()      # → b"v1"
+```
+
+- Quiz : Dans l'exemple 1, après l'échec, le fichier `etat.tmp` existe-t-il encore ?
+- [ ] Non : `with open` l'a supprimé
+- [x] Oui : rien ne le nettoie
+- [ ] Non : `os.replace` l'a déplacé
+- Réponse : Oui : rien ne le nettoie : `with open` ferme sans supprimer ; il faudrait un `try/except` qui fait `tmp.unlink()` avant de relancer.
+
+## 27. with dans un générateur : ouvert jusqu'au bout
+- Sous-thème : with
+- Niveau : 3
+- Source : data-platform · S1-07
+- Définition : Un `with` dans un générateur garde la ressource ouverte tant que le générateur n'est ni épuisé ni fermé, même si l'appelant ne lit plus.
+- Contexte : `def lire(p): with open(p) as f: yield from f` : après un seul `next`, le fichier est ouvert et suspendu au `yield`. Il ne se ferme qu'à l'épuisement, à `gen.close()` (qui lève `GeneratorExit` au `yield`) ou quand le ramasse-miettes détruit le générateur. C'est le cas de `fetch_day` : la connexion HTTP reste ouverte tant que la Lambda n'a pas lu la dernière annonce.
+- Usage : ✅ générateur consommé jusqu'au bout, ou fermé par `contextlib.closing(gen)` · ❌ `next(gen)` pour lire la première ligne puis oublier le générateur : ressource ouverte.
+
+```python
+# Exemple 1 : ouvert pendant la lecture
+import tempfile
+from pathlib import Path
+p = Path(tempfile.mkdtemp()) / "j.jsonl"
+p.write_text("A1\nA2\n")
+etat = {}
+def lire(path):
+    with open(path) as f:
+        etat["f"] = f
+        yield from f
+g = lire(p)
+next(g)                 # → "A1\n"
+etat["f"].closed        # → False
+g.close()
+etat["f"].closed        # → True
+```
+
+- Quiz : Avec `g = lire(p)` sans aucun `next(g)`, que vaut `"f" in etat` ?
+- [ ] `True` : le fichier est ouvert à l'appel
+- [x] `False`
+- [ ] `TypeError`
+- Réponse : `False` : appeler un générateur n'exécute rien ; le `with` ne s'ouvre qu'au premier `next`.
