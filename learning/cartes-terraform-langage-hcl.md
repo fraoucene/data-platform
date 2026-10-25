@@ -944,7 +944,38 @@ output "o" {
 - [ ] `res.key`
 - Réponse : `values(res)[*].key` : le splat n'itère que sur une liste ; sur la map d'instances, `[*]` l'enveloppe telle quelle et `.key` échoue (`Unsupported attribute`, vérifié en console).
 
-## 29. cycle : sortir la politique de la ressource
+## 29. for_each : une map de config qui choisit
+- Sous-thème : boucles
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Boucler sur une map dédiée (`local.schedules`) plutôt que sur la map complète (`local.lambdas`) ne crée des ressources que pour les clés choisies.
+- Contexte : Les deux maps partagent leurs clés : dans la boucle, `module.lambda[each.key]` relie la planification à sa fonction. Ajouter une Lambda sans l'ajouter à `local.schedules` ne lui donne ni rôle ni planification. Une clé de `local.schedules` absente de `local.lambdas` échoue au plan avec `Invalid index` : la faute de frappe est vue avant tout déploiement.
+- Usage : ✅ une option activée pour certaines entrées (planification, alarme, URL publique) · ❌ un attribut booléen `scheduled = true` filtré par `if` partout : une map dédiée se lit d'un coup d'œil.
+
+```hcl
+# Exemple 1 : sous-ensemble relié par clé
+locals {
+  lambdas = {
+    ingest-bodacc = { timeout = 300 }
+    publish       = { timeout = 60 }
+  }
+  schedules = { ingest-bodacc = {} }
+}
+output "noms" {
+  value = [for k, v in local.schedules :
+    "${k}:${local.lambdas[k].timeout}"]
+}
+# → ["ingest-bodacc:300"]
+```
+
+- Quiz : `local.schedules = { ingest-bodaac = {} }` (faute de frappe) : que dit `terraform plan` sur `module.lambda[each.key]` ?
+- [ ] Rien : la planification est ignorée
+- [ ] Il crée une Lambda `ingest-bodaac`
+- [x] `Error: Invalid index`
+- [ ] Un avertissement, puis il continue
+- Réponse : `Invalid index` (mesuré sur une map de locals, même message) : la clé n'existe pas dans la map des instances, le plan s'arrête.
+
+## 30. cycle : sortir la politique de la ressource
 - Sous-thème : blocs
 - Niveau : 3
 - Définition : Terraform refuse deux ressources qui se référencent mutuellement (`Error: Cycle`) ; on casse la boucle en sortant l'attribut fautif dans une ressource à part.
@@ -988,7 +1019,7 @@ resource "terraform_data" "cdn" {
 - [ ] Aucune : il crée les deux en deux passes
 - Réponse : `terraform validate` (mesuré, Terraform 1.14) : le graphe des références est construit hors ligne ; un cycle bloque avant tout appel à AWS.
 
-## 30. dynamic : zéro ou un bloc
+## 31. dynamic : zéro ou un bloc
 - Sous-thème : boucles
 - Niveau : 3
 - Source : data-platform · S1-04
@@ -1029,7 +1060,7 @@ dynamic "rule" {
 - [ ] Aucun : `Error: Unsupported attribute`
 - Réponse : 1 : `rule.value` est l'élément de la liste, ici `1` ; mesuré au `plan` (`days = 1`), `raw` expirerait en un jour.
 
-## 31. try : ne rattrape pas un data source
+## 32. try : ne rattrape pas un data source
 - Sous-thème : expressions
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1054,7 +1085,7 @@ try(jsondecode("").key, "absent")
 - [ ] Non : `for_each` refuse un filtre
 - Réponse : oui : le filtre retire la clé avant le `for_each`, donc l'instance du data source n'existe pas et rien n'est lu.
 
-## 32. data source : son résultat dans l'état
+## 33. data source : son résultat dans l'état
 - Sous-thème : blocs
 - Niveau : 3
 - Source : data-platform · S1-07

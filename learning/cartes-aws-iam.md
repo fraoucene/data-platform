@@ -743,7 +743,91 @@ statement {
 - [ ] Échec au `plan`
 - Réponse : échec à l'`apply` : Lambda lit l'objet au nom du principal qui appelle l'API ; le rôle d'exécution n'existe que pendant les invocations.
 
-## 25. permission boundary : le plafond
+## 25. aws:SourceAccount : un rôle de service borné au compte
+- Sous-thème : rôles
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : La condition `aws:SourceAccount` dans la confiance d'un rôle de service n'accepte que les appels que le service fait pour ce compte-là.
+- Contexte : Le principal `scheduler.amazonaws.com` désigne le service entier, utilisé par tous les comptes AWS. La condition lie l'endossement au compte propriétaire de la ressource à l'origine de l'appel (la planification) : c'est la protection « confused deputy » que la doc de chaque service recommande. Même idée que `sts:ExternalId` pour un SaaS, mais posée par AWS, sans identifiant à transmettre.
+- Usage : ✅ toute confiance vers un principal de service (`scheduler`, `budgets`, `events`) · ❌ principal de service seul, sans condition : accepté par l'API, mais plus large que nécessaire.
+
+```hcl
+# Exemple 1 : confiance de Scheduler
+data "aws_iam_policy_document" "assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [local.account_id]
+    }
+  }
+}
+```
+
+- Quiz : La condition vaut `aws:SourceAccount = <ton compte>`. Ta propre planification endosse le rôle : quelle valeur porte la requête ?
+- [ ] Le compte d'AWS qui opère Scheduler
+- [x] Ton compte, propriétaire de la planification
+- [ ] Aucune : la clé n'existe que pour S3
+- [ ] Le compte du dernier utilisateur connecté
+- Réponse : ton compte : `aws:SourceAccount` est le compte de la ressource qui déclenche l'appel du service, ici la planification.
+
+## 26. ARN Lambda : `:*` pour versions et alias
+- Sous-thème : politiques
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `lambda:InvokeFunction` sur l'ARN nu d'une fonction ne couvre pas ses versions et alias ; il faut aussi `<arn>:*`.
+- Contexte : Une version (`:3`) ou un alias (`:prod`) a son propre ARN, dit qualifié, et IAM le compare tel quel. `<arn>:*` couvre tous les qualificatifs de cette fonction, et seulement d'elle : `…ingest-bodacc-v2` n'y correspond pas, car le nom est suivi de `-`, pas de `:`. En revanche `…ingest-bodacc*` (sans `:`) ouvre toute fonction dont le nom commence pareil.
+- Usage : ✅ ARN nu + `:*` quand la cible peut devenir un alias · ❌ `function:<nom>*` : ouvre les fonctions homonymes ; `function:*` : toutes.
+
+```bash
+# Exemple 1 : simulé (simulate-custom-policy)
+# politique : <arn> et <arn>:*
+# …ingest-bodacc        → allowed
+# …ingest-bodacc:3      → allowed
+# …ingest-bodacc:prod   → allowed
+# …ingest-bodacc-v2     → implicitDeny
+# …autre                → implicitDeny
+```
+
+- Quiz : Politique sur l'ARN nu seul. L'appelant invoque `…:function:data-platform-dev-ingest-bodacc:prod` : décision ?
+- [ ] `allowed` : l'alias pointe vers la même fonction
+- [x] `implicitDeny`
+- [ ] `allowed`, mais seulement pour `$LATEST`
+- [ ] `explicitDeny`
+- Réponse : `implicitDeny` (simulé) : l'ARN qualifié ne correspond pas à l'ARN nu, aucun `Allow` ne s'applique.
+
+## 27. simulate-custom-policy : tester avant de poser
+- Sous-thème : évaluation
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : `aws iam simulate-custom-policy` évalue une politique JSON non attachée contre des actions et des ARN, sans créer de rôle ni appeler le service.
+- Contexte : Pratique avant un `apply` : coller le JSON rendu par `aws_iam_policy_document`, lister les ARN à autoriser et ceux à refuser, et lire `EvalDecision`. Les ARN n'ont pas besoin d'exister. Avec plusieurs `--resource-arns`, le résultat global agrège : simuler un ARN à la fois, ou lire `ResourceSpecificResults`. Il ne voit ni SCP ni politique de ressource.
+- Usage : ✅ vérifier une politique avant de la poser, documenter une décision · ❌ preuve qu'un appel réel passera : SCP, boundary et politique de ressource comptent aussi.
+
+```bash
+# Exemple 1 : un ARN, une décision
+aws iam simulate-custom-policy \
+  --policy-input-list "$P" \
+  --action-names lambda:InvokeFunction \
+  --resource-arns "$ARN:prod" \
+  --query 'EvaluationResults[0].EvalDecision' \
+  --output text
+# → allowed  (si P contient "$ARN:*")
+```
+
+- Quiz : Cinq ARN passés d'un coup dans `--resource-arns` : que montre `EvaluationResults[].EvalResourceName` ?
+- [ ] Les cinq ARN, une ligne chacun
+- [x] Une seule ligne, l'ARN gabarit `${Region}:${Account}…`
+- [ ] Le premier ARN seulement
+- [ ] Une erreur : un seul ARN permis
+- Réponse : une ligne gabarit (mesuré) : le détail par ARN est dans `ResourceSpecificResults` ; d'où un ARN par appel pour lire vite.
+
+## 28. permission boundary : le plafond
 - Sous-thème : évaluation
 - Niveau : 3
 - Définition : Une permission boundary est une politique managée posée sur un rôle ou un utilisateur : elle plafonne ses droits sans en accorder aucun.
@@ -774,7 +858,7 @@ resource "aws_iam_role" "sandbox" {
 - [ ] Non : `iam:*` est interdit en boundary
 - Réponse : non (mesuré : `implicitDeny`) : il faut un `Allow` des deux côtés ; la boundary large ne compense pas l'identité étroite.
 
-## 26. SCP : le plafond du compte
+## 29. SCP : le plafond du compte
 - Sous-thème : évaluation
 - Niveau : 3
 - Définition : Une SCP (Service Control Policy) d'AWS Organizations plafonne tous les principaux d'un compte membre, sans accorder aucun droit.
@@ -809,7 +893,7 @@ aws organizations list-policies \
 - [ ] Refusé dans la console seulement
 - Réponse : refusé : dans un compte membre, la SCP borne aussi le root ; seul le compte de gestion échappe aux SCP.
 
-## 27. ExternalId : le tiers confus
+## 30. ExternalId : le tiers confus
 - Sous-thème : rôles
 - Niveau : 3
 - Définition : `sts:ExternalId` est une condition de trust policy : un tiers qui endosse le rôle d'un client doit fournir l'identifiant propre à ce client.
@@ -839,7 +923,7 @@ statement {
 - [ ] `ValidationError` : paramètre requis
 - Réponse : `AccessDenied` : la clé `sts:ExternalId` est absente de la requête, la condition est fausse, aucun `Allow` ne s'applique.
 
-## 28. Access Analyzer : valider avant de poser
+## 31. Access Analyzer : valider avant de poser
 - Sous-thème : moindre privilège
 - Niveau : 3
 - Définition : IAM Access Analyzer valide une politique avant de la poser (`validate-policy`) et repère les ressources ouvertes hors du compte ou les droits inutilisés.
@@ -872,7 +956,7 @@ aws accessanalyzer list-analyzers \
 - [ ] `SECURITY_WARNING`
 - Réponse : aucun (mesuré) : la grammaire est juste, seule la sémantique est fausse ; c'est le simulateur qui montre l'`implicitDeny`.
 
-## 29. multipart : couvert par s3:PutObject, sauf Abort
+## 32. multipart : couvert par s3:PutObject, sauf Abort
 - Sous-thème : politiques
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -900,7 +984,7 @@ rule {
 - [ ] Oui, s'il a aussi `ListBucket`
 - Réponse : oui : `UploadPart` et les autres appels d'écriture multipart sont autorisés par `s3:PutObject` ; seuls l'annulation et le listage des parts ont leurs propres droits.
 
-## 30. inline : 10 240 caractères par rôle
+## 33. inline : 10 240 caractères par rôle
 - Sous-thème : politiques
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -928,3 +1012,29 @@ resource "aws_iam_role_policy" "app" {
 - [ ] Réussi, la seconde devient managée
 - [ ] Erreur au `plan`
 - Réponse : `LimitExceeded` à l'`apply` : la limite de 10 240 caractères porte sur le total des politiques inline du rôle, pas sur chacune.
+
+## 34. aws:SourceArn : le groupe de planifications
+- Sous-thème : rôles
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : Pour EventBridge Scheduler, `aws:SourceArn` vaut l'ARN du **groupe** de planifications (`schedule-group/<nom>`), jamais celui d'une planification.
+- Contexte : `SourceArn` borne plus finement que `SourceAccount` : seul un groupe précis peut faire endosser le rôle. La doc Scheduler est explicite : ne pas viser une planification ni un préfixe de nom, la condition ne correspondrait jamais. Avec un joker (`schedule-group/*`), l'opérateur doit être `ArnLike`, pas `StringEquals`. Sans `group_name`, une planification est dans le groupe `default`.
+- Usage : ✅ isoler un groupe par équipe ou par environnement, en plus de `aws:SourceAccount` · ❌ `aws:SourceArn` sur `…:schedule/default/ingest` : le rôle n'est plus jamais endossé.
+
+```hcl
+# Exemple 1 : borné au groupe default
+condition {
+  test     = "ArnLike"
+  variable = "aws:SourceArn"
+  values = [
+    "arn:aws:scheduler:*:${local.account_id}:schedule-group/default",
+  ]
+}
+```
+
+- Quiz : `StringEquals` avec la valeur `arn:aws:scheduler:*:<compte>:schedule-group/*` : que se passe-t-il ?
+- [ ] Tous les groupes du compte sont acceptés
+- [x] Rien ne correspond : `*` y est un caractère littéral
+- [ ] Erreur à l'`apply` : joker interdit
+- [ ] Seul le groupe `default` est accepté
+- Réponse : rien ne correspond : `StringEquals` compare au caractère près ; les jokers ne valent que pour `ArnLike` ou `StringLike` (doc Scheduler).

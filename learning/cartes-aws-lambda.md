@@ -1450,7 +1450,31 @@ aws lambda invoke --function-name "$F" \
 - [ ] Le lien vers le flux CloudWatch
 - Réponse : rien : `Tail` ne s'applique qu'aux invocations synchrones (doc de l'API Invoke) ; en asynchrone, la réponse ne porte que le code `202`.
 
-## 46. concurrence réservée : une exécution à la fois
+## 46. invoquer : par un rôle ou par la ressource
+- Sous-thème : sécurité
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Un service qui invoque en endossant un rôle (Scheduler, Step Functions) n'a besoin d'aucun `aws_lambda_permission` ; un service qui appelle en son nom, si.
+- Contexte : Dans un même compte, un `Allow` côté identité **ou** côté ressource suffit. C'est l'appelant qui impose le côté : Scheduler, Step Functions, CodeBuild endossent un rôle (droit dans ce rôle) ; S3, SNS, API Gateway, règle EventBridge appellent en leur nom (`aws_lambda_permission`) ; SQS, Kinesis : c'est la Lambda qui lit, avec son propre rôle. Entre deux comptes, il faut les deux.
+- Usage : ✅ Scheduler, Step Functions : droits dans leur rôle · ❌ ajouter un `aws_lambda_permission` pour Scheduler « par sécurité » : droit en double, plus large à auditer.
+
+```bash
+# Exemple 1 : aucune politique de ressource
+aws lambda get-policy \
+  --function-name data-platform-dev-ingest-bodacc
+# → ResourceNotFoundException
+#   les invoke manuels passaient
+#   par ton identité
+```
+
+- Quiz : Une notification S3 doit déclencher la fonction : où mettre le droit d'invoquer ?
+- [ ] Dans le rôle d'exécution de la Lambda
+- [x] Dans la politique de ressource de la Lambda
+- [ ] Dans la politique du bucket
+- [ ] Dans un rôle endossé par S3
+- Réponse : politique de ressource (`aws_lambda_permission`, principal `s3.amazonaws.com`) : S3 appelle en son nom, sans endosser de rôle de ton compte.
+
+## 47. concurrence réservée : une exécution à la fois
 - Sous-thème : invocation
 - Niveau : 3
 - Source : revision-pwa · pwa-revision
@@ -1483,7 +1507,7 @@ aws lambda get-function-concurrency \
 - [ ] Envoyés aussitôt en destination d'échec
 - Réponse : gardés et rejoués : l'appel S3 est asynchrone, Lambda retente les événements limités (throttling) jusqu'à `maximum_event_age` (6 h par défaut), hors des 2 retries d'erreur.
 
-## 47. versions et alias : figer le code
+## 48. versions et alias : figer le code
 - Sous-thème : déploiement
 - Niveau : 3
 - Définition : `publish = true` crée une version immuable à chaque changement ; un alias (`live`) pointe vers une version et donne aux appelants un ARN stable.
@@ -1510,7 +1534,7 @@ resource "aws_lambda_alias" "live" {
 - [ ] Aucun : l'`apply` est refusé
 - Réponse : l'ancien : une version fige aussi les variables ; seule `$LATEST` et les versions publiées ensuite voient le nouveau bucket.
 
-## 48. concurrence provisionnée : pas de démarrage à froid
+## 49. concurrence provisionnée : pas de démarrage à froid
 - Sous-thème : invocation
 - Niveau : 3
 - Définition : La concurrence provisionnée garde N environnements initialisés en permanence sur une version ou un alias : aucun démarrage à froid jusqu'à N appels simultanés.
@@ -1534,7 +1558,7 @@ resource "aws_lambda_provisioned_concurrency_config" "p" {
 - [ ] Accepté, appliqué à toutes les versions
 - Réponse : refusé : la concurrence provisionnée prépare un code figé ; `$LATEST`, modifiable, n'est pas accepté.
 
-## 49. destinations ou DLQ : garder l'erreur
+## 50. destinations ou DLQ : garder l'erreur
 - Sous-thème : invocation
 - Niveau : 3
 - Définition : En asynchrone, une destination `on_failure` reçoit l'événement et l'erreur ; la DLQ de la fonction (`dead_letter_config`) ne reçoit que l'événement d'origine.
@@ -1574,7 +1598,7 @@ resource "aws_lambda_function_event_invoke_config" "c" {
 - [ ] Non : un mapping SQS ne réessaie jamais
 - Réponse : non : la DLQ de fonction ne sert qu'à l'asynchrone ; avec un mapping, c'est la redrive policy de la file source qui isole le message.
 
-## 50. init : 10 secondes au plus
+## 51. init : 10 secondes au plus
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1610,7 +1634,7 @@ handler({"code": "7501"}, None)  # → "Paris"
 - [ ] Lambda désactive la fonction jusqu'au prochain déploiement
 - Réponse : l'init est retentée à chaque fois (doc AWS) : un environnement sans init réussie n'est jamais réutilisé ; tant que le code plante à l'import, chaque appel échoue.
 
-## 51. get_remaining_time_in_millis : s'arrêter avant le timeout
+## 52. get_remaining_time_in_millis : s'arrêter avant le timeout
 - Sous-thème : invocation
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1643,7 +1667,7 @@ handler({}, Ctx(900))  # ❌ TimeoutError
 - [ ] Seulement s'il est dans un `with`
 - Réponse : non (doc AWS) : Lambda interrompt le processus, sans lever d'exception dans le code ; ni `finally` ni `__exit__` ne tournent, d'où la marge à prendre soi-même.
 
-## 52. .so : la version de Python dans le nom
+## 53. .so : la version de Python dans le nom
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1677,7 +1701,7 @@ importlib.import_module("demo_core")  # ❌ ModuleNotFoundError
 - [ ] Oui, mais en `x86_64` seulement
 - Réponse : oui : une roue `abi3` n'utilise que l'API stable de CPython ; son fichier `.abi3.so` est dans les suffixes de toutes les versions à partir de la minimale.
 
-## 53. manylinux2014 : la version de glibc
+## 54. manylinux2014 : la version de glibc
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1703,7 +1727,7 @@ sorted(t.platform for t in tags)
 - [x] Il échoue : aucune roue compatible
 - Réponse : il échoue : la cible déclarée est glibc 2.17, une roue qui exige 2.28 est incompatible ; et `--only-binary` interdit de compiler.
 
-## 54. architecture : roues et fonction alignées
+## 55. architecture : roues et fonction alignées
 - Sous-thème : limites
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1727,7 +1751,7 @@ unzip -l $Z | grep -c macosx
 - [ ] Ça marche, mais 20 % plus cher
 - Réponse : ça marche : `httpx` et ses dépendances sont `py3-none-any` ; l'erreur ne sort qu'au premier import d'un module natif, ce qui la cache longtemps.
 
-## 55. CodeSha256 : vérifier le code déployé
+## 56. CodeSha256 : vérifier le code déployé
 - Sous-thème : déploiement
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1762,7 +1786,7 @@ aws lambda get-function-configuration \
 - [ ] 32
 - Réponse : 88 : on encode en base64 les 64 caractères hexadécimaux, pas les 32 octets bruts ; c'est l'erreur qui rend `CodeSha256` « différent ».
 
-## 56. s3_object_version : clé fixe, version qui change
+## 57. s3_object_version : clé fixe, version qui change
 - Sous-thème : déploiement
 - Niveau : 3
 - Source : data-platform · S1-07
@@ -1788,3 +1812,36 @@ resource "aws_lambda_function" "this" {
 - [ ] Remplacement de la fonction
 - [ ] Erreur : version déjà déployée
 - Réponse : mise à jour sur place : chaque `PUT` crée un nouveau `version_id`, même pour des octets identiques ; Terraform voit l'argument changer et redéploie.
+
+## 58. allowed_triggers : les permissions générées
+- Sous-thème : sécurité
+- Niveau : 3
+- Source : data-platform · S1-08
+- Définition : En entreprise, le module Lambda reçoit une map `allowed_triggers` et génère un `aws_lambda_permission` par entrée, `source_arn` obligatoire.
+- Contexte : Avec des dizaines de fonctions, une permission écrite à la main finit par oublier `source_arn` : n'importe quelle ressource du service (un autre bucket, une autre règle) peut alors invoquer. Une `validation` de variable refuse l'entrée dès le plan. Le contrôle global reste à IAM Access Analyzer et aux SCP ; le module garantit la forme de chaque permission.
+- Usage : ✅ module Lambda partagé entre équipes, nombreuses sources d'événements · ❌ `aws_lambda_permission` libres dans chaque projet : impossibles à auditer d'un coup.
+
+```hcl
+# Exemple 1 : source_arn exigé au plan
+variable "allowed_triggers" {
+  type = map(object({
+    principal  = string
+    source_arn = optional(string)
+  }))
+  validation {
+    condition = alltrue([
+      for t in values(var.allowed_triggers) :
+      t.source_arn != null])
+    error_message = "source_arn requis."
+  }
+}
+# s3 sans source_arn
+# → Error: Invalid value for variable
+```
+
+- Quiz : La permission `principal = "s3.amazonaws.com"` sans `source_arn` ni `source_account` : qui peut déclencher la fonction ?
+- [ ] Seuls les buckets du même compte
+- [x] Tout bucket configuré vers elle, quel que soit le compte
+- [ ] Personne : S3 exige `source_arn`
+- [ ] Seul le bucket créé dans le même module
+- Réponse : tout bucket configuré vers la fonction : le principal désigne le service S3 entier ; `source_arn` et `source_account` sont la seule borne.

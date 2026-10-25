@@ -4,7 +4,7 @@ type: cartes
 langage: AWS
 cours: SQS et EventBridge
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Cartes · SQS et EventBridge
@@ -520,7 +520,28 @@ resource "aws_cloudwatch_event_target" "q" {
 - [ ] Non : une cible Lambda n'accepte pas de DLQ
 - Réponse : non : EventBridge a livré (appel asynchrone accepté) ; l'échec du code relève des 2 retries et de la destination `on_failure` de la Lambda.
 
-## 18. SQS : visibility timeout
+## 18. schedule group : default si rien
+- Sous-thème : eventbridge
+- Niveau : 2
+- Source : data-platform · S1-08
+- Définition : Toute planification Scheduler appartient à un groupe ; sans `group_name`, c'est le groupe `default`, qui existe dans chaque compte et région.
+- Contexte : Le groupe porte les tags et sert de frontière d'accès : c'est son ARN que voit `aws:SourceArn` dans la confiance du rôle d'exécution. Un groupe par environnement ou par équipe permet de borner les rôles et de tout supprimer d'un coup. Le nom d'une planification n'est unique que dans son groupe : `get-schedule` cherche dans `default` si `--group-name` manque.
+- Usage : ✅ `default` pour un projet seul par compte ; un groupe dédié quand plusieurs projets partagent le compte · ❌ croire `aws:SourceArn` porté par la planification elle-même.
+
+```bash
+# Exemple 1 : le groupe toujours là
+aws scheduler list-schedule-groups \
+  --query 'ScheduleGroups[].Name'
+# → ["default"]  (compte sans planification)
+```
+
+- Quiz : Planification créée dans le groupe `data-platform-dev` ; `aws scheduler get-schedule --name <nom>` sans `--group-name` : résultat ?
+- [ ] La planification : le nom est unique dans le compte
+- [x] `ResourceNotFoundException`
+- [ ] Toutes les planifications de ce nom
+- Réponse : `ResourceNotFoundException` : sans `--group-name`, la recherche se fait dans `default`, où ce nom n'existe pas.
+
+## 19. SQS : visibility timeout
 - Sous-thème : sqs
 - Niveau : 3
 - Définition : Le visibility timeout cache un message lu aux autres consommateurs ; s'il n'est pas supprimé à temps, il redevient visible et sera relu.
@@ -556,7 +577,7 @@ relu  # → True : traité deux fois
 - [x] Il échoue : visibility < timeout Lambda
 - Réponse : il échoue avec `InvalidParameterValueException` : le visibility timeout de la file doit être au moins égal au timeout de la fonction.
 
-## 19. SQS : échec partiel d'un lot
+## 20. SQS : échec partiel d'un lot
 - Sous-thème : sqs
 - Niveau : 3
 - Définition : Avec `ReportBatchItemFailures`, le handler renvoie les `messageId` en échec ; seuls ceux-là reviennent dans la file, les autres sont supprimés.
@@ -598,7 +619,7 @@ resource "aws_lambda_event_source_mapping" "m" {
 - [ ] Le lot entier revient dans la file
 - Réponse : supprimé comme réussi : sans ce réglage, la valeur renvoyée est ignorée ; une invocation sans exception vaut succès de tout le lot.
 
-## 20. input_transformer : remodeler l'événement
+## 21. input_transformer : remodeler l'événement
 - Sous-thème : eventbridge
 - Niveau : 3
 - Définition : `input_transformer` extrait des champs de l'événement (`input_paths`) et les place dans un gabarit (`input_template`) : la cible reçoit ce JSON au lieu de l'événement.
@@ -627,7 +648,7 @@ input_transformer {
 - [x] La variable n'est pas créée et disparaît de la sortie
 - Réponse : elle disparaît : un chemin absent ne crée pas de variable et rien n'est validé (doc AWS) ; vérifier le JSON produit avant de s'y fier.
 
-## 21. archive et replay : rejouer des événements
+## 22. archive et replay : rejouer des événements
 - Sous-thème : eventbridge
 - Niveau : 3
 - Définition : Une archive garde les événements d'un bus (tous ou filtrés) N jours ; un replay les renvoie sur ce bus pour une plage de dates.
@@ -660,7 +681,7 @@ aws events start-replay \
 - [ ] Le défaut de 30 jours
 - Réponse : sans limite : `0` signifie une rétention indéfinie (doc AWS) ; fixer une durée pour borner le coût de stockage.
 
-## 22. motifs : anything-but, numeric, exists
+## 23. motifs : anything-but, numeric, exists
 - Sous-thème : eventbridge
 - Niveau : 3
 - Définition : Les opérateurs de motif filtrent au-delà de l'égalité : `anything-but` (tout sauf), `numeric` (comparaisons), `exists` (présence d'un champ), `prefix`.
