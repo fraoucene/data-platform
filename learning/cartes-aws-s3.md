@@ -17,6 +17,7 @@ AWS · S3 : choisir, clés, cycle de vie, accès, requêtes, événements (forma
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : bucket, objet S3, atomique
 - Définition : S3 stocke des clés plates ; un « dossier » n'est qu'un préfixe de chaîne, filtré par `Prefix` au listage.
 - Contexte : Un bucket est un dictionnaire géant clé → objet, sans arborescence : la console dessine des dossiers en coupant les clés sur `/`. `list_objects_v2` filtre par début de chaîne (`Prefix`) et peut regrouper par `Delimiter` (renvoyé dans `CommonPrefixes`). Un dossier vide n'existe donc pas, et « renommer un dossier » veut dire copier puis supprimer chaque objet.
 - Usage : ✅ préfixes qui suivent l'ordre de lecture (`raw/bodacc/dt=…/`) pour lister un jour d'un coup · ❌ compter sur un `mv` de dossier atomique : c'est N copies et N suppressions.
@@ -56,6 +57,7 @@ aws s3api list-objects-v2 \
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data, ops
+- Mots-clés : classe de stockage, préfixe S3, multipart upload
 - Définition : Une règle lifecycle supprime les objets d'un préfixe, ou change leur classe de stockage, après N jours, sans code ni cron.
 - Contexte : S3 applique la règle de façon asynchrone, une fois par jour : l'objet disparaît vers minuit UTC qui suit l'échéance, pas à la seconde près. Les transitions ont des minimums : 30 jours en `STANDARD` avant `STANDARD_IA`, et chaque classe froide facture une durée minimale de stockage. Une règle s'applique aussi aux objets déjà présents.
 - Usage : ✅ rétention réglementaire ou de coût sur `raw`, nettoyage des uploads multipart incomplets · ❌ suppression qui doit être immédiate ou conditionnelle : un job explicite.
@@ -93,6 +95,7 @@ cree + timedelta(days=90)
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : glue-athena-cout-au-scanne
+- Mots-clés : data lake, Athena, Glue, EFS
 - Définition : Pour un data lake, on choisit S3 : stockage objet illimité, payé au Go, lisible par Athena, Glue, Spark et Lambda sans serveur.
 - Contexte : Rien à dimensionner : on paie ce qui est stocké (0,024 $/Go-mois en Standard à Paris) et les requêtes. Tous les moteurs lisent S3, donc le stockage et le calcul se choisissent séparément. Le prix de cette souplesse : S3 n'est pas un système de fichiers (pas d'écriture partielle, pas de verrou, pas de renommage atomique) ni une base (pas de requête sans moteur).
 - Usage : ✅ zones `raw`, `processed`, `out`, archives, exports · ❌ disque de travail partagé avec `seek` ou verrous : EFS ; accès par clé en millisecondes : DynamoDB.
@@ -131,6 +134,7 @@ round(go * prix, 2) # → 1.31  ($/mois)
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : s3-get-object-outfile, s3-cp-vers-stdout
+- Mots-clés : multipart upload, pagination, ETag, CLI AWS
 - Définition : `aws s3` offre des commandes de fichiers (`cp`, `sync`, `ls`) ; `aws s3api` expose une à une les opérations de l'API S3.
 - Contexte : `aws s3 cp` découpe seul les gros fichiers en multipart, parcourt toutes les pages de listage et accepte `--recursive` : il cache l'API. `s3api` fait exactement un appel (`put-object`, `head-object`) et renvoie le JSON brut, filtrable par `--query`. `aws s3 ls` affiche des lignes `PRE` et des tailles pour un humain : ne pas le parser dans un script.
 - Usage : ✅ `aws s3` pour copier ou synchroniser des fichiers · ❌ lire un attribut (ETag, chiffrement, version) ou poser une condition (`--if-none-match`) : `s3api` avec `--query`.
@@ -171,6 +175,7 @@ aws s3api list-objects-v2 \
 - Profils : débutant, data
 - Prérequis : s3-cle-sans-dossier
 - Voir aussi : dynamodb-pagination-query
+- Mots-clés : pagination, boto3
 - Définition : `ListObjectsV2` renvoie au plus 1 000 clés par appel ; `IsTruncated` et `NextContinuationToken` mènent à la page suivante.
 - Contexte : Un seul appel sur un préfixe de 1 500 fichiers en rend 1 000, sans erreur : le code qui oublie la pagination perd des données en silence. `aws s3 ls` et `aws s3api list-objects-v2` paginent seuls ; en boto3, `get_paginator("list_objects_v2")`. Les clés reviennent triées par octets UTF-8, jamais par date d'écriture.
 - Usage : ✅ paginator boto3, ou boucle sur `ContinuationToken`, dès qu'un préfixe peut dépasser 1 000 clés · ❌ un seul `list_objects_v2` pour « tout lire » un jour de `raw`.
@@ -210,6 +215,7 @@ len(tout)        # → 2500
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : s3-put-object-octets
+- Mots-clés : boto3, PascalCase, snake_case
 - Source : data-platform · S1-07
 - Définition : Un client boto3 n'accepte que des arguments nommés, aux noms exacts de l'API S3 en PascalCase : `Bucket=`, `Key=`, `Body=`.
 - Contexte : Les méthodes du client sont générées depuis le modèle JSON de l'API : chaque paramètre garde son nom AWS (`ContentType`, `MaxKeys`), jamais de snake_case. Un argument positionnel lève `TypeError`, un nom inconnu `ParamValidationError`, tous deux côté client, avant tout appel réseau. La réponse est un `dict` aux clés PascalCase elle aussi (`ETag`, `KeyCount`).
@@ -244,6 +250,7 @@ s3.put_object(Bucket="dp-raw",
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : bytes, UTF-8, idempotent, manifest
 - Source : data-platform · S1-07
 - Définition : `put_object` écrit un objet en une seule requête : `Body` reçoit des `bytes` ou un fichier ouvert en binaire (`"rb"`), 5 Go au plus.
 - Contexte : C'est l'appel brut `PutObject` : ni découpage, ni reprise. Une `str` est acceptée et encodée en UTF-8, mais encoder soi-même (`json.dumps(...).encode("utf-8")`) rend l'encodage explicite. Un fichier ouvert en mode texte est refusé. Une clé existante est écrasée sans avertissement : c'est ce qui rend le rejeu idempotent.
@@ -292,6 +299,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : lambda-payload-lu-une-fois
+- Mots-clés : StreamingBody, boto3
 - Source : data-platform · S1-07
 - Définition : `get_object` renvoie un `dict` dont `Body` est un flux (`StreamingBody`) : `.read()` en donne les octets, une seule fois.
 - Contexte : Le contenu n'est pas téléchargé à l'appel : `Body` est la réponse HTTP ouverte, lue à la demande (≈ le `body` d'un `fetch`, consommable une fois). Un second `.read()` rend `b""`, sans erreur. Le reste du `dict` porte les métadonnées (`ContentType`, `ETag`, `ContentLength`). Pour un gros objet, `iter_lines()` ou `iter_chunks()` évitent de tout garder en mémoire.
@@ -323,6 +331,7 @@ m.stop()
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : multipart upload, thread, ETag
 - Source : data-platform · S1-07
 - Définition : `upload_file(chemin, bucket, clé)` envoie un fichier local vers S3 et passe seul en multipart au-delà de 8 Mo.
 - Contexte : Ce n'est pas une opération de l'API mais le gestionnaire de transferts de boto3 (s3transfer) : arguments positionnels permis, parts envoyées en parallèle par des threads, reprise des parts en échec. Les paramètres de `PutObject` passent dans un `dict` `ExtraArgs`, jamais en arguments nommés. Il ne renvoie rien : pour l'ETag, un `head_object` après l'envoi.
@@ -360,6 +369,7 @@ m.stop()
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : ETag, moto, manifest
 - Source : data-platform · S1-07
 - Définition : `head_object` renvoie les métadonnées d'un objet (taille, `ETag`, `ContentType`, `LastModified`) sans transférer son contenu.
 - Contexte : C'est une requête HTTP `HEAD` : la même réponse que `get_object`, sans `Body`. Elle sert à vérifier un envoi (type, taille, ETag stable au rejeu), tester l'existence d'une clé ou comparer avant de retélécharger. Les métadonnées utilisateur (`x-amz-meta-*`) reviennent dans `Metadata`. Facturée comme un `GET`, sans octets sortants.
@@ -393,6 +403,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : s3-pagination-1000
+- Mots-clés : préfixe S3, partition, pagination
 - Source : data-platform · S1-07
 - Définition : `list_objects_v2(Prefix=…)` liste les clés d'un préfixe : `KeyCount` donne leur nombre, `Contents` les objets, et disparaît si rien ne correspond.
 - Contexte : Un préfixe sans objet renvoie `KeyCount: 0` et **aucune** clé `Contents` : `r["Contents"]` lève `KeyError` (≈ un champ `undefined` en TS, mais qui plante), d'où `r.get("Contents", [])`. `KeyCount` compte la page reçue (1 000 clés au plus), pas tout le préfixe. Chaque élément de `Contents` porte `Key`, `Size`, `ETag`, `LastModified`.
@@ -431,6 +442,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, data, web
 - Prérequis : s3-put-object-octets
+- Mots-clés : content-type, CloudFront, boto3
 - Source : data-platform · S1-07
 - Définition : boto3 n'infère pas le type d'un objet : sans `ContentType`, `put_object` comme `upload_file` stockent `binary/octet-stream`, quelle que soit l'extension.
 - Contexte : Le type est stocké avec l'objet et renvoyé dans l'en-tête `Content-Type` de chaque `GET` : navigateur, CloudFront et outils s'en servent pour afficher, télécharger ou décompresser. Le SDK envoie ce qu'on lui donne ; S3 ne lit pas l'extension de la clé. La CLI `aws s3 cp`, elle, devine le type d'après l'extension : deux chemins d'écriture, deux résultats.
@@ -476,6 +488,7 @@ m.stop()
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : stdout, jq, gzip
 - Source : data-platform · S1-07
 - Définition : `aws s3 cp s3://bucket/clé -` écrit l'objet sur la sortie standard, sans fichier local : on le passe à `jq`, `zcat` ou `shasum`.
 - Contexte : Le `-` remplace le chemin local, dans les deux sens : `… | aws s3 cp - s3://b/k` envoie l'entrée standard. Rien n'est décompressé : un `.gz` sort en octets gzip, d'où `zcat` avant `jq` ou `wc`. Pratique pour un coup d'œil ou un hash, sans laisser de fichier qui traîne ; pour un gros objet relu plusieurs fois, télécharger une fois.
@@ -510,6 +523,7 @@ aws s3 cp \
 - Type : recette
 - Niveau : 1
 - Profils : data, ops
+- Mots-clés : SSE-S3, SSE-KMS, ARN
 - Source : data-platform · S1-07
 - Définition : `head-object` renvoie `ServerSideEncryption` (`AES256` ou `aws:kms`) et `SSEKMSKeyId` : la preuve qu'un objet précis est chiffré, et avec quelle clé.
 - Contexte : La configuration du bucket ne dit que ce qui s'applique aux prochaines écritures. L'objet, lui, garde le chiffrement reçu à son écriture. Le vérifier après un changement de clé KMS (une clé recréée a un nouvel ARN), ou avant d'ouvrir le bucket à un autre rôle : il lui faudra `kms:Decrypt` sur cette clé-là pour lire.
@@ -540,6 +554,7 @@ aws s3api head-object \
 - Profils : data, ops
 - Prérequis : s3-data-lake-choisir
 - Voir aussi : s3-lifecycle-expiration
+- Mots-clés : Standard-IA, Glacier, Intelligent-Tiering
 - Définition : La classe S3 se choisit sur la fréquence de lecture : Standard si lu souvent, Standard-IA ou Glacier pour l'archive rarement relue.
 - Contexte : À Paris : Standard 0,024 $/Go-mois, Standard-IA 0,0131 $ plus 0,01 $/Go relu, Glacier Instant Retrieval 0,005 $. Les classes froides facturent une durée minimale (30 jours en IA, 90 en Glacier IR) et 128 Ko minimum par objet. Intelligent-Tiering déplace seul les objets selon l'accès, contre 0,0025 $ pour 1 000 objets suivis par mois ; sous 128 Ko, il ne les déplace pas.
 - Usage : ✅ IA ou Glacier IR pour des Go à des To rarement relus · ❌ classe froide pour des données lues chaque jour, ou de petits volumes : l'économie est nulle.
@@ -579,6 +594,7 @@ round(go * (standard - ia), 3)
 - Profils : data, ops
 - Prérequis : s3-lifecycle-expiration
 - Voir aussi : iam-multipart-putobject
+- Mots-clés : multipart upload, cycle de vie
 - Source : data-platform · S1-04
 - Définition : Un upload multipart jamais terminé garde ses parts dans le bucket, invisibles au listage mais facturées, jusqu'à une règle `abort_incomplete_multipart_upload`.
 - Contexte : Les SDK découpent les gros fichiers en parts (au-delà de 8 Mo pour `upload_file` de boto3) ; si le processus meurt avant `CompleteMultipartUpload`, les parts restent. Elles ne sont pas des objets : ni `aws s3 ls` ni la console ne les montrent. Une règle lifecycle dédiée les purge N jours après le début de l'upload.
@@ -620,6 +636,7 @@ aws s3api list-multipart-uploads \
 - Profils : data, ops
 - Prérequis : s3-head-object-chiffrement
 - Voir aussi : kms-sse-kms-double-droit
+- Mots-clés : SSE-S3, SSE-KMS, S3 Batch Operations
 - Définition : Le chiffrement par défaut d'un bucket s'applique aux objets écrits ensuite ; changer d'algorithme ou de clé ne rechiffre aucun objet existant.
 - Contexte : Le chiffrement est un attribut de chaque objet, fixé à l'écriture : `head-object` le montre (`ServerSideEncryption`, `SSEKMSKeyId`). Passer un bucket de SSE-S3 à SSE-KMS laisse les anciens objets en `AES256` ; pour les migrer, les recopier sur eux-mêmes (`cp` ou S3 Batch Operations). Un `PutObject` peut aussi imposer son chiffrement par en-tête, prioritaire sur celui du bucket.
 - Usage : ✅ choisir le chiffrement à la création du bucket, vérifier un objet par `head-object` · ❌ croire qu'un `apply` de la configuration rechiffre `raw` : seuls les nouveaux objets changent.
@@ -654,6 +671,7 @@ aws s3 cp "s3://$RAW/bodacc/p.gz" \
 - Type : concept
 - Niveau : 2
 - Profils : data, web
+- Mots-clés : SigV4, STS, CloudFront
 - Définition : Une URL présignée embarque une signature SigV4 : qui la détient peut faire cette seule requête (GET ou PUT d'une clé) jusqu'à expiration.
 - Contexte : La signature se calcule en local, sans appel à AWS : `aws s3 presign` réussit même pour une clé absente. À l'usage, S3 vérifie la signature puis les droits du signataire : s'il perd `s3:GetObject`, l'URL ne marche plus. Durée : 7 jours au plus ; signée avec un rôle (STS), elle meurt aussi avec la session.
 - Usage : ✅ télécharger un export `out/` chez un partenaire, envoi direct depuis un navigateur · ❌ lien public durable : CloudFront ; URL collée dans un ticket ou des logs : c'est un mot de passe.
@@ -694,6 +712,7 @@ echo "$U" | tr '?&' '\n\n'
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : iam-listbucket-403-404, s3-nosuchkey-ou-404
+- Mots-clés : principal, statement
 - Définition : Sans `s3:ListBucket`, lire une clé absente renvoie `403 AccessDenied`, pas `404` : S3 ne dit pas à un inconnu qu'elle n'existe pas.
 - Contexte : S3 évite de laisser deviner le contenu d'un bucket : seul un principal autorisé à lister apprend qu'une clé manque. Une Lambda qui teste l'existence d'un fichier (`head_object`) puis attrape `404` reçoit `403` et croit à un problème de droits. Le rôle Lambda de data-platform a `ListBucket` sur `raw` (statement `ListBuckets`) : il voit bien `404`.
 - Usage : ✅ `s3:ListBucket` sur le bucket dès qu'un code teste l'existence d'une clé · ❌ conclure « droit manquant » sur un 403 de `GetObject` sans vérifier que la clé existe.
@@ -736,6 +755,7 @@ existe(403)   # ❌ PermissionError
 - Profils : ops
 - Prérequis : iam-politique-de-ressource
 - Voir aussi : cloudfront-forcer-https
+- Mots-clés : principal, Deny explicite, condition IAM, blocage d'accès public
 - Définition : Une politique de bucket est attachée au bucket et nomme ses `Principal` ; un `Deny` y bloque tout appelant, administrateur compris.
 - Contexte : `aws:SecureTransport` vaut `false` sur une requête en HTTP clair : un `Deny` conditionné, pour `Principal: "*"`, refuse ces requêtes quelles que soient les politiques IAM. Un `Deny` n'est jamais « public » : le blocage d'accès public l'accepte. Les SDK parlent déjà HTTPS ; la règle prouve qu'aucun client ne peut faire autrement (contrôle Security Hub S3.5).
 - Usage : ✅ `HttpsOnly` sur chaque bucket de données (`raw`, `processed`, `out`) · ❌ `Deny` sans condition sur `Principal: "*"` : il enferme aussi l'admin et Terraform, seul le root peut alors retirer la politique.
@@ -782,6 +802,7 @@ statement {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : iam-politique-de-ressource
+- Mots-clés : ACL, politique de bucket
 - Définition : `BucketOwnerEnforced`, le défaut depuis avril 2023, désactive les ACL : le bucket possède tout objet, et seules les politiques décident des accès.
 - Contexte : Les ACL datent d'avant IAM : chaque objet avait un propriétaire, parfois le compte qui l'avait écrit, et le propriétaire du bucket pouvait perdre l'accès à ses propres données. Avec `BucketOwnerEnforced`, une requête qui pose une ACL autre que `bucket-owner-full-control` échoue (`AccessControlListNotSupported`). Les buckets data-platform sont dans ce mode sans l'avoir écrit.
 - Usage : ✅ garder le défaut, gérer l'accès par IAM et politique de bucket · ❌ réactiver les ACL (`ObjectWriter`) : seulement pour un service ancien qui l'exige, comme les logs standard de CloudFront.
@@ -818,6 +839,7 @@ resource "aws_s3_bucket_ownership_controls" "raw" {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : s3-notification-boucle
+- Mots-clés : depends_on, CloudTrail, condition IAM
 - Source : data-platform · S1-04
 - Définition : Le server access logging écrit une ligne par requête reçue par un bucket (qui, quoi, quand) dans un bucket cible, sous un préfixe.
 - Contexte : La cible doit autoriser le service `logging.s3.amazonaws.com` à écrire (`s3:PutObject`, borné par `aws:SourceAccount`), d'où une politique posée avant l'activation (`depends_on`). Le bucket de logs ne se logge pas lui-même : chaque écriture de log serait une requête qui produit un log, une boucle facturée sans information. Les lectures de `logs` lui-même se tracent par CloudTrail.
@@ -858,6 +880,7 @@ aws s3api get-bucket-logging --bucket "$LOGS"
 - Niveau : 2
 - Profils : data
 - Prérequis : s3-head-object
+- Mots-clés : Parquet, Athena, Spark
 - Définition : L'en-tête `Range: bytes=début-fin` lit une partie d'un objet (réponse `206`) : S3 n'écrit jamais en partie, mais lit en partie.
 - Contexte : C'est ainsi qu'Athena ou Spark lisent un Parquet : d'abord le footer, à la fin du fichier, qui décrit colonnes et row groups, puis seulement les colonnes utiles. On paie la requête et les octets transférés, pas l'objet entier. Les bornes sont incluses : `bytes=0-99` rend 100 octets. Le chiffrement SSE ne change rien côté client.
 - Usage : ✅ lire l'en-tête d'un gros fichier, télécharger en parallèle par tranches · ❌ modifier une ligne au milieu d'un objet : il faut réécrire l'objet entier.
@@ -896,6 +919,7 @@ len(lire(0, 99))    # → 28  (tronqué au bout)
 - Type : piège
 - Niveau : 2
 - Profils : web, ops
+- Mots-clés : bucket, préfixe S3
 - Source : revision-pwa · pwa-revision
 - Définition : `aws s3 sync --delete` supprime de la destination ce qui manque à la source, sauf les chemins écartés par `--exclude` / `--include`.
 - Contexte : Les filtres valent pour l'envoi comme pour la suppression. `make deploy` s'en sert : le 2e `sync` (tout sauf `assets/*`) supprime les anciens `sw.js` ou icônes mais garde les anciens assets, utiles aux visiteurs encore sur l'ancien `index.html` ; le 3e, limité à `assets/`, les supprime en dernier. `sync` compare taille et date : relancé sans changement, il n'envoie rien.
@@ -926,6 +950,7 @@ aws s3 sync dist/ s3://$SITE_BUCKET/ \
 - Niveau : 2
 - Profils : data
 - Voir aussi : s3-notification-boucle
+- Mots-clés : notification S3, encodage URL, ETag, partition
 - Définition : Une notification S3 transmet la clé de l'objet URL-encodée (`=` → `%3D`, espace → `+`) : la décoder avant `get_object`.
 - Contexte : L'événement contient bucket, clé, taille et ETag, jamais le contenu : la Lambda doit relire l'objet. La clé arrive encodée comme dans un formulaire HTML ; l'utiliser telle quelle donne `NoSuchKey` dès qu'elle contient `=`, une espace ou un accent. Le piège passe inaperçu en test avec des clés simples, puis casse sur les partitions `dt=`.
 - Usage : ✅ toujours `unquote_plus` sur `object.key` avant tout appel S3 · ❌ `unquote` seul : laisse les `+` ; reconstruire la clé à la main.
@@ -972,6 +997,7 @@ handler(event, None)
 - Niveau : 2
 - Profils : data
 - Voir aussi : lambda-recursion-source
+- Mots-clés : préfixe S3, invocation asynchrone, EventBridge
 - Définition : Une notification S3 invoque une Lambda à chaque création d'objet qui correspond au filtre de préfixe et de suffixe.
 - Contexte : L'invocation est asynchrone : S3 n'attend pas la Lambda et ne sait pas qui a écrit l'objet. Si la Lambda écrit dans le préfixe qu'elle surveille, elle se redéclenche elle-même, sans fin, et la facture suit. Un même couple préfixe / suffixe ne peut cibler qu'une destination ; pour plusieurs consommateurs, passer par EventBridge.
 - Usage : ✅ contrôle d'un fichier dès son dépôt dans `raw` · ❌ Lambda qui écrit dans le préfixe qu'elle écoute : écrire dans un autre préfixe ou bucket, filtrer le suffixe.
@@ -1004,6 +1030,7 @@ resource "aws_s3_bucket_notification" "n" {
 - Profils : data
 - Prérequis : s3-upload-file
 - Voir aussi : s3-contenttype-non-devine
+- Mots-clés : multipart upload, PascalCase
 - Source : data-platform · S1-07
 - Définition : `ExtraArgs` d'`upload_file` n'accepte que les clés de `S3Transfer.ALLOWED_UPLOAD_ARGS` : type, encodage, métadonnées, chiffrement, classe de stockage, sommes de contrôle.
 - Contexte : Le gestionnaire de transferts répartit ces clés entre `PutObject`, `CreateMultipartUpload` et `UploadPart` selon la taille du fichier ; il refuse le reste avant tout envoi (`ValueError: Invalid extra_args key`). `Body`, `Bucket` et `Key` en sont exclus : ils viennent des arguments. Les noms restent ceux de l'API, en PascalCase : `contentType` est refusé.
@@ -1047,6 +1074,7 @@ m.stop()
 - Profils : data
 - Prérequis : s3-head-object
 - Voir aussi : s3-cle-absente-403
+- Mots-clés : ClientError, botocore, manifest
 - Source : data-platform · S1-07
 - Définition : Sur une clé absente, `get_object` lève `s3.exceptions.NoSuchKey`, mais `head_object` lève une `ClientError` simple au code `"404"`.
 - Contexte : Une réponse `HEAD` n'a pas de corps : S3 ne peut pas y mettre le code XML `NoSuchKey`, botocore ne voit que le statut HTTP. `except s3.exceptions.NoSuchKey` autour d'un `head_object` ne capture donc rien. Les deux sont des `ClientError` : tester `e.response["Error"]["Code"]` couvre les deux. Sans `s3:ListBucket`, ce serait `403`, pas `404`.
@@ -1100,6 +1128,7 @@ m.stop()
 - Type : piège
 - Niveau : 2
 - Profils : data
+- Mots-clés : région AWS, fixture, moto
 - Source : data-platform · S1-07
 - Définition : Hors `us-east-1`, `create_bucket` exige `CreateBucketConfiguration={"LocationConstraint": région}`, même si le client est déjà dans cette région.
 - Contexte : Héritage de l'API d'origine : `us-east-1` est la région implicite. Ailleurs, sans contrainte, S3 répond `IllegalLocationConstraintException` ; la région du client ne suffit pas. En production, les buckets viennent de Terraform (`aws_s3_bucket` gère la contrainte seul) : on appelle `create_bucket` surtout dans une fixture moto ou un script.
@@ -1135,6 +1164,7 @@ m.stop()
 - Niveau : 2
 - Profils : data, web
 - Prérequis : s3-contenttype-non-devine
+- Mots-clés : gzip, content-type, JSONL, CloudFront
 - Source : data-platform · S1-07
 - Définition : Un fichier `.gz` stocké tel quel prend `ContentType: application/gzip`, sans `ContentEncoding: gzip`, qui le ferait décompresser par tout client HTTP.
 - Contexte : `Content-Encoding: gzip` dit « ce corps est compressé pour le transport » : navigateur, `requests`, `httpx`, CloudFront le décompressent à la volée et rendent du JSONL. Le lecteur qui appelle ensuite `gzip.decompress` plante (`BadGzipFile`) et la taille reçue ne correspond plus à `gz_bytes`. Le piège est discret : boto3 ne décompresse pas, les tests moto passent.
@@ -1183,6 +1213,7 @@ m.stop()
 - Niveau : 2
 - Profils : data
 - Prérequis : s3-head-object
+- Mots-clés : en-tête HTTP, manifest, tag
 - Source : data-platform · S1-07
 - Définition : `Metadata={"source": "bodacc"}` attache des paires texte à un objet, renvoyées en en-têtes `x-amz-meta-*` par `head_object` et `get_object`.
 - Contexte : Ce sont des en-têtes HTTP : clés rendues en minuscules (`Source` → `source`), valeurs en chaînes ASCII (boto3 refuse le reste avant l'envoi), 2 Ko au total. Elles ne se modifient pas seules : changer une métadonnée réécrit l'objet. On ne peut ni filtrer un listage ni chercher dessus : pour ça, un manifest, des tags ou un catalogue.
@@ -1219,6 +1250,7 @@ m.stop()
 - Profils : data
 - Prérequis : s3-head-object-chiffrement
 - Voir aussi : s3-etag-multipart
+- Mots-clés : ETag, SSE-KMS, MD5, manifest
 - Source : data-platform · S1-07
 - Définition : Avec SSE-KMS, l'ETag n'est pas le MD5 du contenu : chaque écriture en produit un nouveau, même pour des octets identiques.
 - Contexte : L'ETag n'est un MD5 que pour un PUT simple, sans chiffrement ou en SSE-S3. En SSE-KMS, la doc dit seulement qu'il n'est pas un MD5 ; mesuré ici, un rejeu identique octet pour octet change l'ETag. Comparer deux ETag ne dit donc rien des données. Pour savoir si les octets ont changé : le sha256 du manifest, une somme de contrôle S3, ou `cmp` des deux versions.
@@ -1248,6 +1280,7 @@ aws s3api head-object --bucket "$B" \
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : s3-cp-vers-stdout
+- Mots-clés : stdout, versioning
 - Source : data-platform · S1-07
 - Définition : `aws s3api get-object` écrit le corps dans `outfile`, argument positionnel obligatoire, et affiche sur stdout le JSON des métadonnées.
 - Contexte : Deux flux distincts : les octets vont dans le fichier, la réponse (`ContentLength`, `ETag`, `VersionId`, chiffrement) sur stdout. Passer `/dev/stdout` comme `outfile` mélange les deux dans le même flux : un `shasum` dessus donne un hash faux, sans erreur. Écrire dans un vrai fichier, ou utiliser `aws s3 cp … -` pour le contenu seul. `--query` filtre le JSON, jamais le contenu.
@@ -1278,6 +1311,7 @@ head -c 20 m.json
 - Type : recette
 - Niveau : 2
 - Profils : data, ops
+- Mots-clés : versioning, delete marker, rejeu
 - Source : data-platform · S1-07
 - Définition : Sur un bucket versionné, `--version-id` lit, copie ou supprime une version précise ; sans lui, chaque commande vise la version courante.
 - Contexte : `list-object-versions` donne `VersionId` et `IsLatest` de chaque version. Une version non courante reste lisible tant qu'elle n'a pas expiré : c'est le moyen de comparer l'avant et l'après d'un rejeu, ou de restaurer (`copy-object` de l'ancienne version sur la même clé). `delete-object --version-id` supprime cette version pour de bon, sans delete marker.
@@ -1316,6 +1350,7 @@ cmp old.gz new.gz && echo identiques
 - Type : recette
 - Niveau : 2
 - Profils : ops
+- Mots-clés : CLI AWS, préfixe S3
 - Source : data-platform · S1-07
 - Définition : `--query` applique une expression JMESPath à la réponse JSON de la CLI : filtre `[?…]`, projection `{a:A}`, fonctions comme `length()`.
 - Contexte : Le filtre tourne sur le poste, après la réponse : il ne réduit ni les appels ni la facture, contrairement à `--prefix` envoyé à S3. Les littéraux s'écrivent entre accents graves (`` `false` ``), d'où des guillemets simples autour de la requête. `--output text` retire les guillemets JSON pour réutiliser la valeur dans une variable.
@@ -1353,6 +1388,7 @@ aws s3api list-object-versions \
 - Niveau : 2
 - Profils : data
 - Prérequis : s3-cle-sans-dossier, s3-pagination-1000
+- Mots-clés : préfixe S3, partition
 - Source : data-platform · S1-09
 - Définition : `list-objects-v2 --prefix bodacc/ --delimiter /` renvoie dans `CommonPrefixes` les sous-préfixes directs, sans lister les objets : les « dossiers » `date=…/`.
 - Contexte : S3 n'a pas de dossiers : le délimiteur regroupe les clés par ce qui suit le préfixe jusqu'au prochain `/`. C'est ce que fait `aws s3 ls` pour afficher `PRE date=…/`, mais en sortie texte pour humain ; `s3api` donne du JSON filtrable. Mesuré : 20 préfixes `bodacc/date=…/`, `length(CommonPrefixes)` → `20`. Sans barre finale, `aws s3 ls s3://$B/bodacc` liste le niveau au-dessus : `PRE bodacc/`.
@@ -1387,6 +1423,7 @@ aws s3 ls "s3://$B/bodacc"    # → PRE bodacc/
 - Type : concept
 - Niveau : 2
 - Profils : data, web
+- Mots-clés : manifest, EMR
 - Définition : Depuis décembre 2020, S3 est fortement cohérent : un `GET`, `HEAD` ou `LIST` après un `PUT` ou `DELETE` réussi voit le nouvel état.
 - Contexte : Avant, un objet écrasé pouvait être relu dans son ancienne version quelques secondes, et un listage juste après un `PUT` pouvait l'omettre : d'où les vieux conseils (`sleep`, S3Guard, vue cohérente d'EMRFS). Ces contournements sont inutiles aujourd'hui, sans surcoût ni option à activer. La cohérence ne verrouille rien : deux écritures concurrentes sur une clé réussissent, la dernière gagne.
 - Usage : ✅ écrire les parts puis le manifest, et laisser le lecteur lister aussitôt · ❌ `sleep` après un `PUT`, ou un index DynamoDB « pour la cohérence » : inutile depuis 2020.
@@ -1429,6 +1466,7 @@ get-object
 - Niveau : 3
 - Profils : data, ops
 - Prérequis : s3-version-id
+- Mots-clés : delete marker, cycle de vie, rejeu, état Terraform
 - Définition : Sur un bucket versionné, chaque écrasement garde l'ancienne version, récupérable par son `VersionId`, et facturée comme un objet normal.
 - Contexte : Le versioning protège `raw` d'un rejeu qui écraserait un bon fichier. Mais l'espace ne baisse jamais tout seul : une règle `expiration` ne touche que la version courante. Pour purger, il faut `noncurrent_version_expiration`, et `expired_object_delete_marker` pour nettoyer les marqueurs orphelins. Une fois activé, le versioning ne peut que passer en pause (`Suspended`), jamais être retiré.
 - Usage : ✅ versioning sur `raw` et sur le bucket d'état Terraform · ❌ versioning sans règle sur les versions non courantes : la facture grossit à chaque rejeu.
@@ -1470,6 +1508,7 @@ rule {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : s3-versioning-suppression
+- Mots-clés : versioning, SSE-KMS, delete marker
 - Définition : La réplication S3 copie de façon asynchrone les nouveaux objets d'un bucket versionné vers un autre, dans une autre région (CRR) ou la même (SRR).
 - Contexte : Un rôle IAM lit la source et écrit la destination, avec les droits KMS des deux clés en SSE-KMS. Les objets présents avant la règle ne sont pas copiés : il faut S3 Batch Replication. Par défaut, les delete markers ne suivent pas, et une suppression par `VersionId` n'est jamais répliquée : la copie survit à une erreur humaine sur la source.
 - Usage : ✅ copie de secours de `raw` dans une autre région, exigence de résidence ou de latence · ❌ se protéger d'un rejeu qui écrase : le versioning suffit ; copie ponctuelle : `aws s3 sync`.
@@ -1507,6 +1546,7 @@ resource "aws_s3_bucket_replication_configuration" "raw" {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : s3-versioning-suppression
+- Mots-clés : versioning, delete marker, compte root
 - Définition : Object Lock interdit de supprimer ou d'écraser une version d'objet pendant une durée de rétention : stockage WORM (écrire une fois, lire souvent).
 - Contexte : Il exige le versioning. En mode `GOVERNANCE`, un principal qui a `s3:BypassGovernanceRetention` peut lever le verrou ; en `COMPLIANCE`, personne, root compris, avant l'échéance : seule la fermeture du compte libère la place. Un `DELETE` sans `VersionId` réussit quand même : il pose un delete marker, la version verrouillée reste. Le legal hold verrouille sans durée.
 - Usage : ✅ archive réglementaire, journaux d'audit, sauvegardes contre un rançongiciel · ❌ `COMPLIANCE` en dev ou pour essayer : objets impossibles à supprimer avant l'échéance, et facturés jusque-là.
@@ -1543,6 +1583,7 @@ resource "aws_s3_bucket_object_lock_configuration" "audit" {
 - Profils : data, expert
 - Prérequis : s3-coherence-forte
 - Voir aussi : dynamodb-verrou-de-job
+- Mots-clés : ETag, verrou optimiste
 - Définition : S3 ne verrouille rien : `If-None-Match: *` fait échouer un `PutObject` si la clé existe déjà, `If-Match: <ETag>` si l'objet a changé.
 - Contexte : Sans condition, deux `PUT` concurrents sur la même clé réussissent tous les deux : la dernière écriture reçue l'emporte. `If-None-Match: *` (août 2024) répond `412 Precondition Failed` si la clé existe ; `If-Match: <ETag>` (novembre 2024) n'écrase que la version lue, comme un verrou optimiste. Deux écritures conditionnelles simultanées : l'une passe, l'autre échoue (`412` ou `409`).
 - Usage : ✅ `If-None-Match` pour un marqueur « jour traité » écrit une seule fois · ❌ un fichier S3 comme compteur ou verrou partagé : DynamoDB et ses écritures conditionnelles.
@@ -1588,6 +1629,7 @@ store["_DONE"]  # → "run-1"
 - Profils : data, expert
 - Prérequis : s3-multipart-incomplet
 - Voir aussi : s3-checksum-sha256
+- Mots-clés : ETag, MD5, multipart upload
 - Définition : L'ETag d'un objet envoyé d'un bloc est le MD5 de son contenu ; en multipart, c'est le MD5 des MD5 des parts, suffixé `-N`.
 - Contexte : Comparer un MD5 local à l'ETag ne marche que pour un `PutObject` simple, et hors SSE-KMS, où l'ETag n'est pas non plus un MD5. Le même fichier envoyé avec une autre taille de part donne un autre ETag. Pour l'intégrité, demander une somme de contrôle (`--checksum-algorithm SHA256`, ou le CRC des SDK récents), conservée par S3 avec l'objet.
 - Usage : ✅ ETag pour détecter un changement (`If-Match`, cache HTTP) · ❌ ETag comme preuve d'intégrité d'un fichier : checksum SHA-256 ou CRC.
@@ -1628,6 +1670,7 @@ aws s3api list-objects-v2 --bucket "$B" \
 - Profils : data, expert
 - Prérequis : s3-upload-file
 - Voir aussi : s3-etag-multipart
+- Mots-clés : multipart upload, ETag, thread, manifest
 - Source : data-platform · S1-07
 - Définition : `TransferConfig(multipart_threshold=…, multipart_chunksize=…)` règle quand `upload_file` découpe un fichier, et en parts de quelle taille (8 Mio par défaut).
 - Contexte : Au-delà du seuil, `upload_file` fait un multipart en parts de `multipart_chunksize`, envoyées par `max_concurrency` threads (10). L'ETag devient `md5-N` : changer seuil ou taille de part change l'ETag du même fichier, et casse une comparaison d'ETag entre rejeux. Une part fait 5 Mio au moins (sauf la dernière), 10 000 parts au plus.
@@ -1666,6 +1709,7 @@ m.stop()
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : s3-metadata-en-tetes
+- Mots-clés : versioning, notification S3, tag, content-type
 - Source : data-platform · S1-07
 - Définition : Les métadonnées d'un objet sont figées : les changer, c'est le copier sur lui-même avec `MetadataDirective="REPLACE"` et les nouvelles valeurs.
 - Contexte : `REPLACE` remplace **tout** : `Metadata`, `ContentType`, `CacheControl` non repris dans l'appel sont perdus. Sans directive, la copie garde les métadonnées d'origine (`COPY`). La copie crée un nouvel objet : nouveau `LastModified`, nouvelle version si le bucket est versionné, notification S3 déclenchée. Au-delà de 5 Go, il faut une copie multipart (`s3.copy`).
@@ -1703,6 +1747,7 @@ m.stop()
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : s3-gz-contenttype
+- Mots-clés : MIME, gzip, content-type
 - Source : data-platform · S1-07
 - Définition : `mimetypes.guess_type` renvoie un couple `(type, encodage)` : pour `a.json.gz`, `("application/json", "gzip")`, le gzip étant vu comme un encodage.
 - Contexte : Le module suit la logique HTTP : `.gz` est une compression de transport, pas un type. Recopier ce couple dans `ContentType` / `ContentEncoding` reproduit le piège de la décompression à la volée. Pour une extension inconnue comme `.jsonl`, le type est `None`. Le résultat dépend aussi des fichiers `mime.types` de la machine : il peut différer entre un Mac et la Lambda.
@@ -1731,6 +1776,7 @@ mimetypes.guess_type("export.csv")
 - Niveau : 3
 - Profils : data, ops
 - Prérequis : s3-versioning-suppression, s3-lifecycle-expiration
+- Mots-clés : versioning, rejeu, cycle de vie, UTC
 - Source : data-platform · S1-07
 - Définition : `noncurrent_days` compte les jours depuis le moment où une version devient non courante, pas depuis sa création.
 - Contexte : Une version écrite le 1er et remplacée le 25 par un rejeu expire vers le 25 + 30, pas vers le 1er + 30. Chaque rejeu crée une version et met l'horloge de la précédente en route. Comme `expiration`, la règle est appliquée par S3 une fois par jour, en asynchrone : la version part vers minuit UTC qui suit l'échéance.
@@ -1772,6 +1818,7 @@ rule {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : s3-noncurrent-days
+- Mots-clés : versioning, cycle de vie, rejeu, partition
 - Source : data-platform · S1-07
 - Définition : `newer_noncurrent_versions = N` protège les N versions non courantes les plus récentes ; seules les plus anciennes expirent après `noncurrent_days`.
 - Contexte : Une version n'expire que si elle a dépassé `noncurrent_days` **et** qu'il existe au moins N versions non courantes plus récentes. Les N dernières sont donc gardées sans limite de durée. Utile pour toujours pouvoir revenir sur le dernier rejeu d'une partition rarement réécrite ; plafond : 100.
@@ -1800,6 +1847,7 @@ noncurrent_version_expiration {
 - Profils : data, expert
 - Prérequis : s3-etag-sse-kms
 - Voir aussi : Data engineering/ingestion-hash-du-brut-pas-du-gzip
+- Mots-clés : SHA-256, ETag, base64, multipart upload
 - Source : data-platform · S1-07
 - Définition : `ChecksumAlgorithm="SHA256"` à l'envoi fait vérifier et conserver par S3 un SHA-256 de l'objet, relu avec `ChecksumMode="ENABLED"`.
 - Contexte : Contrairement à l'ETag, la somme ne dépend ni du chiffrement ni de la réécriture : deux rejeux identiques gardent le même `ChecksumSHA256`. Elle est en base64 du digest, pas en hexadécimal comme `shasum`. En multipart, c'est une somme de sommes, suffixée `-N`. Sans algorithme choisi, boto3 récent envoie un CRC32.

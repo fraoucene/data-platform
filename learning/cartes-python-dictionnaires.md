@@ -18,6 +18,7 @@ Python · Dictionnaires : construire, lire, modifier, outils, parcourir (format 
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : dictionnaires-pas-acces-par-point, dictionnaires-keyerror-capturer
+- Mots-clés : KeyError, hashable, BODACC
 - Définition : `dict` associe des clés uniques à des valeurs ; `d[k]` lit une clé obligatoire, `d.get(k, défaut)` une clé facultative (≈ objet ou `Map`).
 - Contexte : Contrairement à JS, lire une clé absente avec `d[k]` ne renvoie pas `undefined` : ça lève `KeyError`. `get` renvoie `None`, ou la valeur par défaut donnée. `k in d` teste la présence d'une **clé**, pas d'une valeur. Les clés sont souvent des chaînes, mais tout objet hashable convient (nombre, tuple).
 - Usage : ✅ `d[k]` pour un champ obligatoire (échoue tôt), `get` pour un champ facultatif d'une donnée externe (JSON, annonce BODACC) · ❌ `get` partout : masque les vraies erreurs de données.
@@ -54,6 +55,7 @@ annonce = {"siren": "483609327"}
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : tests-simplenamespace-faux-objet
+- Mots-clés : attribut, dataclass, Pydantic
 - Définition : Les clés d'un dict se lisent avec `d["k"]`, jamais `d.k` : un dict n'est pas un objet JS, ses clés ne sont pas des attributs.
 - Contexte : `d.siren` lève `AttributeError` : le point accède aux attributs et aux méthodes (`d.get`, `d.items`), pas aux clés. Les clés gardent leur type : `"1"` et `1` sont deux clés différentes, alors qu'en JS toute clé d'objet devient une chaîne. Pour un accès par point et l'autocomplétion, une `dataclass` ou un modèle pydantic.
 - Usage : ✅ `d["siren"]` sur des données JSON brutes · ❌ dict passé partout dans le code métier : le convertir en `dataclass` ou en modèle pydantic.
@@ -86,6 +88,7 @@ d[1]           # → "int"
 - Type : concept
 - Niveau : 1
 - Profils : débutant
+- Mots-clés : littéral
 - Définition : Un dict se crée par littéral `{"k": v}`, par `dict(k=v)`, depuis des paires avec `dict(paires)`, ou avec `dict.fromkeys(cles)`.
 - Contexte : Dans un littéral, la clé est une expression : `{"siren": s}` utilise la chaîne, `{siren: s}` la valeur de la variable `siren` ; pas de raccourci `{ siren }` comme en TS. `dict(ville="Lyon")` est pratique mais limité aux clés qui sont des noms Python valides. `dict(zip(cles, valeurs))` associe deux listes.
 - Usage : ✅ littéral pour un enregistrement, `dict(paires)` pour convertir, `fromkeys` pour initialiser des clés · ❌ `dict(k=v)` avec des clés qui ne sont pas des identifiants (`"code-postal"`).
@@ -124,6 +127,7 @@ list(d)        # → ["483609327"]
 - Profils : débutant
 - Prérequis : dictionnaires-creer
 - Voir aussi : dictionnaires-deballer-double-etoile
+- Mots-clés : Counter, defaultdict
 - Définition : `d[k] = v` ajoute ou remplace, `|` fusionne deux dicts, `pop` et `del` retirent une clé.
 - Contexte : `d[k] = v` crée la clé si elle manque, sinon remplace la valeur. `d1 | d2` (Python 3.9+) renvoie un nouveau dict où `d2` gagne en cas de conflit (≈ `{...d1, ...d2}`) ; `d1 |= d2` et `update` modifient `d1` sur place. `setdefault(k, v)` n'écrit que si la clé manque, et renvoie la valeur en place.
 - Usage : ✅ construire un enregistrement champ par champ, appliquer des valeurs par défaut avec `|` · ❌ compter ou grouper : `Counter`, `defaultdict`.
@@ -163,6 +167,7 @@ defaut["actif"]        # → True  (intact)
 - Niveau : 1
 - Profils : débutant
 - Voir aussi : listes-retirer-pendant-parcours, dictionnaires-ordre-insertion
+- Mots-clés : ordre d'insertion, vue
 - Définition : `items()` donne les paires `(clé, valeur)`, `keys()` et `values()` l'un ou l'autre ; l'ordre d'insertion est conservé.
 - Contexte : Boucler sur un dict parcourt ses clés. `items()` évite de relire `d[k]` à chaque tour (≈ `Object.entries`). Depuis Python 3.7, l'ordre d'insertion est garanti. Ces méthodes renvoient des **vues**, pas des copies : elles reflètent les changements ultérieurs du dict.
 - Usage : ✅ `items()` dès qu'on utilise clé et valeur, `values()` pour agréger (`sum`, `max`) · ❌ `for k in d: d[k]` : relit chaque valeur pour rien.
@@ -200,6 +205,7 @@ list(cles)              # → ["a", "b"]
 - Niveau : 1
 - Profils : débutant
 - Voir aussi : listes-egalite-contenu
+- Mots-clés : identité, assert
 - Définition : `==` compare deux dicts par leurs paires clé-valeur, sans tenir compte de l'ordre d'insertion des clés.
 - Contexte : En JS, deux objets ne sont égaux que s'ils sont le même objet ; en Python, `==` compare les contenus, récursivement. L'ordre des clés est conservé par le dict mais ignoré par `==`. `is` teste l'identité (le même objet), presque jamais ce qu'on veut entre deux dicts. Pour vérifier qu'un dict en contient un autre : `petit.items() <= grand.items()`.
 - Usage : ✅ assert dans les tests (`assert parse(ligne) == attendu`), détecter qu'un enregistrement a changé · ❌ comparer des dicts sérialisés en chaîne : l'ordre des clés change la chaîne.
@@ -234,6 +240,7 @@ lu == attendu                  # → False
 - Niveau : 2
 - Profils : data, web
 - Prérequis : dictionnaires-lire-sans-planter
+- Mots-clés : JSON, Pydantic
 - Définition : `d.get("a", {}).get("b")` lit une clé imbriquée sans `KeyError` quand un niveau manque (≈ `d.a?.b` en TS).
 - Contexte : Python n'a pas d'opérateur `?.`. Le chaînage de `get` avec `{}` par défaut fonctionne tant que le niveau intermédiaire est absent ou est un dict. En JSON, un niveau vaut souvent `null`, donc `None` : il faut alors `(d.get("a") or {}).get("b")`. Au-delà de deux niveaux, une petite fonction ou un modèle pydantic.
 - Usage : ✅ champs facultatifs d'une annonce BODACC (`jugement`, `depot`) · ❌ niveaux obligatoires : `d["a"]["b"]`, pour échouer tôt.
@@ -267,6 +274,7 @@ a = {"jugement": None}
 - Niveau : 2
 - Profils : data, web
 - Prérequis : dictionnaires-lire-sans-planter
+- Mots-clés : valeur fausse, JSON
 - Définition : `d.get(k, défaut)` ne remplace qu'une clé absente ; `d.get(k) or défaut` remplace aussi toute valeur fausse : `None`, `""`, `0`.
 - Contexte : Le choix dépend de la donnée. Pour un libellé, `or` traite pareil absent, `None` et chaîne vide, ce qu'on veut souvent avec un JSON externe. Pour un nombre ou un booléen, `or` transforme une vraie valeur `0` ou `False` en défaut. Même piège qu'avec `||` en JS, et Python n'a pas de `??` : on teste `is None`.
 - Usage : ✅ `or` pour des chaînes affichées, `is None` pour des nombres et des booléens · ❌ `or` sur un champ où `0` ou `False` sont des valeurs valides (capital, actif).
@@ -300,6 +308,7 @@ v if v is not None else -1   # → 0
 - Niveau : 2
 - Profils : data
 - Prérequis : dictionnaires-lire-sans-planter, exceptions-try-except-type
+- Mots-clés : EAFP, KeyError, trace d'erreur
 - Définition : Une clé obligatoire se lit avec `d[k]` dans un `try/except KeyError`, ou après un test `k in d` ; Python préfère souvent essayer d'abord.
 - Contexte : Le style Python « EAFP » (plus facile de demander pardon que la permission) tente l'accès et capture l'erreur, au lieu de tout tester avant. Le message d'une `KeyError` n'est pas une phrase : c'est la clé. `e.args[0]` donne la clé brute, de quoi écrire une erreur métier claire. `raise … from None` masque la `KeyError` d'origine dans la trace.
 - Usage : ✅ transformer un champ manquant en erreur métier explicite (« A1 sans siren ») · ❌ `except Exception` large, qui avale aussi les vraies erreurs.
@@ -341,6 +350,7 @@ siren({"id": "A1"})   # ❌ ValueError
 - Niveau : 2
 - Profils : data
 - Prérequis : dictionnaires-parcourir-items, listes-comprehensions
+- Mots-clés : compréhension
 - Définition : Une compréhension `{k: v for k, v in d.items() if …}` filtre ou transforme un dict en un nouveau dict.
 - Contexte : On parcourt `items()` pour avoir clé et valeur, on filtre avec `if`, on transforme l'une ou l'autre (≈ `Object.fromEntries(Object.entries(d).filter(…))`). Inverser un dict (`{v: k …}`) perd des entrées quand plusieurs clés ont la même valeur. Retirer les `None` d'un enregistrement avant de l'écrire est un usage typique.
 - Usage : ✅ retirer les champs vides, renommer des clés, inverser une table de codes · ❌ modifier le dict pendant qu'on le parcourt : construire le nouveau à côté.
@@ -379,6 +389,7 @@ noms = {"siren": "id", "ville": "city"}
 - Profils : data, web
 - Prérequis : dictionnaires-modifier-fusionner
 - Voir aussi : listes-deballer-etoile
+- Mots-clés : argument nommé, dataclass, Pydantic
 - Définition : `{**a, **b}` fusionne des dicts dans un nouveau, et `f(**d)` passe chaque clé comme argument nommé (≈ spread `...` en TS).
 - Contexte : Comme avec `|`, la dernière source gagne sur une clé commune ; `**` permet en plus d'ajouter des clés au milieu : `{**a, "nb": 0}`. Dans un appel, chaque clé doit correspondre à un paramètre de la fonction. C'est ainsi qu'on construit une `dataclass` depuis un dict JSON : `Annonce(**d)`.
 - Usage : ✅ surcharger quelques champs d'une copie, construire un objet depuis un dict déjà validé · ❌ dict JSON brut aux champs inconnus vers `f(**d)` : filtrer d'abord, ou pydantic.
@@ -418,6 +429,7 @@ Annonce(**{"siren": "48", "nb": 2}).nb
 - Niveau : 2
 - Profils : data
 - Prérequis : dictionnaires-parcourir-items, listes-sorted-key
+- Mots-clés : Counter, heapq, fonction lambda
 - Définition : `sorted(d.items(), key=…)` trie les paires d'un dict par clé ou par valeur ; `dict(...)` reconstruit un dict dans cet ordre.
 - Contexte : Un dict n'a pas de méthode `sort` : on trie ses paires, puis on reconstruit un dict, qui garde l'ordre d'insertion. `kv[0]` est la clé, `kv[1]` la valeur. Pour un top N par valeur, `Counter.most_common` ou `heapq.nlargest` évitent de tout trier.
 - Usage : ✅ rapport par volume décroissant, dict réordonné avant un export · ❌ trier à chaque lecture : trier une fois, au moment d'afficher ou d'écrire.
@@ -451,6 +463,7 @@ list(trie)   # → ["Lyon", "Nice", "Paris"]
 - Niveau : 2
 - Profils : data
 - Voir aussi : dictionnaires-defaultdict-grouper
+- Mots-clés : itérable
 - Définition : `Counter` compte les occurrences d'éléments : un dict valeur → nombre, avec `most_common` pour le classement.
 - Contexte : `Counter(itérable)` compte en une ligne ce qu'on ferait avec un dict et des `get(k, 0) + 1`. Il s'utilise comme un dict, se met à jour avec `update`, et deux compteurs s'additionnent avec `+`. `most_common(n)` renvoie les `n` plus fréquents, triés du plus au moins fréquent.
 - Usage : ✅ statistiques rapides (annonces par ville, par type), top N · ❌ agréger autre chose qu'un comptage (sommes, listes) : `defaultdict`.
@@ -491,6 +504,7 @@ total["C"]       # → 4
 - Profils : data
 - Prérequis : dictionnaires-lire-sans-planter
 - Voir aussi : fonctions-defaultdict-fabrique, collections-groupby-trier-dabord
+- Mots-clés : fabrique
 - Définition : `defaultdict(fabrique)` crée automatiquement la valeur d'une clé absente : idéal pour grouper sans tester la clé.
 - Contexte : `defaultdict(list)` appelle `list()` quand on accède avec `d[k]` à une clé manquante, donc `d[k].append(x)` marche directement. Sans lui, on écrit `d.setdefault(k, []).append(x)` ou un `if k not in d`. La fabrique peut être `int` (compteur à 0), `set`, ou toute fonction sans argument.
 - Usage : ✅ grouper des enregistrements par clé (annonces par ville), accumuler des sommes · ❌ dict renvoyé à l'extérieur : le convertir avec `dict(d)`, pour que les lectures ne créent plus de clés.
@@ -529,6 +543,7 @@ par_ville   # → {"Lyon": ["A1", "C3"]}
 - Profils : web, data
 - Prérequis : json-loads-dumps
 - Voir aussi : validation-champ-requis-optionnel, listes-annotation-non-controlee
+- Mots-clés : mypy, annotation de type, Pydantic
 - Définition : `TypedDict` décrit les clés et types attendus d'un dict pour l'éditeur et mypy (≈ `interface` TS), sans aucun contrôle à l'exécution.
 - Contexte : C'est l'équivalent le plus proche d'une interface TS sur un objet JSON : la valeur reste un dict ordinaire, `type(a)` vaut `dict`, on la lit avec `a["siren"]`. `NotRequired[...]` ou `total=False` marquent les clés facultatives. Rien n'est vérifié à l'exécution : un JSON mal formé passe sans erreur.
 - Usage : ✅ typer un dict transmis tel quel (réponse d'API, événement Lambda) · ❌ données externes à valider : pydantic ; objet métier avec attributs : `dataclass`.
@@ -572,6 +587,7 @@ a["siren"]          # → 483609327
 - Profils : expert
 - Prérequis : dictionnaires-creer, collections-alias-pas-de-copie
 - Voir aussi : dictionnaires-defaultdict-grouper
+- Mots-clés : référence, immuable, compréhension
 - Définition : `dict.fromkeys(cles, valeur)` donne à toutes les clés le **même** objet valeur : avec `[]`, toutes partagent une seule liste.
 - Contexte : La valeur est évaluée une fois, puis la même référence est posée sur chaque clé. Sans danger pour une valeur immuable (`0`, `None`, `""`), piège pour une liste ou un dict : un `append` via une clé apparaît sous toutes. Pour une liste par clé : la compréhension `{k: [] for k in cles}` ou `defaultdict(list)`.
 - Usage : ✅ `fromkeys(cles, 0)` ou `fromkeys(cles)` pour initialiser ou dédoublonner · ❌ `fromkeys(cles, [])` pour grouper : compréhension ou `defaultdict`.
@@ -605,6 +621,7 @@ d   # → {"Lyon": ["A1"], "Nice": []}
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : dictionnaires-modifier-fusionner
+- Mots-clés : ordre d'insertion, LRU
 - Définition : Réaffecter une clé existante garde sa place ; la supprimer puis la réinsérer la met à la fin, et `popitem()` retire la dernière insérée.
 - Contexte : L'ordre d'un dict est celui de la **première** insertion de chaque clé, garanti depuis Python 3.7. `d[k] = v` sur une clé présente change la valeur, pas la position ; pour déplacer, `d[k] = d.pop(k)`. `popitem()` suit l'ordre inverse (dernier entré, premier sorti). Cet ordre se retrouve dans `json.dumps`, donc dans les fichiers écrits.
 - Usage : ✅ maîtriser l'ordre des champs d'un export JSON, petit cache LRU · ❌ logique qui dépend de l'ordre des clés : trier explicitement.
@@ -639,6 +656,7 @@ list(d)                # → ["A1", "B2"]
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : dictionnaires-parcourir-items, collections-set-operations
+- Mots-clés : vue, set, hashable
 - Définition : `keys()` et `items()` se comportent comme des sets : `&`, `|`, `-` comparent directement les clés de deux dicts.
 - Contexte : Les vues de clés acceptent les opérations ensemblistes sans conversion : clés communes, clés en plus, clés disparues. `items()` aussi, tant que les valeurs sont hashables. `values()` non : ses valeurs peuvent se répéter et ne sont pas forcément hashables, elle n'a rien d'un set. Le résultat d'une opération est un vrai `set`.
 - Usage : ✅ comparer le schéma de deux annonces (champs ajoutés, disparus), vérifier des champs requis · ❌ comparer des valeurs : `list(d.values())` ou `Counter`.
@@ -674,6 +692,7 @@ a.keys() - requis       # → {"ville"}
 - Niveau : 3
 - Profils : expert
 - Prérequis : dictionnaires-defaultdict-grouper
+- Mots-clés : méthode spéciale, defaultdict
 - Définition : Une sous-classe de `dict` qui définit `__missing__(self, clé)` décide de ce que renvoie `d[k]` pour une clé absente.
 - Contexte : `defaultdict` appelle une fabrique sans argument ; `__missing__` reçoit la clé, ce qui permet un défaut calculé (« tribunal 6901 inconnu »). Il n'est appelé que par `d[k]`. Il peut renvoyer une valeur sans l'enregistrer, ou l'enregistrer avec `self[k] = v`, ce qui en fait un cache.
 - Usage : ✅ table de correspondance avec repli lisible (codes tribunaux, libellés), petit cache · ❌ valeur par défaut fixe : `defaultdict(lambda: …)` ou `get(k, défaut)`.

@@ -18,6 +18,7 @@ Web · Vite : variables d'environnement, build, tests avec Vitest (format spec v
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : vite-variables-publiques
+- Mots-clés : fichier .env, bundle
 - Source : data-platform · pwa-sync
 - Définition : `import.meta.env` ne contient que les variables préfixées `VITE_` (plus `MODE`, `DEV`, `PROD`, `BASE_URL`, `SSR`) ; les autres valent `undefined`.
 - Contexte : Le préfixe est un filtre de sécurité : un `.env` contient souvent des secrets de build ou de déploiement qui ne doivent pas finir dans le bundle. Contrairement à `process.env` côté Node (tout l'environnement), le front ne voit que ce qu'on a explicitement nommé `VITE_*`. Le préfixe se change avec `envPrefix` dans `vite.config.ts`, rarement utile.
@@ -46,6 +47,7 @@ import.meta.env.SECRET_KEY   // → undefined
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : vite-acces-dynamique-objet-complet
+- Mots-clés : bundle, CodeBuild, output Terraform
 - Source : data-platform · pwa-sync
 - Définition : `vite build` remplace chaque `import.meta.env.VITE_X` par sa valeur littérale : la configuration est figée dans le bundle, pas lue au chargement.
 - Contexte : Le JS servi par CloudFront contient `"eu-west-3"` en dur. Changer une variable demande donc de reconstruire et redéployer ; il n'y a pas d'environnement d'exécution pour un fichier statique. D'où, dans revision-pwa, les `VITE_*` passées au build CodeBuild à partir des outputs Terraform. Un même bundle ne peut pas servir deux environnements avec deux valeurs.
@@ -72,6 +74,7 @@ console.log(`eu-west-3`)
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : AWS/lambda-variables-env-chaines
+- Mots-clés : fichier .env
 - Source : data-platform · pwa-sync
 - Définition : Une variable `VITE_*` arrive toujours en chaîne : `VITE_SYNC=false` donne `'false'`, une valeur vraie dans un `if`.
 - Contexte : Le `.env` et l'environnement du shell ne connaissent que du texte ; Vite ne convertit rien (seuls `DEV`, `PROD`, `SSR` sont des booléens). Le piège classique est un drapeau désactivé qui reste actif. On compare explicitement (`=== 'true'`) ou on teste la présence, comme cloud.ts qui crée le client seulement si les trois variables sont définies.
@@ -99,6 +102,7 @@ import.meta.env.VITE_SYNC ? 'actif' : 'coupé'
 - Niveau : 1
 - Profils : débutant, web, ops
 - Prérequis : vite-prefixe-vite-seul-expose
+- Mots-clés : bundle, Cognito, Secrets Manager
 - Source : data-platform · pwa-sync
 - Définition : Une variable `VITE_*` lue par le code est lisible par n'importe qui dans le bundle : jamais de secret dans une `VITE_*`.
 - Contexte : Un identity pool id, un client id Cognito, un nom de table sont des identifiants, pas des secrets : la sécurité vient de la signature et d'IAM. Une clé d'API tierce, un secret de client, une clé AWS, eux, deviennent publics dès qu'ils passent par `VITE_`. Ce qui doit rester secret vit côté serveur (Lambda, Secrets Manager).
@@ -125,6 +129,7 @@ grep -o 'eu-west-3:[0-9a-f-]*' dist/assets/*.js
 - Niveau : 2
 - Profils : web, ops
 - Voir aussi : vite-dev-suit-node-env
+- Mots-clés : bundle
 - Source : revision-pwa · pwa-revision
 - Définition : `vite build` remplace `process.env.NODE_ENV` dans le code ; s'il vaut `development`, React part dans sa version de dev, deux fois plus lourde.
 - Contexte : Vite ne force `production` que si la variable est vide. Un `export NODE_ENV=development` dans `~/.zshrc` embarque donc les contrôles et messages de dev de React (« unique key… ») dans le bundle, sans erreur ni avertissement. D'où `"build": "tsc -b && NODE_ENV=production vite build"` dans `app/package.json`.
@@ -152,6 +157,7 @@ NODE_ENV=development vite build
 - Type : concept
 - Niveau : 2
 - Profils : web, ops
+- Mots-clés : fichier .env, CodeBuild, variable d'environnement
 - Source : data-platform · pwa-sync
 - Définition : Une variable `VITE_*` déjà définie dans l'environnement du processus (shell, CI) l'emporte sur la même variable des fichiers `.env*`.
 - Contexte : Vite charge `.env`, `.env.local`, `.env.[mode]`, `.env.[mode].local` (le plus spécifique gagne), mais n'écrase jamais une variable déjà exportée. En CI, aucun `.env.local` : les `VITE_*` viennent de l'environnement du build (CodeBuild), alimenté par Terraform. En local, une variable exportée par erreur dans `~/.zshrc` masque silencieusement `.env.local`.
@@ -179,6 +185,7 @@ VITE_FROM_ENV=shell vite build
 - Niveau : 2
 - Profils : web
 - Voir aussi : vite-priorite-shell-avant-env
+- Mots-clés : fichier .env
 - Source : data-platform · pwa-sync
 - Définition : Vitest charge les fichiers `.env*` comme Vite, en mode `test` : un test voit les `VITE_*` de `.env.local` et de l'environnement.
 - Contexte : Le code testé lit donc la même configuration qu'en développement : un module qui agit dès que `VITE_PROGRESS_TABLE` est définie le fera aussi pendant les tests, sur le poste comme en CI. `import.meta.env.MODE` vaut `'test'` et `DEV` vaut `true`. Pour un test indépendant de la config, on injecte les valeurs (`createCloud({ … })`) au lieu de lire `import.meta.env`.
@@ -208,6 +215,7 @@ import.meta.env.DEV         // → true
 - Niveau : 2
 - Profils : web
 - Voir aussi : vite-vitest-environnement-node
+- Mots-clés : module ES, CodeBuild
 - Source : data-platform · pwa-sync
 - Définition : Le code au niveau d'un module s'exécute dès qu'un fichier l'importe, tests compris : lire `localStorage` à ce moment casse sous Node.
 - Contexte : Erreur vue dans revision-pwa : le premier build CodeBuild a échoué avec `ReferenceError: localStorage is not defined` (`src/cloud.ts:61`). En CI, les `VITE_*` étaient définies, donc `cloud` était créé à l'import, et le client lisait `localStorage` tout de suite. Correction : stockage lu à l'usage (`const storage = () => config.storage ?? localStorage`), plus rien au chargement.
@@ -244,6 +252,7 @@ const storage = () =>
 - Niveau : 2
 - Profils : web
 - Voir aussi : web-crypto-node-subtle-global
+- Mots-clés : jsdom
 - Source : data-platform · pwa-sync
 - Définition : Par défaut, Vitest exécute les tests sous Node (`environment: 'node'`) : `fetch` et `crypto` existent, `localStorage`, `window` et `document` non.
 - Contexte : `jsdom` ou `happy-dom` simulent le DOM, mais s'installent à part et ralentissent les tests. Pour un module comme cloud.ts, plus simple et plus juste : injecter `fetch` et le stockage (`memoryStorage()` dans le test) et rester en `node`. On ne teste que ce qu'on contrôle, sans faux navigateur.
@@ -271,6 +280,7 @@ typeof window        // → 'undefined'
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : vite-env-remplace-au-build
+- Mots-clés : bundle, minifieur
 - Source : data-platform · pwa-sync
 - Définition : Un accès dynamique `import.meta.env[cle]` ne peut pas être remplacé par une valeur : Vite insère l'objet complet de toutes les variables `VITE_*`.
 - Contexte : Le remplacement statique ne marche que sur une expression écrite en toutes lettres (`import.meta.env.VITE_REGION`). Avec une clé calculée, Vite écrit `{BASE_URL:…, MODE:…, VITE_A:…, VITE_B:…}[cle]` : toutes les `VITE_*` du build atterrissent dans le bundle, même celles qu'aucun code ne lit. Le minifieur ne peut plus rien supprimer.
@@ -300,6 +310,7 @@ console.log(import.meta.env[k])
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : vite-node-env-build-de-dev
+- Mots-clés : NODE_ENV, bundle, minifieur
 - Source : data-platform · pwa-sync
 - Définition : Dans `vite build`, `import.meta.env.DEV` et `PROD` suivent `NODE_ENV`, alors que `MODE` reste `'production'` : un `NODE_ENV=development` exporté laisse `DEV` à `true`.
 - Contexte : Complément de la carte NODE_ENV : ce n'est pas seulement React qui part en version de dev, ce sont aussi les branches du code de l'app `if (import.meta.env.DEV)` (logs, outils de debug) qui restent dans le bundle de production. `MODE` ne bouge pas : un test sur `MODE` et un test sur `DEV` peuvent donc se contredire dans le même build.

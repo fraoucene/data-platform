@@ -17,6 +17,7 @@ Python · Fonctions : lambda, ordre supérieur, closures (format spec v3 de revi
 - Type : concept
 - Niveau : 1
 - Profils : débutant
+- Mots-clés : fonction lambda, expression, instruction
 - Définition : `lambda params: expr` crée une fonction anonyme dont le corps, une seule expression, est renvoyé implicitement (≈ `(s) => expr` en TS).
 - Contexte : Pas d'équivalent au corps entre accolades des arrow functions : une lambda ne contient ni instruction, ni `return`, ni affectation `=`, ni bloc `if:` ou `for:`. Elle produit un objet fonction ordinaire, du même type qu'un `def`, qu'on passe surtout en argument (`key=`, `map`). Dès qu'il faut deux lignes, on écrit un `def`.
 - Usage : ✅ petite fonction jetable passée en argument (`key=`, `map`, `defaultdict`) · ❌ logique sur plusieurs lignes, ou fonction réutilisée : `def`.
@@ -53,6 +54,7 @@ pad("7") == pad2("7")     # → True
 - Niveau : 1
 - Profils : débutant
 - Prérequis : fonctions-lambda-une-expression
+- Mots-clés : fonction lambda, expression conditionnelle
 - Définition : Une lambda choisit entre deux valeurs avec `x if cond else y`, seule condition possible dans une expression (≈ `c ? x : y`).
 - Contexte : L'instruction `if:` est interdite dans une lambda, mais l'expression conditionnelle est permise. L'ordre diffère de TS : la valeur « vraie » d'abord, la condition au milieu, l'alternative à la fin. Les ternaires se chaînent (`a if c1 else b if c2 else c`), mais au-delà de deux cas un dict de correspondance ou un `def` se lit mieux.
 - Usage : ✅ choisir entre deux valeurs dans une clé de tri ou un `map` · ❌ trois cas ou plus : dict de correspondance (`LIBELLES.get(f, "autre")`) ou `def`.
@@ -90,6 +92,7 @@ libelle("X")   # → "autre"
 - Profils : débutant, data
 - Prérequis : fonctions-lambda-une-expression
 - Voir aussi : fonctions-itemgetter, listes-sorted-key
+- Mots-clés : fonction lambda, clé de tri, tri stable
 - Définition : `sorted(it, key=lambda x: …)` trie selon la valeur que la lambda renvoie pour chaque élément.
 - Contexte : Contrairement à `Array.sort` en JS, on ne passe pas de comparateur `(a, b) => a - b` : la clé reçoit un seul élément et renvoie la valeur à comparer. Un tuple trie sur plusieurs critères, dans l'ordre ; `-` inverse un critère numérique. `sorted` renvoie une nouvelle liste ; `liste.sort(key=…)` trie sur place et renvoie `None`. Le tri est stable.
 - Usage : ✅ trier des annonces par date, capital, puis SIREN · ❌ clé qui lit juste un champ : `operator.itemgetter`, plus court.
@@ -130,6 +133,7 @@ tri = sorted(annonces, key=lambda a: (
 - Profils : débutant, data
 - Prérequis : fonctions-lambda-une-expression
 - Voir aussi : listes-comprehensions, generateurs-une-seule-passe
+- Mots-clés : fonction lambda, itérateur, évaluation paresseuse, compréhension
 - Définition : `map(lambda, it)` applique la fonction à chaque élément et renvoie un itérateur paresseux (≈ `arr.map`, mais paresseux).
 - Contexte : En Python 3, `map` ne calcule rien à l'appel : il renvoie un objet `map`, évalué au parcours, à matérialiser avec `list(...)`. La compréhension `[f(x) for x in it]` est souvent préférée : plus lisible, sans lambda. `map` accepte plusieurs itérables (`map(f, a, b)`), parcourus en parallèle jusqu'au plus court.
 - Usage : ✅ appliquer une fonction existante (`map(str.strip, lignes)`) · ❌ `map(lambda …)` qui se lit mal : compréhension de liste.
@@ -166,6 +170,7 @@ next(cles)   # → "483609327@2026-10-20"
 - Profils : débutant, data
 - Prérequis : fonctions-lambda-une-expression
 - Voir aussi : listes-comprehensions
+- Mots-clés : itérateur, évaluation paresseuse, valeur fausse
 - Définition : `filter(lambda, it)` garde les éléments pour lesquels la fonction renvoie une valeur vraie (≈ `arr.filter`, paresseux).
 - Contexte : Comme `map`, `filter` renvoie un itérateur paresseux, à matérialiser avec `list`. La fonction n'a pas à renvoyer un booléen : toute valeur vraie (chaîne non vide, nombre non nul) garde l'élément. La compréhension `[x for x in it if cond]` fait la même chose et se lit souvent mieux, surtout combinée à une transformation.
 - Usage : ✅ filtrer avec une fonction existante (`filter(str.isdigit, codes)`) · ❌ filtre et transformation ensemble : compréhension `[f(x) for x in it if cond]`.
@@ -199,6 +204,7 @@ capitaux = [500, 9000, 0, 1200]
 - Niveau : 2
 - Profils : data
 - Prérequis : fonctions-lambda-une-expression, collections-tuple-virgule
+- Mots-clés : fonction lambda, tuple, clé de tri
 - Définition : Pour renvoyer plusieurs valeurs, une lambda entoure son tuple de parenthèses : elles délimitent le corps.
 - Contexte : En TS, `(a) => [a.siren, a.date]` renvoie un tableau ; en Python, la lambda renvoie un tuple, construit par la virgule. Le corps d'une lambda s'arrête à la première virgule de premier niveau : seules des parenthèses autour du tuple le gardent entier. C'est la forme classique d'une clé de tri ou de regroupement composée.
 - Usage : ✅ clé composée pour `sorted`, `max`, `groupby` · ❌ beaucoup de champs : `itemgetter("a", "b")`, plus court.
@@ -233,6 +239,7 @@ d   # → "2026-10-20"
 - Niveau : 2
 - Profils : débutant
 - Prérequis : fonctions-lambda-une-expression
+- Mots-clés : fonction lambda, argument nommé, *args
 - Définition : Une lambda accepte valeurs par défaut, arguments nommés et `*args`, comme un `def`.
 - Contexte : La signature d'une lambda a toutes les possibilités d'un `def` : défauts, arguments nommés, `*args`, `**kwargs`, paramètres « keyword-only ». Les valeurs par défaut sont évaluées une seule fois, quand la lambda est créée, pas à chaque appel comme en TS : c'est sans effet pour un nombre ou une chaîne, mais à surveiller pour un objet modifiable.
 - Usage : ✅ taux ou seuil par défaut dans un petit calcul (`ttc`, `seuil=1000`) · ❌ défaut modifiable (`[]`, `{}`) : `None` puis création dans un `def`.
@@ -267,6 +274,7 @@ total()                  # → 0
 - Niveau : 2
 - Profils : débutant
 - Prérequis : fonctions-lambda-une-expression
+- Mots-clés : fonction lambda, docstring, linter, PEP
 - Définition : Une lambda n'a pas de nom propre (`<lambda>`) ; dès qu'on l'affecte à une variable, `def` est préférable.
 - Contexte : `pad = lambda s: …` donne le nom de variable `pad`, mais l'objet fonction s'appelle toujours `<lambda>` : c'est ce nom qui apparaît dans les traces d'erreur et les profils. Un `def` a un vrai nom, une docstring, des annotations de type, et se teste mieux. Les linters (ruff, flake8) le signalent avec la règle E731.
 - Usage : ✅ `lambda` en argument jetable (`key=`, `map`, `defaultdict`) · ❌ `nom = lambda …` : écrire `def nom(…)`.
@@ -300,6 +308,7 @@ pad(483609327)   # ❌ AttributeError
 - Profils : data
 - Prérequis : fonctions-sorted-key-lambda
 - Voir aussi : listes-sum-min-max
+- Mots-clés : fonction lambda, clé de tri, ISO 8601
 - Définition : `max(it, key=lambda)` renvoie l'élément entier dont la clé est la plus grande, pas la valeur de la clé.
 - Contexte : La lambda sert seulement à comparer : `max` renvoie l'annonce, pas la date. Même règle pour `min` et `sorted`. Les dates ISO (`2026-10-20`) se comparent correctement comme chaînes, sans conversion. En cas d'égalité, `max` garde le premier élément rencontré. Sur un dict, `max` parcourt les clés : la lambda reçoit une clé.
 - Usage : ✅ dernière annonce d'une liste, entreprise au plus gros capital · ❌ besoin de la valeur seule : `max(a["date"] for a in annonces)`.
@@ -337,6 +346,7 @@ max(caps.values())   # → 9000
 - Niveau : 2
 - Profils : data
 - Prérequis : fonctions-sorted-key-lambda
+- Mots-clés : fonction lambda, attribut
 - Définition : `operator.itemgetter("cle")` remplace `lambda a: a["cle"]`, plus court et un peu plus rapide.
 - Contexte : `itemgetter(k)` renvoie une fonction qui fait `obj[k]` : elle marche sur un dict (clé) comme sur un tuple ou une liste (index). Son cousin `attrgetter("date")` lit un attribut (objets, modèles pydantic). Écrit en C, il évite l'appel d'une fonction Python à chaque élément : léger gain sur de gros tris. Une clé absente lève `KeyError`, comme l'accès direct.
 - Usage : ✅ `key=` de `sorted`, `max`, `groupby` qui lit simplement un champ · ❌ clé calculée (`len`, condition, conversion) : `lambda`.
@@ -374,6 +384,7 @@ list(map(itemgetter("siren"), annonces))
 - Niveau : 2
 - Profils : data
 - Prérequis : fonctions-lambda-une-expression, dictionnaires-defaultdict-grouper
+- Mots-clés : fonction lambda, fabrique, defaultdict
 - Définition : `defaultdict(lambda: valeur)` appelle la lambda pour fabriquer la valeur d'une clé absente ; elle ne prend aucun argument.
 - Contexte : `defaultdict` attend une fonction sans argument, appelée à chaque clé manquante : `int`, `list`, ou une lambda pour toute autre valeur (une chaîne, un dict pré-rempli). La lambda ne reçoit pas la clé : impossible d'en déduire la valeur. Comme elle est rappelée à chaque fois, chaque clé reçoit un objet neuf, contrairement à `dict.fromkeys(cles, [])`.
 - Usage : ✅ valeur par défaut composée (`{"nb": 0}`), libellé « inconnu » · ❌ valeur qui dépend de la clé : sous-classe de `dict` avec `__missing__`.
@@ -411,6 +422,7 @@ stats["Paris"]   # → {"nb": 2}
 - Profils : débutant, web
 - Prérequis : fonctions-lambda-une-expression
 - Voir aussi : fonctions-closure-figer-valeur, generateurs-condition-evaluee-tard
+- Mots-clés : fermeture, fonction lambda, référence
 - Définition : Une lambda lit les variables extérieures au moment de l'appel, pas à sa création (même règle que les closures JS).
 - Contexte : La lambda garde une référence à la variable, pas une copie de sa valeur : si la variable change entre création et appel, la lambda voit la nouvelle valeur. Le piège classique est la boucle qui crée des fonctions. En JS, `let` dans un `for` crée une variable par tour ; en Python, la variable de boucle est unique, partagée par tous les tours.
 - Usage : ✅ lambda qui doit suivre un réglage modifiable (seuil global) · ❌ fonctions créées dans une boucle : figer la valeur avec `i=i` ou une fabrique.
@@ -446,6 +458,7 @@ gros(5000)   # → True
 - Niveau : 3
 - Profils : expert
 - Prérequis : fonctions-closure-capture-tardive, fonctions-lambda-defauts
+- Mots-clés : fermeture, valeur par défaut, functools.partial
 - Définition : Un argument par défaut `i=i` copie la valeur à la création de la lambda et contourne la capture tardive.
 - Contexte : Les valeurs par défaut sont évaluées à la création de la lambda : `i=i` range donc la valeur courante de `i` dans un paramètre local. C'est l'idiome court, mais `i` reste un vrai paramètre, visible dans la signature. `functools.partial(f, valeur)` fige un argument sans l'exposer, et une fonction fabrique (`def make(i): return lambda: i`) aussi.
 - Usage : ✅ callbacks créés dans une boucle (un par tribunal, par jour) · ❌ API publique : `functools.partial`, pour ne pas exposer un paramètre en trop.

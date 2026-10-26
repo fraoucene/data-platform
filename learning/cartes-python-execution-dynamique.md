@@ -18,6 +18,7 @@ Python · Exécution dynamique : ast, eval (format spec v3 de revision-pwa).
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : execution-dynamique-literal-eval
+- Mots-clés : expression, instruction, espace de noms
 - Source : revision-pwa · pwa-revision
 - Définition : `eval(texte)` calcule une expression et renvoie sa valeur ; `exec(texte)` exécute des instructions et renvoie toujours `None`.
 - Contexte : Python sépare expression (`len(s)`, `a if c else b`) et instruction (`x = 1`, `import`, `def`). `exec` écrit dans le dict qu'on lui passe : c'est là qu'on relit les noms créés. `check_cards.py` combine les deux : `exec` pour chaque instruction d'un bloc, `eval` pour l'expression annotée `# →`, dans un espace de noms neuf par carte.
@@ -49,6 +50,7 @@ ns["siren"]  # → '483609327'
 - Profils : data, web
 - Prérequis : execution-dynamique-eval-vs-exec
 - Voir aussi : json-loads-dumps
+- Mots-clés : littéral, JSON
 - Source : revision-pwa · pwa-revision
 - Définition : `ast.literal_eval(texte)` relit un littéral Python (nombre, chaîne, liste, dict, tuple, set, booléen, `None`) sans exécuter de code.
 - Contexte : Ni appel de fonction, ni nom, ni opération : tout le reste lève `ValueError`. Il relit une valeur écrite à la Python (`['483609327']`, `{'a': 1}`, `(1,)`) que `json.loads` refuserait (guillemets simples, tuple, `None`). `check_cards.py` l'essaie d'abord sur la valeur d'un `# →` et ne retombe sur `eval` que pour un objet (`Page(...)`).

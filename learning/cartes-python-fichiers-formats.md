@@ -17,6 +17,7 @@ Python · Fichiers et formats : csv, fichiers (format spec v4 de revision-pwa).
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : CSV, itérateur, DuckDB
 - Définition : `csv.DictReader` lit un CSV en une suite de dicts dont les clés sont les en-têtes ; toutes les valeurs sont des chaînes.
 - Contexte : La 1re ligne donne les clés, chaque ligne suivante devient un dict. Rien n'est typé : nombres et dates restent des `str`, à convertir soi-même. Le lecteur est un itérateur, il ne se parcourt qu'une fois. Les champs entre guillemets peuvent contenir le séparateur ; ouvrir un vrai fichier avec `newline=""` pour que les retours à la ligne dans ces champs soient bien lus.
 - Usage : ✅ lire un export CSV (data.gouv, Excel) en accédant aux colonnes par nom · ❌ CSV sans en-tête : `csv.reader` ; calculs tabulaires lourds : DuckDB ou pandas.
@@ -58,6 +59,7 @@ r["ville"]    # → "Lyon"
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : pathlib, clé S3
 - Définition : `Path` manipule les chemins comme des objets ; l'opérateur `/` les assemble sans gérer les séparateurs à la main.
 - Contexte : `Path` remplace `os.path` : `.name`, `.stem`, `.suffix`, `.parent` découpent le chemin ; `.exists()`, `.read_text()`, `.mkdir(parents=True)`, `.glob()` agissent sur le disque. Un `Path` n'est pas une chaîne : `str(p)` pour une API qui en exige une. Le `/` accepte un `Path` ou une `str` à droite.
 - Usage : ✅ construire `data/raw/<date>.jsonl`, lister les fichiers d'un dossier · ❌ clés S3 (`s3://…`) : ce ne sont pas des chemins locaux, concaténer des chaînes.
@@ -99,6 +101,7 @@ d = Path(tempfile.mkdtemp())
 - Niveau : 2
 - Profils : data
 - Prérequis : fichiers-formats-dictreader-chaines
+- Mots-clés : CSV, JSONL, INSEE
 - Définition : `delimiter=";"` lit les CSV exportés en français (Excel, data.gouv), où la virgule sert de séparateur décimal.
 - Contexte : Le module `csv` ne devine pas le séparateur : par défaut c'est la virgule, quelle que soit la source. Un mauvais séparateur ne lève aucune erreur, il produit une seule colonne. Les nombres à virgule décimale (`1234,50`) restent des chaînes : `float` les refuse, il faut remplacer la virgule. `csv.Sniffer` peut deviner le format sur un échantillon.
 - Usage : ✅ fichiers data.gouv, exports Excel en français, référentiels INSEE · ❌ fichiers produits par le projet : garder la virgule (norme RFC 4180) ou passer en JSONL.
@@ -140,6 +143,7 @@ float(r["ca"])    # ❌ ValueError
 - Niveau : 2
 - Profils : data
 - Prérequis : fichiers-formats-dictreader-chaines
+- Mots-clés : CSV, JSONL
 - Définition : `csv.DictWriter` écrit des dicts en lignes CSV selon `fieldnames`, qui fixe l'ordre et la liste des colonnes.
 - Contexte : L'ordre des colonnes vient de `fieldnames`, jamais de l'ordre des clés du dict. Une clé manquante est écrite vide (valeur `restval`). Les lignes se terminent par `\r\n`, comme le veut la norme ; ouvrir un vrai fichier avec `newline=""` évite des lignes vides en trop sous Windows. Les valeurs non chaînes sont converties par `str`.
 - Usage : ✅ export tabulaire pour un humain ou un tableur · ❌ données imbriquées (listes de SIREN, sous-objets) : JSONL, le CSV n'a qu'un niveau.

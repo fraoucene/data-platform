@@ -18,6 +18,7 @@ AWS · SNS : topics, email, abonnements, politique, choisir (format spec v4 de r
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : sns-vers-sqs-fan-out
+- Mots-clés : ARN, alarme CloudWatch, fan-out, SQS
 - Source : data-platform · S1-08
 - Définition : Un topic SNS pousse chaque message publié à tous ses abonnés : email, file SQS, Lambda, HTTPS (≈ un `EventEmitter` entre services).
 - Contexte : L'émetteur (une alarme CloudWatch, un budget, ton code) ne connaît que l'ARN du topic, jamais les destinataires : on ajoute un abonné sans toucher à l'émetteur. SNS pousse, il ne stocke pas : un message publié sans abonné est perdu, et un abonné indisponible au-delà des retries ne le reçoit jamais. Pour garder les messages, abonner une file SQS.
@@ -48,6 +49,7 @@ resource "aws_sns_topic_subscription" "mail" {
 - Type : piège
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : alarme CloudWatch, ARN
 - Source : data-platform · S1-08
 - Définition : Un abonnement email reste `PendingConfirmation` tant que le lien du mail de confirmation n'est pas cliqué ; d'ici là, rien n'est livré.
 - Contexte : Terraform crée l'abonnement, mais ne peut pas le confirmer : seul le destinataire le peut, ce qui empêche d'abonner l'adresse de quelqu'un d'autre. Tant que le lien n'est pas cliqué, l'alarme passe bien en `ALARM` et publie, mais le mail ne part pas. Mesuré après `make up` : `PendingConfirmation`, puis un ARN complet une fois le lien cliqué.
@@ -77,6 +79,7 @@ aws sns list-subscriptions-by-topic \
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : SQS, Firehose
 - Source : data-platform · S1-08
 - Définition : SNS livre en `email`, `email-json`, `sqs`, `lambda`, `http`/`https`, `sms`, `firehose` ; email et HTTP(S) exigent une confirmation par le destinataire.
 - Contexte : Une file SQS ou une Lambda du même compte, abonnées par Terraform, sont confirmées d'office : leur propriétaire est celui qui crée l'abonnement. Une adresse email ou une URL doivent prouver qu'elles acceptent les messages (lien cliqué, ou `SubscribeURL` appelée par le serveur). `email-json` livre le JSON brut au lieu d'un texte mis en forme.
@@ -105,6 +108,7 @@ resource "aws_sns_topic_subscription" "file" {
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : AWS Budgets, locals, astreinte
 - Source : data-platform · S1-08
 - Définition : Un topic d'alertes porte le préfixe d'environnement (`data-platform-dev-alerts`) : les alertes de dev et de prod ne se mélangent pas.
 - Contexte : Le topic du budget (`data-platform-budget-alerts`) est global au compte : un budget porte sur la facture entière. Les alertes d'exploitation, elles, dépendent de l'environnement : en prod, on voudra d'autres destinataires (astreinte, canal d'équipe), voire un autre compte. Le nom vient de `local.prefix`, comme les buckets et les fonctions.
@@ -135,6 +139,7 @@ resource "aws_sns_topic" "alerts" {
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : cloudwatch-set-alarm-state
+- Mots-clés : abonnement SNS, alarme CloudWatch, politique de topic
 - Source : data-platform · S1-08
 - Définition : `aws sns publish --topic-arn … --message …` envoie un message à tous les abonnés confirmés du topic et renvoie son `MessageId`.
 - Contexte : C'est le test le plus court du maillon SNS → mail, sans passer par une alarme. Il prouve que l'abonnement est confirmé et que le mail n'arrive pas en spam ; il ne prouve rien de la politique du topic pour CloudWatch, puisque c'est ton identité qui publie, pas le service. `--subject` donne l'objet du mail (100 caractères au plus).
@@ -162,6 +167,7 @@ aws sns publish --topic-arn "$T" \
 - Niveau : 2
 - Profils : ops
 - Prérequis : sns-email-pending-confirmation
+- Mots-clés : abonnement SNS, terraform plan
 - Source : data-platform · S1-08
 - Définition : SNS supprime un abonnement non confirmé au bout de 48 heures ; il faut alors le recréer pour recevoir un nouveau mail de confirmation.
 - Contexte : Un mail de confirmation parti en spam et oublié deux jours : l'abonnement disparaît côté AWS, mais Terraform le croit toujours là jusqu'au prochain `plan`, qui le recrée. Exception : un abonnement suspendu pour dépassement de débit reste 30 jours en `PendingConfirmation` avant suppression (doc SNS).
@@ -190,6 +196,7 @@ apply = datetime(2026, 10, 25, 18, 10)
 - Niveau : 2
 - Profils : ops
 - Prérequis : iam-politique-de-ressource
+- Mots-clés : politique de ressource, confused deputy, condition IAM
 - Source : data-platform · S1-08
 - Définition : `aws_sns_topic_policy` est la politique côté ressource du topic : elle autorise un service (`cloudwatch.amazonaws.com`, `budgets.amazonaws.com`) à y publier.
 - Contexte : CloudWatch publie en son propre nom, sans endosser de rôle : c'est la « liste d'invités » posée sur le topic, comme `aws_lambda_permission` sur une Lambda. `aws:SourceAccount` limite l'accès aux alarmes du compte (confused deputy). Attention : cette ressource **remplace** la politique par défaut, elle ne s'y ajoute pas (mesuré : un seul `Statement`).
@@ -219,6 +226,7 @@ apply = datetime(2026, 10, 25, 18, 10)
 - Niveau : 2
 - Profils : ops
 - Prérequis : sns-politique-de-topic
+- Mots-clés : ARN, condition IAM, confused deputy
 - Source : data-platform · S1-08
 - Définition : Pour CloudWatch, `aws:SourceArn` vaut l'ARN de l'alarme émettrice ; `ArnLike` avec `…:alarm:*` restreint aux alarmes du compte et de la région.
 - Contexte : `aws:SourceAccount` dit « une alarme de ce compte » ; `aws:SourceArn` peut dire « ces alarmes-là » (`…:alarm:data-platform-dev-*`). La doc CloudWatch recommande les deux contre le confused deputy. Si un nom d'alarme contient des caractères non ASCII, garder `aws:SourceAccount` seul (doc).
@@ -247,6 +255,7 @@ apply = datetime(2026, 10, 25, 18, 10)
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : sns-sqs-ou-eventbridge
+- Mots-clés : fan-out, principal, condition IAM
 - Source : data-platform · S1-08
 - Définition : Pour qu'aucun message ne se perde, on abonne une file SQS au topic : SNS diffuse, SQS conserve jusqu'à 14 jours.
 - Contexte : Un consommateur lent ou en panne ne lit pas un message poussé par SNS ; une file le garde jusqu'à ce qu'il le traite et le supprime. C'est le motif « fan-out » : un topic, plusieurs files, chacune à son rythme. La file doit autoriser le topic à y écrire (`aws_sqs_queue_policy`, principal `sns.amazonaws.com`, `aws:SourceArn` = le topic).
@@ -275,6 +284,7 @@ resource "aws_sns_topic_subscription" "q" {
 - Niveau : 2
 - Profils : data, web, ops
 - Voir aussi : sqs-eventbridge-quand-sqs
+- Mots-clés : règle EventBridge, alarme CloudWatch
 - Source : data-platform · S1-08
 - Définition : SNS pousse un message à des abonnés, SQS garde des messages pour un consommateur, EventBridge route des événements selon leur contenu.
 - Contexte : SNS : diffusion immédiate, abonnés humains (email) ou machines, sans stockage. SQS : tampon, reprise, débit lissé, un consommateur par message. EventBridge : règles sur le contenu (`source`, `detail-type`), nombreuses cibles AWS, archive et rejeu. Les alarmes CloudWatch publient vers SNS ; elles émettent aussi des événements EventBridge de changement d'état.
@@ -304,6 +314,7 @@ choisir("garder jusqu'au traitement")
 - Niveau : 2
 - Profils : ops
 - Voir aussi : sqs-eventbridge-input-transformer
+- Mots-clés : file FIFO, AWS Chatbot, alarme CloudWatch
 - Source : data-platform · S1-08
 - Définition : Un abonnement email n'existe que sur un topic standard, pas FIFO, et SNS ne permet pas de personnaliser le corps du mail.
 - Contexte : La doc SNS le dit : l'email sert aux alertes système internes, pas au marketing. Le mail d'une alarme reprend le message de CloudWatch, mis en forme par SNS ; pour un format propre (Slack, Teams), passer par une Lambda abonnée ou AWS Chatbot. Le contenu utile se règle donc à la source : nom d'alarme parlant, `alarm_description` qui donne la marche à suivre.
@@ -328,6 +339,7 @@ alarm_description = "… : lire `aws logs tail …`, puis `make replay`."
 - Niveau : 2
 - Profils : ops
 - Prérequis : sns-email-pending-confirmation
+- Mots-clés : abonnement SNS, politique de topic, KMS
 - Source : data-platform · S1-08
 - Définition : `get-topic-attributes` donne, entre autres, `SubscriptionsConfirmed`, `SubscriptionsPending`, la politique (`Policy`) et la clé KMS du topic.
 - Contexte : Une seule commande pour l'état d'un topic : combien d'abonnés reçoivent vraiment, combien attendent un clic, qui peut publier, chiffré ou non. Mesuré sur `data-platform-dev-alerts` : 1 confirmé, 0 en attente, une politique à une instruction, pas de clé KMS. Les compteurs se mettent à jour avec un léger délai après une confirmation.
@@ -357,6 +369,7 @@ aws sns get-topic-attributes \
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : sns-email-pending-confirmation
+- Mots-clés : abonnement SNS, IAM
 - Source : data-platform · S1-08
 - Définition : `ConfirmationWasAuthenticated = false` (cas du clic dans le mail) : le lien « unsubscribe » de chaque message désabonne sans authentification.
 - Contexte : Mesuré sur l'abonnement d'alertes : `PendingConfirmation` à `false`, `ConfirmationWasAuthenticated` à `false`. Quiconque reçoit le mail (liste de diffusion, transfert) peut donc couper l'alerte pour tout le monde d'un clic. AWS documente une parade : confirmer l'abonnement par un appel authentifié (`ConfirmSubscription` avec `AuthenticateOnUnsubscribe`), qui exige alors des droits IAM pour se désabonner.
@@ -383,6 +396,7 @@ aws sns get-subscription-attributes \
 - Type : piège
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : abonnement SNS, alarme CloudWatch, astreinte
 - Source : data-platform · S1-08
 - Définition : Au-delà de 10 messages par seconde, SNS suspend un abonnement email en `PendingConfirmation` ; sans reconfirmation, il disparaît après 30 jours.
 - Contexte : Une rafale d'alarmes (cent fonctions qui échouent en même temps) peut ainsi couper l'abonnement au pire moment, et silencieusement. Une adresse qui rebondit (bounce) est en plus mise en liste de suppression pendant 7 jours. Pour les alertes à fort volume, passer par une Lambda ou un outil d'astreinte qui regroupe ; garder l'email pour peu de messages.
@@ -410,6 +424,7 @@ alarmes_simultanees > limite_par_seconde
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : sns-politique-de-topic, sns-source-arn-alarmes
+- Mots-clés : politique de topic, AWS Budgets, alarme CloudWatch
 - Source : data-platform · S1-08
 - Définition : Chaque service qui publie dans un topic a besoin de sa propre instruction dans la politique : `budgets.amazonaws.com` pour le budget, `cloudwatch.amazonaws.com` pour les alarmes.
 - Contexte : Dans data-platform, chaque topic n'a qu'un émetteur et sa politique ne nomme que lui. Réutiliser le topic du budget pour les alarmes, sans ajouter l'instruction CloudWatch, ferait échouer la publication des alarmes en silence côté mail : l'historique `Action` de l'alarme le montrerait. Comme `aws_sns_topic_policy` remplace tout, une seule ressource doit porter toutes les instructions du topic.

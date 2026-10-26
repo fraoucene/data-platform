@@ -18,6 +18,7 @@ Web · PWA : manifest, service worker, cache, stockage, iOS, débogage (format s
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : pwa-installabilite-criteres-chromium
+- Mots-clés : vite-plugin-pwa, CDP
 - Définition : Le manifest web (`manifest.webmanifest`) décrit l'app installée : nom, icônes, mode d'affichage, URL de départ, portée et couleurs.
 - Contexte : vite-plugin-pwa le génère depuis l'option `manifest` et injecte `<link rel="manifest">` dans `index.html`. `short_name` s'affiche sous l'icône, `name` à l'installation. `display: standalone` retire la barre d'URL. Sans `scope`, la portée est le dossier de `start_url` (mesuré : `/app/index.html` → `/app/`) ; une navigation hors portée rouvre l'interface du navigateur. `background_color` peint l'écran de lancement, `theme_color` la barre système.
 - Usage : ✅ un seul manifest, déclaré dans `VitePWA({ manifest })`, avec `start_url` et `scope` explicites · ❌ un `manifest.json` écrit à la main dans `public/` en plus : deux sources qui divergent.
@@ -56,6 +57,7 @@ Web · PWA : manifest, service worker, cache, stockage, iOS, débogage (format s
 - Niveau : 1
 - Profils : web
 - Prérequis : pwa-manifest-champs
+- Mots-clés : contexte sécurisé, manifest web, service worker, Chromium
 - Définition : Chromium propose d'installer une page en contexte sécurisé si son manifest a un nom, un `start_url`, une icône de 144 px et un `display` d'app.
 - Contexte : Mesuré avec `Page.getInstallabilityErrors` : `display: browser` donne `manifest-display-not-supported`, une seule icône de 96 px `no-acceptable-icon:144`, pas de `start_url` `start-url-not-valid`. Le service worker n'est plus exigé : un manifest complet suffit. Chrome émet alors `beforeinstallprompt`. iOS n'a ni critère vérifiable ni invite : installation manuelle par Partager, « Sur l'écran d'accueil ».
 - Usage : ✅ vérifier l'onglet Manifest des DevTools (erreurs listées) avant de tester sur téléphone · ❌ attendre `beforeinstallprompt` sur iPhone : il n'existe pas dans Safari.
@@ -87,6 +89,7 @@ Web · PWA : manifest, service worker, cache, stockage, iOS, débogage (format s
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : web-crypto-subtle-absent-en-http
+- Mots-clés : vite-plugin-pwa, CloudFront
 - Source : revision-pwa · pwa-revision
 - Définition : Un service worker ne s'enregistre que dans un contexte sécurisé : page servie en HTTPS, ou depuis `localhost` en HTTP.
 - Contexte : Hors contexte sécurisé, `navigator.serviceWorker` n'existe pas : le `registerSW.js` de vite-plugin-pwa (`if ('serviceWorker' in navigator)`) ne fait rien, sans erreur. L'app ouverte sur l'iPhone via `http://192.168.x.x:5175` s'affiche et s'installe, mais ne marche pas hors ligne : le test du mode avion attend l'URL CloudFront (HTTPS inclus sur `*.cloudfront.net`).
@@ -119,6 +122,7 @@ typeof navigator.serviceWorker
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : pwa-mise-a-jour-sw-en-attente
+- Mots-clés : Workbox, précache
 - Définition : Un service worker vit en trois temps : `install` (remplir le cache), `activate` (nettoyer les anciens caches), puis `fetch` (intercepter les requêtes de ses pages).
 - Contexte : `event.waitUntil(promesse)` prolonge l'étape jusqu'à la fin de la promesse ; `respondWith` fournit la réponse d'un `fetch`. Le SW n'a ni DOM ni `window`, et le navigateur l'arrête dès qu'il est inactif : aucune variable globale ne survit entre deux événements. Workbox génère ces écouteurs (`precacheAndRoute`, `cleanupOutdatedCaches`) ; l'écrire une fois à la main aide à relire `dist/sw.js`.
 - Usage : ✅ comprendre et déboguer le `sw.js` généré, cas très simple sans dépendance · ❌ écrire précache et révisions à la main en projet : Workbox les calcule au build.
@@ -154,6 +158,7 @@ self.addEventListener('fetch', e =>
 - Type : recette
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : service worker, Cache Storage, IndexedDB, manifest web
 - Définition : Le panneau Application de Chrome DevTools montre le manifest, les service workers, Cache Storage, IndexedDB et l'espace occupé par le site.
 - Contexte : Service workers : « Update on reload » installe et active le nouveau `sw.js` à chaque rechargement, « Bypass for network » ignore le SW, « Offline » coupe le réseau. Storage → « Clear site data » remet l'origine à zéro (SW, caches, `localStorage`). Manifest liste les erreurs d'installabilité. Pour l'iPhone : Safari sur Mac, menu Développement → l'appareil → l'app (Inspecteur web activé dans Réglages → Safari → Avancé).
 - Usage : ✅ « Clear site data » entre deux essais de mise à jour, Cache Storage pour voir ce qui est en cache · ❌ juger le hors-ligne avec « Update on reload » coché : le vrai cycle est court-circuité.
@@ -185,6 +190,7 @@ r.active.scriptURL
 - Niveau : 1
 - Profils : web
 - Voir aussi : pwa-manifest-champs
+- Mots-clés : manifest web, PWA
 - Définition : `<link rel="apple-touch-icon">` fournit l'icône de l'écran d'accueil iOS : un PNG carré de 180 × 180 px, sans transparence.
 - Contexte : Safari l'utilise en priorité sur les icônes du manifest (doc Apple / WebKit ; avant iOS 15.4, il ignorait celles du manifest). iOS arrondit lui-même les coins : pas de coins arrondis ni d'ombre dans l'image, un fond plein jusqu'aux bords. Les icônes `maskable` du manifest servent Android ; elles ne remplacent pas cette balise. Comme les autres balises `apple-*`, elle est lue à l'ajout sur l'écran d'accueil.
 - Usage : ✅ un `apple-touch-icon.png` 180 px opaque dans `public/`, lié depuis `index.html` · ❌ compter sur `icon-192.png` du manifest pour l'iPhone, ou un PNG à fond transparent.
@@ -219,6 +225,7 @@ sips -g pixelWidth -g hasAlpha \
 - Niveau : 2
 - Profils : web
 - Prérequis : pwa-service-worker-cycle-de-vie
+- Mots-clés : vite-plugin-pwa
 - Définition : Un service worker ne contrôle que les pages sous sa portée, par défaut le dossier de son script : `/js/sw.js` donne `/js/`.
 - Contexte : Demander une portée plus large que ce dossier lève `SecurityError`, sauf si le serveur envoie l'en-tête `Service-Worker-Allowed: /` avec le script (mesuré). D'où `sw.js` à la racine de `dist/` : `registerSW.js` enregistre `/sw.js` avec `scope: '/'`. Une inscription par portée : réenregistrer la même portée remplace le script, ne la duplique pas.
 - Usage : ✅ `sw.js` servi à la racine, portée `/` · ❌ ranger `sw.js` dans `assets/` (nom haché, portée `/assets/`) : il ne contrôlerait aucune page.
@@ -251,6 +258,7 @@ await navigator.serviceWorker
 - Profils : web
 - Prérequis : pwa-service-worker-cycle-de-vie
 - Voir aussi : pwa-registertype-prompt-ou-autoupdate
+- Mots-clés : précache, vite-plugin-pwa
 - Définition : Un nouveau `sw.js` s'installe puis attend (`waiting`) tant qu'une page est servie par l'ancien ; `skipWaiting()` l'active sans attendre.
 - Contexte : L'attente évite qu'une page chargée avec l'ancien build parle à un SW dont le précache est déjà le nouveau. Mesuré : v2 installé, un 2e onglet ouvert reste sur v1 ; fermer tous les onglets puis rouvrir sert v2. Sur iPhone, l'app installée compte comme une page tant qu'elle n'est pas fermée dans le sélecteur d'apps. `registerType: 'autoUpdate'` écrit `self.skipWaiting()` et `clientsClaim()` dans `sw.js`.
 - Usage : ✅ `skipWaiting` quand un mélange ancien et nouveau build est sans risque, sinon proposer la mise à jour · ❌ supposer qu'un déploiement est visible dès la réouverture d'un onglet.
@@ -281,6 +289,7 @@ await (await fetch('/v')).text()
 - Niveau : 2
 - Profils : web
 - Prérequis : pwa-mise-a-jour-sw-en-attente
+- Mots-clés : vite-plugin-pwa, chunk, précache
 - Définition : Dans vite-plugin-pwa, `registerType` décide qui active une nouvelle version : l'utilisateur (`'prompt'`, la valeur par défaut) ou le service worker seul (`'autoUpdate'`).
 - Contexte : En `prompt`, `sw.js` n'appelle pas `skipWaiting` mais écoute le message `SKIP_WAITING` (vérifié dans le build). Le hook `useRegisterSW` de `virtual:pwa-register/react` passe `needRefresh` à `true` quand v2 attend ; `updateServiceWorker()` envoie ce message puis recharge. En `autoUpdate`, une page ouverte de l'ancien build peut demander un chunk chargé à la demande déjà retiré du précache.
 - Usage : ✅ `prompt` avec bandeau si couper une session coûte (formulaire en cours) ; `autoUpdate` pour une app sans état critique (l'app de révision) · ❌ `prompt` sans interface pour le proposer.
@@ -317,6 +326,7 @@ function Maj() {
 - Niveau : 2
 - Profils : web
 - Prérequis : pwa-service-worker-cycle-de-vie
+- Mots-clés : Workbox, service worker
 - Source : revision-pwa · pwa-revision
 - Définition : Workbox écrit dans `sw.js` la liste des fichiers du build à mettre en cache à l'installation, chacun avec une empreinte de son contenu.
 - Contexte : `precacheAndRoute` reçoit des `{ url, revision }`. Un fichier à nom fixe (`index.html`, icônes) porte un MD5 : s'il change, `sw.js` change, et le nouveau service worker ne retélécharge que les entrées modifiées. Un asset au nom haché a `revision: null` : son nom suffit. La liste est figée au build : une donnée publiée ensuite (le catalogue) n'y est jamais.
@@ -349,6 +359,7 @@ precacheAndRoute([
 - Profils : web
 - Prérequis : pwa-service-worker-cycle-de-vie
 - Voir aussi : pwa-strategies-workbox-choisir
+- Mots-clés : Workbox, précache
 - Source : revision-pwa · pwa-revision
 - Définition : La stratégie Workbox `NetworkFirst` demande d'abord au réseau, garde la réponse en cache, et ne sert ce cache qu'en cas d'échec ou de délai dépassé.
 - Contexte : Le catalogue change sans redéploiement : il ne peut pas être précaché. `StaleWhileRevalidate` répondrait d'abord avec le cache et mettrait à jour en arrière-plan : une carte publiée n'apparaîtrait qu'à l'ouverture suivante. `NetworkFirst` est frais en ligne ; `networkTimeoutSeconds: 4` évite d'attendre un réseau de métro muet. `CacheFirst`, lui, ne revalide jamais.
@@ -382,6 +393,7 @@ runtimeCaching: [{
 - Niveau : 2
 - Profils : web
 - Voir aussi : pwa-networkfirst-catalogue, pwa-reponse-opaque-status-0
+- Mots-clés : précache, service worker
 - Définition : Workbox propose cinq stratégies, `CacheFirst`, `NetworkFirst`, `StaleWhileRevalidate`, `NetworkOnly` et `CacheOnly`, qui arbitrent entre fraîcheur et disponibilité hors ligne.
 - Contexte : `CacheFirst` lit le cache et ne va au réseau que s'il manque : pour un contenu immuable (polices, images versionnées), avec `expiration` pour borner le cache. `StaleWhileRevalidate` répond avec le cache puis le rafraîchit en arrière-plan. `NetworkOnly` ne met jamais en cache (POST, authentification). `CacheOnly` ne sert que ce qui a été précaché. Chaque route a son `cacheName` : on voit et vide chaque cache séparément.
 - Usage : ✅ une route par type de ressource, du plus stable (`CacheFirst`) au plus vivant (`NetworkFirst`) · ❌ `CacheFirst` sans `expiration` sur des URL qui varient : le cache grossit sans fin.
@@ -417,6 +429,7 @@ runtimeCaching: [{
 - Niveau : 2
 - Profils : web
 - Prérequis : pwa-precache-empreinte
+- Mots-clés : SPA, précache, service worker, CloudFront
 - Définition : `generateSW` ajoute une `NavigationRoute` : toute navigation dans la portée reçoit l'`index.html` du précache, en ligne comme hors ligne.
 - Contexte : C'est ce qui ouvre les routes de la SPA hors ligne (`/session/42`). Mais le SW répond à toute navigation, même vers un fichier : mesuré sur CloudFront, ouvrir `/rapport.pdf` ou `/content/x.json` dans l'onglet renvoie `200` et l'app, sans toucher le réseau (sans SW : `403` de S3). `navigateFallbackDenylist` exclut des chemins de cette règle.
 - Usage : ✅ SPA avec routeur côté client · ❌ fichiers ouverts par lien direct (PDF, exports, JSON publiés) sans les exclure par `navigateFallbackDenylist`.
@@ -453,6 +466,7 @@ workbox: {
 - Type : piège
 - Niveau : 2
 - Profils : web
+- Mots-clés : service worker, Playwright
 - Définition : `navigator.onLine` et les événements `online` / `offline` indiquent si l'appareil a une interface réseau, pas si le serveur répond.
 - Contexte : `false` est fiable : aucun réseau (mode avion, `setOffline` de Playwright, mesuré). `true` ne garantit rien : Wi-Fi sans Internet, réseau de métro muet. La vraie mesure reste l'échec du `fetch`, que l'app doit gérer de toute façon ; côté SW, `networkTimeoutSeconds` évite d'attendre. Le hook React se branche sur `useSyncExternalStore`, sans `useEffect` ni état dupliqué.
 - Usage : ✅ bandeau « hors ligne » quand `onLine` vaut `false` · ❌ bloquer un `fetch` ou conclure « en ligne » sur `onLine === true`.
@@ -494,6 +508,7 @@ navigator.onLine   // → true
 - Niveau : 2
 - Profils : web
 - Voir aussi : pwa-quotas-et-eviction
+- Mots-clés : service worker, Cache Storage, IndexedDB
 - Définition : Dans un service worker, Cache Storage (`caches`) et IndexedDB sont disponibles ; `localStorage` et `sessionStorage` n'existent pas.
 - Contexte : `localStorage` est synchrone, réservé aux pages, limité à quelques Mo de chaînes. Cache Storage range des paires `Request` → `Response` (fichiers, JSON) et existe aussi côté page ; IndexedDB stocke des objets structurés, indexés, depuis la page comme depuis le SW. L'app range sa progression dans `localStorage` : lisible par l'app, pas par `sw.js`. Un SW qui en a besoin passe par IndexedDB (`idb-keyval`) ou un `postMessage` de la page.
 - Usage : ✅ réponses HTTP : Cache Storage ; données partagées avec le SW ou volumineuses : IndexedDB · ❌ `localStorage` pour ce que le SW doit lire, ou pour des Mo de données.
@@ -521,6 +536,7 @@ typeof localStorage  // → 'undefined'
 - Niveau : 2
 - Profils : web
 - Voir aussi : pwa-status-bar-style-installation
+- Mots-clés : viewport
 - Définition : `env(safe-area-inset-*)` donne la marge à laisser autour de l'encoche, de la Dynamic Island et de la barre d'accueil de l'iPhone.
 - Contexte : Ces valeurs restent à 0 tant que la page n'occupe pas tout l'écran : il faut `viewport-fit=cover` dans la balise `viewport` (doc WebKit). L'app s'en sert pour son en-tête (`env(safe-area-inset-top) + 0.75rem`) et ses onglets du bas. `max()` garantit une marge minimale sur un écran sans encoche. Valeurs à mesurer sur l'appareil : elles changent avec le modèle, l'orientation et le `status-bar-style`.
 - Usage : ✅ `viewport-fit=cover` + `env()` dans les paddings des barres fixes · ❌ marges en dur (`44px`) copiées d'un modèle d'iPhone.
@@ -553,6 +569,7 @@ header {
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : pwa-networkfirst-catalogue
+- Mots-clés : Workbox, service worker, vite-plugin-pwa
 - Source : revision-pwa · pwa-revision
 - Définition : Une fonction `urlPattern` de `runtimeCaching` est recopiée en texte dans `sw.js`, telle qu'écrite, sans ses imports.
 - Contexte : `generateSW` sérialise la configuration avec le code source de la fonction. Dans `sw.js`, `CATALOG_KEY` importé de `catalog.ts` n'existe pas : la fonction lève `ReferenceError` à chaque requête testée, la route ne correspond jamais, le catalogue n'est jamais mis en cache. Le build passe, l'app marche en ligne : le défaut n'apparaît qu'hors ligne. Relire le `sw.js` construit.
@@ -594,6 +611,7 @@ urlPattern: ({ url }) =>
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : pwa-service-worker-cycle-de-vie
+- Mots-clés : service worker, précache, vite-plugin-pwa
 - Source : revision-pwa · pwa-revision
 - Définition : À la première visite, les requêtes parties avant l'installation du service worker ne passent pas par lui : rien n'est mis en cache.
 - Contexte : `registerSW.js` enregistre `sw.js` à l'événement `load` ; l'app a déjà lancé `fetch('/content/catalog.json')` au montage. Le service worker installe le précache, puis `clientsClaim()` lui fait contrôler la page, trop tard pour cette requête : le cache `catalogue` reste vide (mesuré). Hors ligne avant une 2e ouverture en ligne, l'app n'a pas de catalogue.
@@ -627,6 +645,7 @@ await caches.keys()
 - Profils : web, expert
 - Prérequis : pwa-mise-a-jour-sw-en-attente
 - Voir aussi : AWS/cloudfront-cache-control-ttl
+- Mots-clés : service worker, CDN, Cache-Control, Workbox
 - Définition : Le navigateur retélécharge `sw.js` à chaque navigation dans la portée et à chaque `update()`, puis l'installe si un seul octet a changé.
 - Contexte : Pour ce contrôle, il contourne par défaut son propre cache HTTP (`updateViaCache: 'imports'`) : mesuré, un `sw.js` servi en `max-age=3600` puis modifié est vu par `update()`. Un CDN qui garde l'ancienne copie masque en revanche le changement : d'où `no-cache` sur `sw.js` dans CloudFront. Avec Workbox, tout fichier précaché modifié change le manifest de `sw.js`. Une app iPhone laissée ouverte ne navigue pas : rien n'est vérifié.
 - Usage : ✅ `r.update()` au retour au premier plan, pour une app installée rarement fermée · ❌ un `setInterval` serré sur `update()` : une requête de plus toutes les minutes, sur batterie.
@@ -664,6 +683,7 @@ await r.update()
 - Type : concept
 - Niveau : 3
 - Profils : web
+- Mots-clés : service worker, VAPID, Lambda
 - Définition : Le push web combine Push API (le serveur réveille le service worker) et Notifications API (le service worker affiche le message).
 - Contexte : La page s'abonne avec `pushManager.subscribe` et la clé VAPID publique ; le backend (une Lambda) signe avec la clé privée et poste vers l'`endpoint` reçu (FCM, Apple…). `userVisibleOnly: true` est obligatoire : chaque `push` affiche une notification, pas de push silencieux. Sur iOS 16.4 et plus, la permission ne se demande qu'après un geste de l'utilisateur (doc WebKit).
 - Usage : ✅ rappel de révision quotidien envoyé par une Lambda planifiée · ❌ demander la permission au chargement : refusée ou ignorée, et impossible à redemander depuis l'app.
@@ -711,6 +731,7 @@ bouton.onclick = async () => {
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : pwa-strategies-workbox-choisir
+- Mots-clés : CORS, CDN, Workbox
 - Définition : Un `fetch` en `mode: 'no-cors'` vers une autre origine renvoie une réponse opaque : `status` 0, corps et en-têtes illisibles.
 - Contexte : Une `<img>` ou un `<script>` d'un CDN sans CORS produit ce type de réponse. `NetworkFirst` et `StaleWhileRevalidate` les mettent en cache (plugin `cacheOkAndOpaque`) ; `CacheFirst` ne garde que les `200` (source de workbox-strategies 7.4). Chrome compte en outre chaque réponse opaque pour plusieurs Mo de quota (doc Chrome) : quelques centaines d'images tierces suffisent à gonfler l'usage.
 - Usage : ✅ ressources tierces servies avec CORS (`crossorigin`), ou `cacheableResponse: { statuses: [0, 200] }` en connaissance de cause · ❌ mettre en cache des réponses opaques sans `expiration`.
@@ -751,6 +772,7 @@ options: {
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : pwa-stockage-vu-du-service-worker
+- Mots-clés : ITP, Cache Storage, IndexedDB, origine
 - Définition : `navigator.storage.estimate()` donne l'espace utilisé et le quota de l'origine ; `navigator.storage.persist()` demande que ses données ne soient pas évincées.
 - Contexte : Le stockage est « best effort » : sous pression disque, le navigateur efface une origine entière (caches, IndexedDB, `localStorage`). Safari efface en plus le stockage écrit par script d'un site sans visite depuis 7 jours ; une app ajoutée à l'écran d'accueil en est exemptée et garde son stockage, séparé de celui de Safari (blog WebKit, non mesuré). Le quota dépend du disque : environ 10 Go mesurés dans Chromium.
 - Usage : ✅ `estimate()` pour surveiller l'usage des caches, `persist()` pour une progression à ne pas perdre · ❌ `localStorage` comme unique copie de données importantes : prévoir une sauvegarde serveur.
@@ -778,6 +800,7 @@ await navigator.storage
 - Type : piège
 - Niveau : 3
 - Profils : web, expert
+- Mots-clés : PWA, safe area, dvh
 - Source : revision-pwa · pwa-revision
 - Définition : `apple-mobile-web-app-status-bar-style` règle la barre d'état d'une PWA installée sur iPhone : `default`, `black` ou `black-translucent`.
 - Contexte : `black-translucent` fait passer la page sous la barre d'état ; mesuré sur un iPhone à Dynamic Island, iOS coupe alors le bas de la fenêtre (873 sur 932 pt) et aucune hauteur CSS (`100dvh`, `inset: 0`, `screen.height`) ne peint cette bande. `black` fait commencer la page sous la barre et la laisse aller jusqu'en bas. Mesurer sur l'appareil (`innerHeight`, `env(safe-area-inset-*)`) avant de corriger.

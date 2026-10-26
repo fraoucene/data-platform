@@ -18,6 +18,7 @@ Python · Texte et nombres : nombres, texte (format spec v3 de revision-pwa).
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : validation-annotated-type
+- Mots-clés : SIREN, CSV, JSON
 - Définition : Un identifiant (SIREN, code postal) se garde en `str` : un `int` perd les zéros de tête et autorise des calculs absurdes.
 - Contexte : Un SIREN qui commence par 0 perd ce chiffre en `int` ; `zfill(9)` le rétablit. CSV et JSON ne décident rien : le type se fixe à la lecture, et le garder en `str` évite aussi qu'un outil le transforme en float (`1.2345678e7`). Pour contrôler le format, `isdigit()` plus la longueur suffisent.
 - Usage : ✅ SIREN, SIRET, code postal, numéro d'annonce · ❌ vraie quantité sur laquelle on calcule (montant, nombre d'annonces) : `int`, `Decimal`.
@@ -54,6 +55,7 @@ siren_ok("48360932A")   # → False
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : json-split-ou-splitlines
+- Mots-clés : CSV
 - Définition : `split()` sans argument coupe sur tout blanc et ignore les blancs en trop ; `split(" ")` coupe sur chaque espace.
 - Contexte : Sans argument, `split` retire aussi les blancs de début et de fin et traite tabulations et retours à la ligne comme des espaces. Avec un séparateur explicite, rien n'est fusionné. `maxsplit` limite le nombre de coupes. Pour recoller, `join` est une méthode du séparateur, pas de la liste : `" ".join(l)` (≈ `l.join(" ")` en JS).
 - Usage : ✅ `split()` pour normaliser des libellés saisis à la main, `split(";", 1)` pour séparer un préfixe · ❌ découper un CSV : le module `csv` (guillemets).
@@ -89,6 +91,7 @@ ville             # → "Paris 1er"
 - Niveau : 2
 - Profils : data
 - Voir aussi : texte-nombres-unicode-nfc
+- Mots-clés : ASCII, Unicode, normalisation Unicode
 - Définition : `casefold` met en minuscules de façon agressive pour comparer sans tenir compte de la casse ; plus fiable que `lower` hors ASCII.
 - Contexte : `lower` suffit en ASCII, mais certaines lettres ont une forme de comparaison différente de leur minuscule (`ß` → `ss`). `casefold` sert à comparer ou indexer, pas à afficher. Il ne retire pas les accents : « Créteil » et « CRETEIL » restent différents, il faut en plus une normalisation Unicode. Équivalent JS le plus proche : `localeCompare` avec `sensitivity`.
 - Usage : ✅ dédoublonner des villes ou des raisons sociales, chercher sans casse · ❌ texte à afficher : `lower` ou `title` ; ignorer les accents : `unicodedata` en plus.
@@ -121,6 +124,7 @@ villes = ["Lyon", "LYON", "lyon",
 - Niveau : 2
 - Profils : data, web
 - Voir aussi : json-parse-float-decimal, texte-nombres-round-au-pair
+- Mots-clés : float, sérialisation
 - Définition : `Decimal` représente un nombre décimal exact, indispensable pour les montants là où `float` cumule des erreurs binaires.
 - Contexte : `Decimal` calcule en base 10 avec une précision réglable (28 chiffres par défaut). `quantize(Decimal("0.01"), ROUND_HALF_UP)` arrondit au centime de façon commerciale. Mélanger `Decimal` et `float` dans une opération lève `TypeError`, et `json` ne sérialise pas `Decimal` sans `default`. JS n'a rien de natif : on y passe par des centimes entiers ou une bibliothèque.
 - Usage : ✅ capital social, montants de créances, tout calcul comptable · ❌ mesures physiques ou statistiques : `float`, plus rapide, l'erreur y est acceptable.
@@ -158,6 +162,7 @@ m + 0.1     # ❌ TypeError
 - Niveau : 2
 - Profils : data
 - Voir aussi : texte-nombres-decimal-montants
+- Mots-clés : float, IEEE 754
 - Définition : `round` arrondit au pair le plus proche sur les cas `.5` (arrondi bancaire), pas toujours vers le haut comme `Math.round`.
 - Contexte : L'arrondi au pair évite le biais vers le haut quand on arrondit de grandes séries ; c'est le mode par défaut de la norme IEEE 754. `round(x)` renvoie un `int`, `round(x, 2)` un `float`. Avec des décimales, les cas « .5 » sont en plus faussés par la représentation binaire : le float stocké n'est pas exactement la valeur écrite.
 - Usage : ✅ arrondir une moyenne ou un indicateur affiché · ❌ montant facturé ou déclaré : `Decimal.quantize` avec `ROUND_HALF_UP`.
@@ -188,6 +193,7 @@ round(1234, -2)        # → 1200
 - Type : piège
 - Niveau : 3
 - Profils : data, expert
+- Mots-clés : point de code, Unicode, ingestion
 - Définition : `unicodedata.normalize("NFC", s)` unifie les formes d'un même caractère accentué, pour comparer ou dédoublonner des libellés.
 - Contexte : Un « é » peut être un seul point de code (U+00E9, forme NFC) ou « e » suivi d'un accent combinant (U+0301, forme NFD), selon la source : macOS, copier-coller depuis un PDF. Visuellement identiques, ils diffèrent pour `==`, `in`, les clés de dict et les jointures. Normaliser en NFC à l'ingestion ; NFD puis retrait des combinants supprime les accents.
 - Usage : ✅ libellés de tribunaux, communes, raisons sociales venant de plusieurs sources · ❌ identifiants purement ASCII (SIREN, codes) : inutile.

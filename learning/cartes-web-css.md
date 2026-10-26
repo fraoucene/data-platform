@@ -17,6 +17,7 @@ Web · CSS : grid (format spec v3 de revision-pwa).
 - Type : piège
 - Niveau : 2
 - Profils : web
+- Mots-clés : CSS Grid, unité fr, piste de grille, dvh
 - Source : revision-pwa · pwa-revision
 - Définition : `minmax(0, 1fr)` donne à une piste de grille l'espace restant, sans jamais grandir avec un contenu plus grand qu'elle.
 - Contexte : `1fr` vaut `minmax(auto, 1fr)` : son minimum est la taille du contenu. La rangée qui porte une pile de cartes de 2 000 px grandit donc à 2 000 px, le pied sort de l'écran et rien ne défile. Avec `0` pour minimum, la rangée garde l'espace restant et l'enfant (`overflow-y: auto`) défile. Même piège en colonnes : un `pre` large élargit tout l'écran.

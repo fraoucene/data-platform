@@ -17,6 +17,7 @@ Python · Décorateurs : bases, stdlib, motifs, pièges, cache (format spec v3 d
 - Type : concept
 - Niveau : 1
 - Profils : débutant
+- Mots-clés : fonction d'ordre supérieur, retry
 - Définition : Un décorateur est une fonction qui reçoit une fonction et en renvoie une nouvelle, enrichie (≈ fonction d'ordre supérieur en TS).
 - Contexte : En Python, une fonction est un objet comme un autre : on la passe en argument, on la renvoie, on la réaffecte. Le décorateur définit une fonction interne qui appelle l'originale et ajoute un comportement autour (log, mesure, contrôle). Il renvoie la fonction interne **sans l'appeler** : c'est elle qui remplace l'originale, et c'est elle qui tournera à chaque appel.
 - Usage : ✅ ajouter le même comportement à plusieurs fonctions (log, retry, chrono) sans toucher à leur code · ❌ comportement propre à une seule fonction : l'écrire directement dedans.
@@ -65,6 +66,7 @@ fort()         # → "BONJOUR"
 - Profils : débutant
 - Prérequis : decorateurs-fonction-qui-renvoie
 - Voir aussi : decorateurs-wraps-identite
+- Mots-clés : décorateur, functools.wraps
 - Définition : `@deco` au-dessus d'un `def f` équivaut à écrire `f = deco(f)` juste après la définition.
 - Contexte : Le `@` n'ajoute aucune magie : Python définit la fonction, la passe au décorateur, puis lie le nom `f` à **ce que le décorateur renvoie**. Si le décorateur renvoie autre chose qu'une fonction, `f` devient cette autre chose. `f` prend aussi le nom de la fonction interne (`nouvelle`) : `functools.wraps` recopie le nom d'origine. Contrairement aux décorateurs TS (classes et membres seulement), ceux de Python s'appliquent aux fonctions libres.
 - Usage : ✅ appliquer un décorateur à la définition, lisible en tête de fonction · ❌ besoin de garder aussi la version non décorée : appeler `deco(f)` à la main sous un autre nom.
@@ -110,6 +112,7 @@ saluer.__name__  # → "nouvelle"  (voir @wraps)
 - Niveau : 1
 - Profils : débutant
 - Prérequis : decorateurs-arobase-raccourci
+- Mots-clés : décorateur, import Python
 - Définition : Le corps du décorateur s'exécute **une fois**, à la définition de la fonction (souvent à l'import du module), pas à chaque appel.
 - Contexte : Deux moments à distinguer : le code du décorateur lui-même tourne quand Python lit le `def` ; le code de la fonction interne tourne à chaque appel. Un décorateur qui enregistre la fonction dans un registre (routes Flask, tâches, handlers) agit donc dès l'import, avant tout appel. Un `print` dans le décorateur s'affiche une seule fois.
 - Usage : ✅ enregistrer une fonction dans un registre (routes, handlers par type d'annonce) · ❌ travail à refaire à chaque appel : le mettre dans la fonction interne.
@@ -157,6 +160,7 @@ HANDLERS["radiation"]("483609327")
 - Profils : débutant
 - Prérequis : decorateurs-fonction-qui-renvoie
 - Voir aussi : listes-deballer-etoile, dictionnaires-deballer-double-etoile
+- Mots-clés : décorateur, *args, **kwargs
 - Définition : Un décorateur générique définit une fonction interne `(*args, **kwargs)` qui transmet tous les arguments à `f` et renvoie son résultat.
 - Contexte : La fonction interne **remplace** l'originale : elle doit donc accepter n'importe quels arguments et les retransmettre tels quels, `*args` pour les positionnels, `**kwargs` pour les nommés (≈ `(...args) => f(...args)` en TS). Elle doit aussi renvoyer le résultat de `f` : oublier ce `return` est le bug classique, la fonction décorée renvoie alors `None`.
 - Usage : ✅ tout décorateur réutilisable (chrono, log, retry sur un appel BODACC) · ❌ décorateur lié à une signature précise : l'écrire avec les vrais paramètres pour garder l'autocomplétion.
@@ -209,6 +213,7 @@ doubler(4)     # → None
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : decorateurs-args-kwargs
+- Mots-clés : décorateur, argument nommé, Pydantic
 - Définition : La fonction interne peut modifier les arguments avant d'appeler `f`, ou son résultat avant de le renvoyer : nettoyage, conversion, valeur par défaut.
 - Contexte : `interne` reçoit l'appel en premier : elle voit `args` (tuple) et `kwargs` (dict) bruts et décide de ce que `f` reçoit vraiment. Piège : un argument peut arriver par position **ou** par nom ; lire `args[0]` suppose un appel positionnel. Pour un paramètre précis, le nommer dans la signature de `interne` (`def interne(siren, *a, **kw)`) couvre les deux formes.
 - Usage : ✅ normaliser une entrée commune à plusieurs fonctions (SIREN sans espaces, date en `str`) · ❌ conversion propre à une seule fonction : l'écrire dans la fonction ; validation riche : pydantic.
@@ -254,6 +259,7 @@ sirens()   # → {"483609327"}
 - Niveau : 1
 - Profils : data, ops
 - Prérequis : decorateurs-args-kwargs, exceptions-try-except-type
+- Mots-clés : décorateur, exception chaînée, Lambda
 - Définition : La fonction interne entoure l'appel de `f` d'un `try/except` pour journaliser, convertir ou relancer ses exceptions.
 - Contexte : C'est le décorateur le plus courant après le chrono : `except` attrape ce que `f` lève, puis soit `raise` (relance la même exception, trace intacte), soit `raise MonErreur(...) from e` (convertit en gardant la cause), soit renvoie une valeur de repli. Le piège : un `except` qui ne relance pas avale l'erreur en silence, la fonction décorée renvoie alors `None`.
 - Usage : ✅ traduire les erreurs d'une couche (`KeyError` → `BodaccError`), journaliser chaque échec d'une Lambda · ❌ attraper `Exception` sans relancer : l'erreur disparaît des logs et l'appelant continue avec `None`.
@@ -313,6 +319,7 @@ log    # → ["ZeroDivisionError"]
 - Profils : débutant, data
 - Prérequis : decorateurs-arobase-raccourci
 - Voir aussi : decorateurs-cache-resultat-partage, decorateurs-lru-cache-maxsize
+- Mots-clés : décorateur, hashable, fonction pure, effet de bord
 - Définition : `functools.cache` mémorise le résultat pour chaque combinaison d'arguments : le second appel identique ne réexécute pas la fonction.
 - Contexte : Le cache est un dict dont la clé est faite des arguments : ils doivent donc être hachables (`str`, nombres, tuples). Il n'est jamais vidé et grossit sans limite ; `lru_cache(maxsize=…)` garde seulement les N derniers. Il ne convient qu'aux fonctions pures : même entrée, même sortie, sans effet de bord attendu à chaque appel. `f.cache_clear()` le vide.
 - Usage : ✅ lookup stable et coûteux (libellé d'un code tribunal, référentiel) · ❌ résultat qui change dans le temps (appel API du jour) ou arguments non hachables (listes, dicts).
@@ -359,6 +366,7 @@ tribunal.cache_info().hits  # → 0
 - Profils : data, ops
 - Prérequis : decorateurs-cache-memoriser
 - Voir aussi : tests-fixture-cache-clear
+- Mots-clés : singleton, client S3, conteneur chaud
 - Source : data-platform · S1-07
 - Définition : `@cache` sur une fonction sans paramètre l'exécute au premier appel, puis rend toujours le même objet : un singleton créé à la demande.
 - Contexte : La clé du cache est le tuple vide : une seule entrée possible. C'est le motif du client S3 de la Lambda : créé au premier `s3_client()`, réutilisé par les invocations suivantes du conteneur, et remis à zéro en test par `s3_client.cache_clear()`. Plus lisible qu'un `global _client` avec un `if _client is None`.
@@ -403,6 +411,7 @@ client() is client()  # → True
 - Profils : débutant
 - Prérequis : decorateurs-cache-memoriser
 - Voir aussi : decorateurs-a-arguments
+- Mots-clés : décorateur, fabrique, import Python
 - Source : data-platform · S1-07
 - Définition : `@cache` s'écrit sans parenthèses : c'est déjà le décorateur ; `@lru_cache` accepte les deux formes, `@lru_cache()` et `@lru_cache(maxsize=…)`.
 - Contexte : `cache(f)` attend la fonction à décorer ; `@cache()` l'appelle sans argument avant même de voir la fonction, d'où une `TypeError` à la définition, donc à l'import du module. `lru_cache` est une fabrique : appelée avec des options, elle renvoie le décorateur ; depuis 3.8, posée seule, elle décore directement avec `maxsize=128`.
@@ -436,6 +445,7 @@ a.cache_info().maxsize  # → None
 - Profils : débutant, web
 - Prérequis : decorateurs-args-kwargs
 - Voir aussi : decorateurs-wrapped-sans-cache
+- Mots-clés : décorateur, docstring, CloudWatch
 - Définition : `functools.wraps(f)` recopie sur la fonction interne le nom, la docstring et `__wrapped__` de `f`, pour que logs et outils la reconnaissent.
 - Contexte : Sans `@wraps`, la fonction décorée s'appelle `interne` partout : traces d'erreur, logs CloudWatch, `help()`, rapports pytest. `wraps` est lui-même un décorateur, appliqué à la fonction interne. Il ajoute `__wrapped__`, qui pointe vers l'originale : pratique pour tester la fonction sans son décorateur. Réflexe : tout décorateur maison commence par `@wraps(f)`.
 - Usage : ✅ systématiquement, dans tout décorateur qui renvoie une fonction interne · ❌ décorateur qui renvoie `f` elle-même (registre) : rien à recopier.
@@ -489,6 +499,7 @@ saluer.__wrapped__()  # → "bonjour"
 - Niveau : 2
 - Profils : web
 - Prérequis : decorateurs-arobase-raccourci
+- Mots-clés : décorateur, @cache
 - Définition : Avec plusieurs décorateurs, le plus proche du `def` s'applique en premier : `@a @b def f` équivaut à `f = a(b(f))`.
 - Contexte : L'empilement se lit de bas en haut à la définition, mais l'exécution se lit de haut en bas : le décorateur du haut enveloppe tout, son code « avant » tourne en premier et son code « après » en dernier. L'ordre compte dès que les comportements interagissent : un cache placé au-dessus d'un chrono ne mesure que les vrais calculs, placé dessous il mesure aussi les hits.
 - Usage : ✅ combiner des comportements indépendants (log + retry, validator + classmethod) · ❌ pile de plus de 3 décorateurs difficile à suivre : un décorateur unique qui fait tout.
@@ -536,6 +547,7 @@ t()       # → "<b><i>BODACC</i></b>"
 - Profils : data
 - Prérequis : decorateurs-fonction-qui-renvoie
 - Voir aussi : decorateurs-classe-call
+- Mots-clés : décorateur, fermeture, thread
 - Définition : Un décorateur garde un état entre les appels dans un attribut de la fonction interne, ou dans une variable de la fermeture réaffectée avec `nonlocal`.
 - Contexte : La fonction interne voit les variables de la fonction englobante (fermeture), mais dès qu'elle **réaffecte** un nom (`n += 1`), Python le considère local à `interne` : lire avant d'écrire lève `UnboundLocalError`. `nonlocal n` dit « c'est le `n` du niveau au-dessus ». Muter un objet (`liste.append`, `interne.appels += 1`) n'en a pas besoin, car le nom n'est pas réaffecté.
 - Usage : ✅ compteur d'appels, quota, dernier résultat, horodatage du dernier appel · ❌ état partagé entre threads : ajouter un verrou ; état complexe : décorateur en classe (`__call__`).
@@ -591,6 +603,7 @@ appel()        # ❌ RuntimeError
 - Niveau : 2
 - Profils : web
 - Prérequis : decorateurs-args-kwargs
+- Mots-clés : décorateur, *args
 - Définition : Sur une méthode, la fonction interne reçoit l'instance comme premier argument positionnel : `self` arrive dans `args[0]`.
 - Contexte : Le décorateur s'applique à la fonction brute, au moment du `class` ; l'objet n'existe pas encore. À l'appel `c.get(x)`, Python lie la fonction décorée à `c` et appelle `interne(c, x)`. Un décorateur générique `(*args, **kwargs)` fonctionne donc tel quel. Pour lire l'état de l'objet (client fermé, quota), écrire `def interne(self, *a, **kw)`.
 - Usage : ✅ vérifier un état de l'instance avant chaque méthode (client ouvert, authentifié), journaliser avec le nom de la classe · ❌ signature figée sans `self` ni `*args` : la méthode reçoit un argument de trop.
@@ -645,6 +658,7 @@ c.get("483609327")   # ❌ RuntimeError
 - Profils : data
 - Prérequis : decorateurs-arobase-raccourci
 - Voir aussi : classes-dataclass-order
+- Mots-clés : décorateur, méthode spéciale, dataclass
 - Définition : Un décorateur de classe reçoit la classe et renvoie une classe ; `functools.total_ordering` y ajoute `<=`, `>` et `>=` à partir de `__eq__` et `__lt__`.
 - Contexte : Le principe est le même que pour une fonction : `@deco class C` équivaut à `C = deco(C)`. Le décorateur peut modifier la classe (ajouter des méthodes) ou seulement l'enregistrer, puis la renvoie. `@dataclass` est le décorateur de classe le plus courant. Sans `total_ordering`, définir `__lt__` ne donne pas `>=` : Python lève `TypeError`.
 - Usage : ✅ objets métier triables et comparables (annonces par numéro) ; registre de classes (une classe par source) · ❌ dataclass : `@dataclass(order=True)` génère déjà toutes les comparaisons.
@@ -692,6 +706,7 @@ SOURCES["Bodacc"] is Bodacc  # → True
 - Niveau : 2
 - Profils : data
 - Prérequis : decorateurs-cache-memoriser
+- Mots-clés : @cache, conteneur chaud, fuite mémoire
 - Définition : `functools.lru_cache(maxsize=n)` mémorise comme `@cache` mais garde seulement les `n` résultats les plus récemment utilisés.
 - Contexte : LRU = least recently used : quand le cache est plein, l'entrée la moins récemment lue est évincée, et un nouvel appel avec ces arguments recalcule. `@cache` équivaut à `lru_cache(maxsize=None)` : jamais vidé, il grossit avec chaque argument distinct. Dans une Lambda dont le conteneur vit des heures, un cache sans borne sur des clés variées (un SIREN par appel) devient une fuite mémoire.
 - Usage : ✅ clés nombreuses ou imprévisibles (SIREN, URL) dans un processus qui dure · ❌ petit référentiel fixe (codes tribunaux) : `@cache`, plus simple ; données qui changent : pas de cache, ou un TTL.
@@ -737,6 +752,7 @@ appels  # → ["7501", "6901", "1301", "7501"]
 - Niveau : 2
 - Profils : data, expert
 - Prérequis : decorateurs-cache-memoriser, collections-alias-pas-de-copie
+- Mots-clés : décorateur, référence, immuable
 - Définition : `@cache` renvoie **le même objet** à chaque appel identique : muter un résultat mis en cache modifie le cache pour tous les appelants.
 - Contexte : Le cache stocke une référence, pas une copie (comme un `Map` JS de tableaux). Un appelant qui fait `append` sur la liste reçue change ce que recevront les appels suivants, sans erreur. Solutions : renvoyer un type immuable (`tuple`, `frozenset`), ou copier côté appelant. Autre détail de clé : `f("x")` et `f(jour="x")` sont deux entrées distinctes.
 - Usage : ✅ fonctions en cache qui renvoient `tuple`, `frozenset`, `str` ou un objet figé (`frozen=True`) · ❌ renvoyer une `list` ou un `dict` depuis une fonction en cache : un appelant finira par le modifier.
@@ -780,6 +796,7 @@ a.append("552100554")  # ❌ AttributeError
 - Profils : data, ops
 - Prérequis : decorateurs-cache-memoriser
 - Voir aussi : dates-now-none-injectable
+- Mots-clés : conteneur chaud, variable d'environnement
 - Source : data-platform · S1-07
 - Définition : Une fonction en cache qui lit l'horloge ou l'environnement rend la valeur du premier appel, tant que le processus vit.
 - Contexte : Le cache ne regarde que les arguments : ce que la fonction lit ailleurs (`date.today()`, `os.environ`, un fichier) ne fait pas partie de la clé. Dans une Lambda, le conteneur chaud vit des heures, parfois plus d'un jour : un `@cache` sur « hier » finit par viser un jour déjà traité. Passer la valeur variable en argument, ou ne pas mettre en cache.
@@ -824,6 +841,7 @@ veille(date(2026, 10, 25))
 - Profils : expert
 - Prérequis : decorateurs-cache-memoriser
 - Voir aussi : collections-hashable
+- Mots-clés : @cache, hash, sérialisation
 - Source : data-platform · S1-07
 - Définition : La clé du cache compare les arguments par égalité : `f(1, "EUR")`, `f(1.0, "EUR")` et `f(True, "EUR")` partagent une entrée ; `typed=True` les sépare.
 - Contexte : En Python, `1 == 1.0 == True` et leurs hash sont égaux : un dict les confond, le cache aussi. Le premier appel décide du résultat gardé : `f(1.0, …)` après `f(1, …)` rend ce qui a été calculé pour l'entier. `lru_cache(typed=True)` met le type dans la clé (`@cache` n'a pas l'option).
@@ -864,6 +882,7 @@ fmt.cache_info().currsize  # → 2
 - Type : concept
 - Niveau : 2
 - Profils : data, ops
+- Mots-clés : client S3, conteneur chaud
 - Source : data-platform · S1-07
 - Définition : Si la fonction lève, rien n'est mis en cache : l'appel suivant réexécute le corps, jusqu'au premier succès.
 - Contexte : Seule une valeur renvoyée entre dans le cache. Pour le client S3 de la Lambda, un `ProfileNotFound` ou une erreur réseau à la création ne reste pas collé au conteneur : l'invocation suivante retente. À l'inverse, une fonction qui renvoie `None` sur erreur met ce `None` en cache pour toute la vie du processus.
@@ -909,6 +928,7 @@ client()  # → None  (en cache)
 - Niveau : 2
 - Profils : data
 - Prérequis : decorateurs-cache-memoriser, decorateurs-wraps-identite
+- Mots-clés : décorateur, functools.wraps, signature de fonction
 - Source : data-platform · S1-07
 - Définition : `f.__wrapped__` donne la fonction d'origine, sous le décorateur : l'appeler calcule à chaque fois, sans lire ni remplir le cache.
 - Contexte : `cache` et `lru_cache` posent `__wrapped__` comme `functools.wraps`. Utile en test pour vérifier le calcul sans état partagé, ou pour mesurer le coût réel. `inspect.signature(f)` suit `__wrapped__` : la signature affichée est celle de la fonction d'origine.
@@ -941,6 +961,7 @@ brute("2026-10-20") is sirens("2026-10-20")
 - Profils : data, ops
 - Prérequis : decorateurs-cache-memoriser
 - Voir aussi : classes-cached-property
+- Mots-clés : @cached_property, import Python, fixture pytest
 - Source : data-platform · S1-07
 - Définition : `@cache` mémorise par arguments au niveau de la fonction, `@cached_property` par instance, une variable de module une seule valeur calculée à l'import.
 - Contexte : La variable de module est la plus simple mais calcule à l'import, avant toute configuration de test. `@cache` sans argument reporte le calcul au premier appel et se réinitialise (`cache_clear`). `@cached_property` lie la valeur à un objet : elle disparaît avec lui, pratique pour un client par instance de service. Les trois sont partagés par toutes les invocations d'un conteneur Lambda chaud.
@@ -977,6 +998,7 @@ journal  # → ["module", "cache", "propriété"]
 - Profils : web, data
 - Prérequis : decorateurs-args-kwargs
 - Voir aussi : decorateurs-optionnel
+- Mots-clés : décorateur, fabrique, fermeture, retry
 - Définition : `@deco(n)` demande trois niveaux : `deco(n)` renvoie le vrai décorateur, qui renvoie la fonction interne.
 - Contexte : `@repeter(3)` s'évalue en deux temps : d'abord l'appel `repeter(3)`, qui renvoie un décorateur ; puis ce décorateur reçoit la fonction. D'où une fabrique de décorateurs : `repeter(n)` → `deco(f)` → `interne(*a, **kw)`, chaque niveau voyant les variables du précédent par fermeture. C'est la forme de `@retry(tentatives=3)`, `@field_validator("siren")` ou `@pytest.mark.parametrize(...)`.
 - Usage : ✅ décorateur configurable (nombre de retries, délai, nom de logger) · ❌ aucun paramètre : décorateur simple à deux niveaux, plus lisible.
@@ -1031,6 +1053,7 @@ len(essais)    # → 3
 - Type : concept
 - Niveau : 3
 - Profils : expert
+- Mots-clés : décorateur, annotation de type, MRO
 - Définition : `functools.singledispatch` choisit l'implémentation d'après le type du premier argument, chaque variante ajoutée par `@f.register` (≈ surcharges TS, mais à l'exécution).
 - Contexte : La fonction de base sert de repli pour les types non enregistrés. `@f.register` lit l'annotation du premier paramètre pour savoir quel type la variante gère ; on nomme souvent les variantes `_`, seul le nom de base sert à l'appel. Le choix suit l'héritage (MRO) : une variante `int` sert aussi à ses sous-classes. Pour les méthodes, c'est `singledispatchmethod`.
 - Usage : ✅ même opération sur plusieurs types d'entrée (date en `str`, `date` ou `datetime`) · ❌ deux ou trois cas : un `if isinstance` est plus lisible.
@@ -1080,6 +1103,7 @@ jour(3.5)      # ❌ TypeError
 - Niveau : 3
 - Profils : expert
 - Prérequis : decorateurs-a-arguments
+- Mots-clés : décorateur, argument nommé, retry
 - Définition : Un décorateur accepte les deux écritures `@retry` et `@retry(n=5)` en prenant `f=None` en premier paramètre et les options en mots-clés seuls.
 - Contexte : `@retry` appelle `retry(f)` ; `@retry(n=5)` appelle `retry(n=5)`, sans fonction, qui doit alors renvoyer le vrai décorateur. Le test `if f is None` choisit entre les deux. Le `*` rend `n` nommé seulement, mais rien n'empêche un appel positionnel : `retry(5)` prend `5` pour la fonction. C'est la forme de `@dataclass` et `@dataclass(frozen=True)`, ou `@pytest.fixture` et `@pytest.fixture(scope=…)`.
 - Usage : ✅ décorateur de bibliothèque avec des réglages par défaut raisonnables · ❌ code applicatif : toujours `@retry()` avec parenthèses, un seul chemin à lire.
@@ -1115,6 +1139,7 @@ def b(): return 2
 - Profils : expert
 - Prérequis : decorateurs-cache-memoriser, decorateurs-methode-self
 - Voir aussi : classes-cached-property
+- Mots-clés : ramasse-miettes, hashable, Ruff
 - Définition : Sur une méthode, `@cache` met `self` dans la clé : le cache, partagé par la classe, garde chaque instance en vie tant qu'il existe.
 - Contexte : Le cache vit sur la fonction, donc au niveau de la classe, pas de l'objet. Chaque instance qui appelle la méthode y laisse une entrée qui la référence : elle n'est jamais libérée par le ramasse-miettes, même après `del`. Il faut aussi que l'objet soit hachable. Ruff le signale (règle B019). Alternatives : `@cached_property` (par instance), un dict dans l'instance, ou une fonction de module en cache qui ne prend pas `self`.
 - Usage : ✅ fonction de module en cache appelée par la méthode, `@cached_property` pour une valeur par objet · ❌ `@cache` ou `@lru_cache` directement sur une méthode d'objets nombreux (un par annonce).
@@ -1168,6 +1193,7 @@ w() is None   # → True  (libérée)
 - Profils : expert
 - Prérequis : decorateurs-fonction-qui-renvoie
 - Voir aussi : decorateurs-etat-nonlocal
+- Mots-clés : décorateur, méthode spéciale, descripteur
 - Définition : Une classe sert de décorateur : `__init__` reçoit la fonction, `__call__` remplace l'appel ; l'état vit dans les attributs de l'objet.
 - Contexte : `@Compter` fait `ping = Compter(ping)` : `ping` devient une **instance**, appelable grâce à `__call__`. Pratique pour un état riche, mais deux pièges : l'objet n'a ni `__name__` ni docstring (`functools.update_wrapper(self, f)` les recopie), et sur une méthode `self` n'est pas transmis, car une instance n'est pas un descripteur comme une fonction : il faudrait implémenter `__get__`.
 - Usage : ✅ décorateur avec un état et des méthodes (stats, reset), sur des fonctions libres · ❌ décorateur de méthodes : une fonction décoratrice, qui gère `self` naturellement.
@@ -1219,6 +1245,7 @@ Client().get("483609327")  # ❌ TypeError
 - Profils : web, expert
 - Prérequis : decorateurs-args-kwargs
 - Voir aussi : http-asyncclient-await
+- Mots-clés : coroutine, await, boucle d'événements
 - Définition : Pour décorer une `async def`, la fonction interne doit être elle-même `async def` et faire `await f(...)`.
 - Contexte : Appeler une fonction async ne l'exécute pas : ça renvoie une coroutine, exécutée plus tard par la boucle. Une interne synchrone reçoit donc la coroutine, pas le résultat : son `try/except` n'attrape rien, son chrono mesure zéro. Avec `async def interne` et `await`, le code autour de l'appel tourne vraiment avant et après. `inspect.iscoroutinefunction(f)` permet de gérer les deux cas.
 - Usage : ✅ retry, log ou chrono autour d'appels `httpx.AsyncClient` · ❌ décorateur synchrone générique posé sur une `async def` : il ne voit jamais l'exception ni la durée.
@@ -1272,6 +1299,7 @@ asyncio.run(fetch())   # ❌ ValueError
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : decorateurs-cache-memoriser, generateurs-une-seule-passe
+- Mots-clés : générateur, itérateur
 - Source : data-platform · S1-07
 - Définition : Sur une fonction génératrice, `@cache` garde l'objet générateur renvoyé : le 2e appel rend le même générateur, déjà épuisé.
 - Contexte : Le cache mémorise la valeur de retour, et celle d'une fonction avec `yield` est un itérateur à usage unique. Le premier parcours consomme tout ; les suivants obtiennent `[]` sans erreur. Même piège qu'en JS avec un itérateur réutilisé. Mettre en cache le résultat matérialisé : un `tuple(...)` dans une fonction normale.
@@ -1312,6 +1340,7 @@ list(annonces("2026-10-20"))  # → ["A1", "A2"]
 - Niveau : 3
 - Profils : expert
 - Prérequis : decorateurs-arobase-raccourci, decorateurs-cache-memoriser
+- Mots-clés : récursion
 - Source : data-platform · S1-07
 - Définition : `rapide = cache(fib)` met en cache les appels à `rapide` seulement : les appels récursifs de `fib` à elle-même visent l'original, sans cache.
 - Contexte : Le corps de `fib` appelle le nom `fib`, résolu au moment de l'appel dans le module : tant que ce nom désigne l'original, chaque appel récursif recalcule. `@cache` au-dessus de `def fib` réaffecte le nom, et la récursion passe alors par le cache. Même règle pour tout décorateur appliqué à la main.
@@ -1353,6 +1382,7 @@ len(appels)  # → 11
 - Type : piège
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : thread, effet de bord, idempotent
 - Source : data-platform · S1-07
 - Définition : `@cache` protège son dict, pas le calcul : deux threads qui ratent le cache en même temps exécutent tous deux la fonction.
 - Contexte : Le verrou interne n'entoure que la lecture et l'écriture du cache, pas l'appel de la fonction (sinon un calcul long bloquerait tout). Deux créations de client en parallèle sont sans gravité ; un effet de bord (un fichier écrit, une ressource réservée) arrive deux fois. Lambda n'a qu'une invocation à la fois par environnement, mais un `ThreadPoolExecutor` dans le handler suffit à le provoquer.

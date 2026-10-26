@@ -75,6 +75,17 @@ Exercice 5 min : ordonner à la main `tranche` (prérequis `index`), `index`, `h
 - Résultat : `make up` (Lambda seule, `1 changed`) avant `make cards-publish` ; catalogue en ligne : 1 555 cartes, toutes v4, `AWS/api-sigv4-authorization` en tête ; commit `f3e7afe` (revision-pwa) poussé, sans le travail « splash » d'une autre session (exclu à la main, index vérifié par tsc, tests, lint et build).
 - Cartes : +14 Data engineering / Évolution de schéma (15), +14 Data engineering / DAG (14), +12 Web / DOM (13), +14 Web / Modules ES (14), source `revision-pwa · pwa-parcours` (publiées)
 
+### [ ] Étape 7 — Glossaire et mots-clés
+- À faire : c'est quoi : un dictionnaire des termes techniques, et sur chaque carte la liste du jargon qu'elle suppose connu. Pourquoi ici : un lecteur qui découvre bute sur OIDC, STS, partition, idempotent, décorateur… et la carte ne les explique pas. Objectif : chaque mot-clé d'une carte s'ouvre en un tap sur une définition simple.
+  1. Spec : `learning/glossaire-<domaine>.md` (`## Terme`, Définition ≤ 30 mots, Exemple, Alias, Carte) ; champ `- Mots-clés :` sur les cartes ; un terme défini une seule fois dans tout le catalogue (sans casse ni accents).
+  2. Parser `parse-glossaire.ts`, catalogue (`glossaire` dans `catalog.json`, mot-clé inconnu → avertissement), Lambda déployée avant la publication.
+  3. App : pastilles sous la définition, fiche en bas d'écran (définition, exemple, lien vers la carte) ; types de carte en clair (recette → Comment faire, choisir → Quel choix ?).
+  4. Contenu : 4 agents par domaine (glossaire du domaine + mots-clés des cartes), puis une passe finale seule sur les termes demandés d'un domaine à l'autre.
+  5. Skill `/cartes` : chaque génération remplit `Mots-clés` et définit les termes nouveaux dans le glossaire du domaine propriétaire.
+- Concept : vocabulaire contrôlé (un terme = une définition, des alias), propriétaire unique d'une donnée partagée.
+- Vérifier : `make cards` → 0 erreur, 0 mot-clé absent du glossaire ; sur l'iPhone : tap sur une pastille → définition
+- Erreur vue : `make up` attendu pour la seule Lambda a aussi appliqué un changement Cognito d'une autre session (renommage « Stack » des e-mails, déjà commité) : relire chaque ligne du plan avant d'appliquer.
+
 ## Pièges courants
 1. Publier les fichiers v4 avant de déployer le parser v4 dans la Lambda : l'ancien parser ne connaît pas `- Id :`, la carte entière est rejetée, le catalogue se vide.
 2. Renuméroter en gardant l'id positionnel : chaque régénération rattache les réponses enregistrées à une autre carte, sans erreur visible.
@@ -87,6 +98,7 @@ Exercice 5 min : ordonner à la main `tranche` (prérequis `index`), `index`, `h
 - [x] Déduit de la demande : les thèmes d'un domaine sont groupés en chapitres, choisis par l'agent selon le contenu.
 - [ ] Déduit de la demande : l'utilisateur choisit un parcours (Python débutant, Python pour la data, Python expert…) et l'app le guide étape par étape, prochaine carte comprise.
 - [ ] Déduit de la demande : une carte générée plus tard par `/cartes` entre seule dans les bons parcours.
+- [ ] Déduit de la demande (2026-10-26) : le jargon de chaque carte est listé et défini simplement dans un glossaire, consultable d'un tap ; l'agent l'enrichit à chaque génération.
 
 ## Question de compréhension
 Pourquoi les réponses déjà synchronisées ne sont-elles pas réécrites dans DynamoDB avec les nouveaux ids, et qu'est-ce qui garantit qu'une carte générée demain entre dans le parcours « Python pour la data » sans toucher à `parcours.json` ?

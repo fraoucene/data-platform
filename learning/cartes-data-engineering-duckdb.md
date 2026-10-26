@@ -18,6 +18,7 @@ Data engineering · DuckDB : lire, s3, sql, session, choisir (format spec v3 de 
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : formats-json-lines-un-objet-par-ligne
+- Mots-clés : JSON Lines, gzip, data lake
 - Source : data-platform · S1-07
 - Définition : `read_json_auto('f.jsonl.gz')` lit un fichier JSON Lines comme une table, en devinant colonnes et types ; le gzip est détecté par l'extension.
 - Contexte : Pas de décompression préalable, pas de schéma à déclarer : DuckDB échantillonne les lignes pour typer les colonnes. C'est un moteur SQL embarqué, sans serveur (≈ SQLite pour l'analytique). Un chemin seul dans le `FROM` marche aussi (`FROM 'f.jsonl.gz'`) : DuckDB choisit le lecteur d'après l'extension.
@@ -54,6 +55,7 @@ GROUP BY 1 ORDER BY 1;
 - Profils : débutant, data
 - Prérequis : duckdb-read-json-auto-gzip
 - Voir aussi : duckdb-no-files-found
+- Mots-clés : partition, manifest
 - Source : data-platform · S1-07
 - Définition : Un motif `*`, `**` ou `[..]` dans le chemin lit tous les fichiers qui correspondent comme une seule table.
 - Contexte : `date=*/part-*.jsonl.gz` couvre toutes les partitions et tous les parts : c'est ce qui rend la convention du bucket raw interrogeable d'un coup. `**` descend dans tous les sous-dossiers. Une liste explicite `['a.gz', 'b.gz']` est aussi acceptée. Le motif doit viser le bon suffixe : `*.json` ne prend pas les `.jsonl.gz`, mais attrape les `_MANIFEST.json`.
@@ -89,6 +91,7 @@ FROM read_json_auto(
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : duckdb-glob-plusieurs-fichiers
+- Mots-clés : glob, bucket S3
 - Source : data-platform · S1-07
 - Définition : Un motif qui ne correspond à aucun fichier lève `IO Error: No files found that match the pattern`, au lieu de rendre une table vide.
 - Contexte : C'est ce qui arrive avec une source pas encore ingérée (`raw('inpi')`) ou une faute dans le suffixe. L'erreur est utile : une table vide ferait croire à une journée sans annonce. Lire le motif affiché, il montre le chemin réellement construit (bucket, source, suffixe).
@@ -116,6 +119,7 @@ SELECT * FROM raw('inpi');
 - Profils : data
 - Prérequis : duckdb-glob-plusieurs-fichiers
 - Voir aussi : data-lake-lignage
+- Mots-clés : glob, rejeu
 - Source : data-platform · S1-07
 - Définition : `filename = true` ajoute une colonne `filename` avec le chemin du fichier qui a fourni chaque ligne.
 - Contexte : Indispensable dès qu'un glob lit plusieurs fichiers : retrouver le part d'une ligne suspecte, compter par fichier, repérer un part orphelin d'un ancien run. Sur S3, la colonne contient l'URL `s3://…` complète.
@@ -146,6 +150,7 @@ GROUP BY 1 ORDER BY 1;
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : duckdb-summarize-profil, data-lake-schema-a-la-lecture
+- Mots-clés : SIREN
 - Source : data-platform · S1-07
 - Définition : `DESCRIBE SELECT …` affiche les colonnes et les types que DuckDB a déduits, sans renvoyer les lignes.
 - Contexte : Premier réflexe sur un fichier inconnu : vérifier qu'un SIREN est bien lu en `VARCHAR` (en nombre, un zéro initial serait perdu), qu'une date est une `DATE`. Une colonne absente de certains fichiers apparaît quand même, à `NULL` là où elle manque. `DESCRIBE` s'applique aussi à une table, une vue ou une macro.
@@ -176,6 +181,7 @@ DESCRIBE SELECT * FROM read_json_auto(
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : duckdb-describe-schema
+- Mots-clés : HyperLogLog
 - Source : data-platform · S1-07
 - Définition : `SUMMARIZE SELECT …` calcule pour chaque colonne min, max, nombre approché de valeurs distinctes, quartiles et pourcentage de `NULL`.
 - Contexte : Un profil de qualité en une ligne : `null_percentage` montre une colonne à moitié vide, `approx_unique` un identifiant qui devrait être unique et ne l'est pas, min et max une date hors plage. Les distincts sont approchés (HyperLogLog) : pour un contrôle exact, `count(DISTINCT …)`.
@@ -202,6 +208,7 @@ SUMMARIZE SELECT * FROM read_json_auto(
 - Type : comparaison
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : Makefile
 - Source : data-platform · S1-07
 - Définition : `duckdb` sans argument ouvre une base en mémoire, perdue en sortant ; `duckdb lab.duckdb` ouvre ou crée une base persistante dans ce fichier.
 - Contexte : En mémoire, tables, vues, macros et secrets disparaissent à la fermeture : d'où un fichier `-init` qui les recrée à chaque `make duckdb`. Un fichier `.duckdb` garde tout, mais ne s'ouvre en écriture que par un processus à la fois. `-c "…"` lance une requête puis quitte, pratique dans un script.
@@ -236,6 +243,7 @@ duckdb lab.duckdb -c "SELECT * FROM v"
 - Type : recette
 - Niveau : 1
 - Profils : data
+- Mots-clés : Homebrew
 - Source : data-platform · S1-07
 - Définition : Le CLI DuckDB est un seul exécutable : le binaire de la release GitHub, posé dans `~/.local/bin`, suffit, sans compilation.
 - Contexte : Erreur vue : `brew install duckdb` a voulu compiler sur un Mac Intel et s'est arrêté sur `Your Xcode (15.2) is too outdated`. Le binaire officiel évite toute chaîne de build. En v2, les noms d'assets ont changé (`duckdb-cli-osx-amd64.tar.gz`) : un lien deviné sur l'ancien nom renvoie `Not Found` ; lister les assets avec `gh release view`.
@@ -265,6 +273,7 @@ duckdb --version
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : duckdb-secret-credential-chain
+- Mots-clés : S3, glob, requête Range
 - Source : data-platform · S1-07
 - Définition : L'extension `httpfs` fait lire à DuckDB des chemins `s3://` et `https://` comme des fichiers locaux, globs compris.
 - Contexte : `INSTALL httpfs` télécharge l'extension une fois (dans `~/.duckdb/extensions`) ; `LOAD httpfs` l'active pour la session. Pour un glob, DuckDB liste le préfixe (`ListObjectsV2`) puis lit chaque objet par requêtes HTTP `Range`. Rien n'est copié en local : chaque requête relit S3, et les octets lus sont facturés en transfert hors d'AWS.
@@ -295,6 +304,7 @@ FROM read_json_auto('s3://'
 - Profils : data
 - Prérequis : data-lake-partitionnement-hive, duckdb-glob-plusieurs-fichiers
 - Voir aussi : duckdb-filtre-de-partition
+- Mots-clés : partitionnement Hive, Athena, Spark
 - Source : data-platform · S1-07
 - Définition : Les dossiers `clé=valeur` du chemin deviennent des colonnes : `date=2026-10-20/` ajoute une colonne `date`, typée `DATE`.
 - Contexte : La valeur n'est pas dans le fichier, seulement dans le chemin : c'est la convention Hive, lue aussi par Athena et Spark. DuckDB détecte ces dossiers tout seul ; `hive_partitioning = true` l'écrit explicitement, `false` retire la colonne. Le type est deviné (`DATE`, entier, texte) : comparer avec une date, pas avec un nombre.
@@ -326,6 +336,7 @@ GROUP BY 1, 2 ORDER BY 1;
 - Profils : data, ops
 - Prérequis : duckdb-httpfs-lire-s3
 - Voir aussi : duckdb-http-403-identifiants
+- Mots-clés : profil AWS, SSO, variable d'environnement
 - Source : data-platform · S1-07
 - Définition : `CREATE SECRET (TYPE s3, PROVIDER credential_chain)` fait chercher à DuckDB les identifiants comme le SDK AWS : variables d'environnement, puis profil `~/.aws`.
 - Contexte : Rien n'est écrit dans le SQL : le profil vient de `AWS_PROFILE`, posé par le Makefile. `CHAIN 'env;config'` limite la recherche à ces deux sources. Un secret créé sans `PERSISTENT` vit le temps de la session. `duckdb_secrets()` liste les secrets actifs, valeurs masquées. Il faut l'extension `aws` en plus de `httpfs`.
@@ -356,6 +367,7 @@ FROM duckdb_secrets();
 - Profils : data, ops
 - Prérequis : duckdb-httpfs-lire-s3
 - Voir aussi : duckdb-secret-credential-chain
+- Mots-clés : glob, SSO, rôle IAM
 - Source : data-platform · S1-07
 - Définition : Sans identifiants valides, DuckDB lit S3 en anonyme : un bucket privé répond `HTTP 403 Forbidden` dès le listage du glob.
 - Contexte : Le message cite le préfixe listé (`listing 's3://…/bodacc/date='`), pas un fichier : c'est le `ListObjectsV2` du glob qui est refusé. Causes : secret non créé, `AWS_PROFILE` vide, jeton SSO expiré, rôle sans `s3:ListBucket`. Un bucket inexistant répond `404` : 403 dit « il existe, mais pas pour toi ».
@@ -385,6 +397,7 @@ FROM read_json_auto('s3://'
 - Niveau : 2
 - Profils : data
 - Voir aussi : duckdb-macro-table
+- Mots-clés : Glue, glob
 - Source : data-platform · S1-07
 - Définition : `CREATE VIEW bodacc AS SELECT … FROM read_json_auto('s3://…')` nomme une requête ; chaque `SELECT` sur la vue relit les fichiers.
 - Contexte : Une vue ne stocke aucune donnée : c'est l'équivalent local et temporaire d'une table Glue, qui elle aussi ne fait que pointer vers S3. Avantage : toujours à jour, une journée ingérée apparaît sans rien faire. Coût : chaque requête relit S3. Pour enchaîner beaucoup de requêtes, `CREATE TABLE t AS SELECT …` copie une fois en mémoire.
@@ -412,6 +425,7 @@ SELECT count(*) FROM v;
 - Niveau : 2
 - Profils : data
 - Prérequis : duckdb-vue-de-session
+- Mots-clés : partition, glob
 - Source : data-platform · S1-07
 - Définition : `CREATE MACRO raw(source) AS TABLE SELECT …` crée une fonction qui renvoie une table, appelée dans un `FROM` : `FROM raw('bodacc')`.
 - Contexte : Une vue par source obligerait à modifier le fichier d'init à chaque nouvelle source. La macro construit le chemin à partir du paramètre et de la convention `<source>/date=*/part-*.jsonl.gz` : une source ajoutée n'ajoute rien. Elle s'appelle toujours avec ses parenthèses et ses arguments, comme une fonction.
@@ -444,6 +458,7 @@ GROUP BY 1 ORDER BY 1;
 - Profils : data
 - Prérequis : formats-parquet-vs-csv
 - Voir aussi : duckdb-partition-by-colonne-hors-fichier
+- Mots-clés : Parquet, partitionnement Hive, zone processed
 - Source : data-platform · S1-07
 - Définition : `COPY (SELECT …) TO 'out' (FORMAT parquet, PARTITION_BY (date))` écrit le résultat en Parquet, un dossier `date=…/` par valeur.
 - Contexte : Conversion JSON Lines vers Parquet en une commande, avec l'arborescence Hive que lisent Athena et Spark. DuckDB nomme lui-même les fichiers (`data_0.parquet`). Relire avec `read_parquet('out/*/*.parquet')` redonne la colonne `date` par le chemin. Utile pour prototyper la zone `processed` avant le job Spark.
@@ -471,6 +486,7 @@ TO 'out' (FORMAT parquet,
 - Type : piège
 - Niveau : 2
 - Profils : data
+- Mots-clés : variable d'environnement, Makefile, output Terraform
 - Source : data-platform · S1-07
 - Définition : `getenv('RAW_BUCKET')` lit une variable d'environnement du processus `duckdb` ; une variable absente donne une chaîne vide.
 - Contexte : C'est ce qui garde le numéro de compte hors du repo : le Makefile pose `RAW_BUCKET` depuis les outputs Terraform, le SQL ne contient que `getenv`. Piège : variable oubliée → `''`, pas `NULL` ; le chemin devient `s3:///bodacc/…` et l'erreur parle de S3, pas de la variable.
@@ -496,6 +512,7 @@ RAW_BUCKET=dp-raw duckdb -csv -c "
 - Type : piège
 - Niveau : 2
 - Profils : data
+- Mots-clés : variable d'environnement
 - Source : data-platform · S1-07
 - Définition : Au lancement, le CLI exécute le fichier `-init`, puis les commandes `-cmd`, puis ce qui arrive sur l'entrée standard ou au clavier.
 - Contexte : Erreur vue : passer le bucket par `-cmd "SET VARIABLE b = …"` pour l'utiliser dans `-init` ne marche pas, l'init a déjà tourné et `getvariable('b')` y vaut `NULL`. D'où une variable d'environnement, lue par `getenv`, qui existe avant le démarrage. `-cmd` sert à ce qui doit suivre l'init (réglage d'affichage, première requête).
@@ -525,6 +542,7 @@ duckdb -init init.sql \
 - Niveau : 2
 - Profils : data
 - Voir aussi : AWS/glue-athena-cout-au-scanne, data-lake-stockage-calcul-separes
+- Mots-clés : Athena, Glue, partitionnement Hive, Step Functions
 - Source : data-platform · S1-07
 - Définition : DuckDB interroge le lake depuis un poste, gratuitement et sans infrastructure ; Athena l'interroge dans AWS, partagé, facturé au volume scanné.
 - Contexte : DuckDB lit S3 par le réseau : parfait pour explorer quelques journées, un échantillon, un débogage ; limité par la machine et la bande passante pour des années d'historique. Athena tourne près des données, s'appuie sur le catalogue Glue partagé par l'équipe et les jobs, et s'automatise (Step Functions, QuickSight). Les deux lisent les mêmes partitions Hive : la convention du bucket sert aux deux.
@@ -556,6 +574,7 @@ WHERE date = DATE '2026-10-20';
 - Profils : data, expert
 - Prérequis : duckdb-hive-partitioning-date
 - Voir aussi : AWS/glue-athena-cout-au-scanne
+- Mots-clés : partition, Athena, Spark
 - Source : data-platform · S1-07
 - Définition : Un `WHERE` sur une colonne de partition élimine les fichiers avant lecture : seuls les dossiers qui correspondent sont ouverts.
 - Contexte : `EXPLAIN` le montre : `File Filters: date = …` et `Scanning Files: 1/2`. Sur S3, c'est la différence entre lire une journée et relire tout l'historique à chaque requête. Le filtre doit porter sur la colonne de partition elle-même ; une colonne du contenu oblige à ouvrir tous les fichiers. Même mécanisme que le partition pruning d'Athena et de Spark.
@@ -585,6 +604,7 @@ WHERE date = '2026-10-20';
 - Profils : data, expert
 - Prérequis : duckdb-copy-to-parquet-partitionne
 - Voir aussi : duckdb-hive-partitioning-date
+- Mots-clés : partitionnement Hive, Parquet
 - Source : data-platform · S1-07
 - Définition : Avec `PARTITION_BY (date)`, la colonne `date` n'est pas écrite dans les fichiers Parquet : elle n'existe que dans le nom du dossier.
 - Contexte : Convention Hive : la valeur est la même pour tout le dossier, la répéter dans chaque ligne serait du stockage perdu. Conséquence : un fichier copié hors de son dossier perd sa date. Un lecteur sans détection Hive (outil, option `hive_partitioning = false`) ne voit plus la colonne. `parquet_schema()` montre ce que le fichier contient vraiment.

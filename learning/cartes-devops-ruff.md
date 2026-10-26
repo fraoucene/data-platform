@@ -18,6 +18,7 @@ DevOps · Ruff : commandes, config, format, noqa, règles (format spec v4 de rev
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : ruff-fix-sur-place
+- Mots-clés : linter, formateur, CI, pre-commit
 - Source : data-platform · S1-03
 - Définition : `ruff check` est le linter (≈ eslint : `F401`, `E501`, `I001`), `ruff format` le formateur (≈ prettier : quotes, espaces, virgules) : deux contrôles distincts.
 - Contexte : `x='a'` passe le lint et échoue au format. Le formateur ne touche qu'à la mise en forme : il ne trie jamais les imports, car les réordonner change l'ordre d'exécution des modules ; `I001` se corrige avec `ruff check --fix`. En CI, `ruff format --check` ne modifie rien et renvoie 1 si un fichier doit changer : d'où deux lignes dans `make lint`.
@@ -58,6 +59,7 @@ ruff check --fix a.py
 - Profils : débutant, ops
 - Prérequis : ruff-check-ou-format
 - Voir aussi : ruff-unsafe-fixes
+- Mots-clés : linter, CI, hook
 - Définition : `ruff check --fix` applique les corrections sûres (marquées `[*]`) et ne signale plus que le reste (≈ `eslint --fix`).
 - Contexte : Seules les règles qui proposent une correction sûre sont touchées : imports inutiles (F401), tri (I001), syntaxe moderne (UP). Le code retour ne dépend que de ce qui reste : 0 si tout a été corrigé. `--diff` montre les corrections sans écrire, `--exit-non-zero-on-fix` fait échouer quand même s'il a fallu corriger. `--output-format concise` donne une ligne par erreur.
 - Usage : ✅ `make fmt`, hook pre-commit `ruff-check --fix`, éditeur à l'enregistrement · ❌ `--fix` en CI : la CI doit signaler, pas réécrire un code qui ne sera pas commité.
@@ -94,6 +96,7 @@ ruff check --diff a.py
 - Profils : débutant, ops
 - Prérequis : ruff-check-ou-format
 - Voir aussi : ruff-rule-expliquer-code
+- Mots-clés : linter, pyproject.toml, monorepo
 - Définition : `select = ["E", "F", "I", "UP", "B"]` active des règles par préfixe : une famille entière (`E`), un groupe (`E5`) ou une règle (`E501`).
 - Contexte : Chaque préfixe reprend un outil historique : `E`/`W` pycodestyle, `F` pyflakes, `I` isort, `UP` pyupgrade, `B` bugbear, `RUF` règles propres à ruff. `select` remplace le jeu par défaut au lieu de s'y ajouter ; `extend-select` ajoute. Depuis ruff 0.17, le jeu par défaut compte environ 400 règles (`B`, `UP`, `I`, `RUF`, `SIM`…), mais pas `E501`. `ruff linter` liste les préfixes.
 - Usage : ✅ `select` explicite dans le `pyproject.toml` du monorepo, relu en revue · ❌ `select = ["ALL"]` : des règles contradictoires et des centaines d'alertes de style.
@@ -128,6 +131,7 @@ ruff check --extend-select E501 \
 - Profils : débutant, ops
 - Prérequis : ruff-check-ou-format
 - Voir aussi : ruff-noqa-inutile-ruf100, ruff-per-file-ignores
+- Mots-clés : linter
 - Définition : `# noqa: F401` en fin de ligne fait ignorer cette règle sur cette ligne ; `# noqa` seul les ignore toutes (≈ `// eslint-disable-line`).
 - Contexte : Toujours nommer la règle : un `# noqa` nu masque aussi les erreurs futures de la ligne. Plusieurs codes se séparent par des virgules (`# noqa: F401, E501`) ; la casse et l'espace après `:` sont tolérés (`# NOQA:F401`). Pour tout un fichier, `# ruff: noqa: F401` en tête ; pour un dossier, `per-file-ignores`.
 - Usage : ✅ exception justifiée et rare : import pour effet de bord, ligne générée · ❌ faire passer la CI : corriger, ou désactiver la règle dans la config si elle ne convient pas au projet.
@@ -153,6 +157,7 @@ print("ok")
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : linter
 - Définition : `ruff rule B006` affiche la documentation d'une règle : ce qu'elle détecte, pourquoi, exemple, correction disponible ou non.
 - Contexte : Plus rapide que chercher sur le web, et à la version installée. Le nom lisible (`mutable-argument-default`) accompagne le code ; `ruff check --statistics` compte les erreurs par règle avant de décider d'en ignorer une. « Fix is sometimes available » veut dire que la correction ne s'applique pas à tous les cas, ou seulement en unsafe.
 - Usage : ✅ avant d'ajouter un `noqa` ou un `ignore` : comprendre ce que la règle protège · ❌ ignorer une règle `B` sans l'avoir lue : ce sont de vrais bugs.
@@ -188,6 +193,7 @@ ruff check --statistics --select F,B .
 - Profils : débutant, ops
 - Prérequis : ruff-check-ou-format
 - Voir aussi : ruff-virgule-magique
+- Mots-clés : formateur, linter, pyproject.toml
 - Définition : `line-length` (88 par défaut) sert au formateur, qui coupe le code, et à la règle E501, qui signale les lignes trop longues restantes.
 - Contexte : `ruff format` coupe appels, listes et expressions, jamais une chaîne : une longue phrase reste longue, et seule E501 la signale si `E` est sélectionnée. E501 tolère une ligne qui se termine par une URL commencée avant la limite, et un « mot » unique trop long. Dans data-platform, 120 vaut pour les deux, déclarée une fois sous `[tool.ruff]`.
 - Usage : ✅ une seule `line-length` sous `[tool.ruff]` · ❌ `line-length` différente sous `[tool.ruff.format]` et `[tool.ruff.lint]` : le formateur produit des lignes que le linter refuse.
@@ -214,6 +220,7 @@ ruff check --select E501 f.py \
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : pyproject.toml, monorepo, workspace uv
 - Source : data-platform · S1-03
 - Définition : Pour chaque fichier, ruff prend le `pyproject.toml` le plus proche qui contient `[tool.ruff]` : une config racine couvre tous les membres.
 - Contexte : Un `pyproject.toml` de membre sans `[tool.ruff]` est sauté, la recherche remonte jusqu'à la racine : `line-length = 120` y vaut pour `packages/*`. Les configs ne fusionnent pas : la plus proche s'applique seule, sauf `extend`. `src` liste les dossiers first-party pour le tri d'imports (`I`). `ruff check --show-settings <fichier>` affiche le fichier retenu.
@@ -249,6 +256,7 @@ line-length = 100  # le reste : racine
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : linter, runtime Lambda
 - Source : data-platform · S1-03
 - Définition : `target-version = "py312"` donne à ruff la version minimale de Python visée : les règles `UP` (pyupgrade) proposent la syntaxe moderne qu'elle autorise.
 - Contexte : En `py312`, `Optional[str]` devient `str | None` (UP045) et `List[str]` devient `list[str]` (UP006). Sans `target-version`, ruff la déduit de `requires-python`. Plus la cible est ancienne, moins UP propose : `X | None` attend 3.10, `datetime.UTC` (UP017) attend 3.11.
@@ -285,6 +293,7 @@ select = ["E", "F", "I", "UP", "B"]
 - Niveau : 2
 - Profils : ops
 - Prérequis : ruff-fix-sur-place
+- Mots-clés : linter
 - Définition : Une correction « unsafe » peut changer ce que fait le code ; `--fix` l'ignore, `--fix --unsafe-fixes` l'applique.
 - Contexte : B006 (`def f(sirens=[])`) devient `sirens=None` + `if sirens is None` : même intention, mais un appelant qui passait `None` exprès change de comportement. F841 retire une affectation inutile, mais son expression aurait pu avoir un effet. `--unsafe-fixes` seul ne fait qu'afficher ces corrections comme disponibles (`[*]`). `extend-safe-fixes = ["F841"]` promeut une règle en sûre.
 - Usage : ✅ `--fix --unsafe-fixes --diff`, relu, sur un fichier précis · ❌ `--unsafe-fixes` dans un hook ou `make fmt` : des changements de logique sans relecture.
@@ -318,6 +327,7 @@ extend-safe-fixes = ["F841"]
 - Niveau : 2
 - Profils : ops
 - Prérequis : ruff-select-familles
+- Mots-clés : linter, pyproject.toml
 - Définition : `ignore = ["E501"]` désactive une règle pour tout le projet ; entre `select` et `ignore`, le préfixe le plus précis l'emporte.
 - Contexte : `select = ["E"]` + `ignore = ["E501"]` : toutes les E sauf E501. À l'inverse, `select = ["E501"]` + `ignore = ["E"]` garde E501, plus précise que `E`. À précision égale, `ignore` gagne. Ignorer globalement vaut pour une règle qui ne convient pas au projet ; un cas isolé relève de `noqa`, un dossier de `per-file-ignores`.
 - Usage : ✅ règle incompatible avec le style du projet (E501 laissée au formateur) · ❌ ignorer une famille entière (`B`) pour faire taire une seule alerte.
@@ -344,6 +354,7 @@ ruff check --isolated --select E \
 - Niveau : 2
 - Profils : ops
 - Prérequis : ruff-ignore-plus-precis
+- Mots-clés : linter, glob
 - Définition : `[tool.ruff.lint.per-file-ignores]` désactive des règles pour les fichiers qui correspondent à un glob : `"tests/*" = ["S101"]`, `"__init__.py" = ["F401"]`.
 - Contexte : Les tests ont leurs usages (`assert`, imports de fixtures), les `__init__.py` réexportent. Un motif sans `/` s'applique au nom du fichier, partout dans l'arbre ; `tests/*` couvre aussi les sous-dossiers. Les chemins sont relatifs au fichier de config qui déclare la section. Pour un réexport, `__all__` ou `from .core import parse as parse` évitent même l'exception.
 - Usage : ✅ règles qui ne valent pas pour les tests, les scripts ou les fichiers générés · ❌ ignorer `F401` partout : les vrais imports morts passent.
@@ -375,6 +386,7 @@ ruff check --output-format concise
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : monorepo, workspace uv, formateur
 - Définition : La règle `I001` trie les imports en sections séparées par une ligne vide : bibliothèque standard, tiers, first-party (le code du projet), puis imports relatifs.
 - Contexte : Ruff classe sans regarder ce qui est installé : un module est first-party s'il est trouvé sous un dossier de `src` (`[".", "src"]` par défaut). Dans un monorepo, `bodacc_client` vit sous `packages/bodacc-client/src` : sans `src = ["packages/*/src", …]`, il est rangé avec `httpx`. `known-first-party` force un nom. `--fix` trie ; `ruff format` ne trie jamais.
 - Usage : ✅ `src` avec les globs du workspace dans la config racine · ❌ trier à la main ou ajouter isort à côté : deux outils qui se contredisent.
@@ -412,6 +424,7 @@ from bodacc_client import BodaccClient
 - Niveau : 2
 - Profils : ops
 - Voir aussi : ruff-force-exclude-pre-commit
+- Mots-clés : .gitignore, linter, glob
 - Définition : `extend-exclude` ajoute des chemins aux exclusions par défaut (`.venv`, `.git`, `build`…) ; `exclude` les remplace entièrement.
 - Contexte : Ruff ignore déjà une liste de dossiers et ce que liste `.gitignore`. data-platform écrit `extend-exclude = ["docs/**/*_gen.py", "learning/**"]` : les scripts de schémas et les cours restent hors lint. Avec `exclude`, la liste par défaut disparaît : un dossier `.venv` non ignoré par git est alors analysé. Les exclusions s'appliquent à la découverte (`ruff check .`), pas à un fichier passé explicitement.
 - Usage : ✅ `extend-exclude` pour du code généré ou des supports · ❌ `exclude` sans recopier les défauts : lint de `.venv`, de `build/`.
@@ -438,6 +451,7 @@ ruff check --output-format concise
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : formateur
 - Définition : Une virgule après le dernier élément (`["a", "b",]`) force `ruff format` à garder un élément par ligne (règle de black, sans équivalent prettier).
 - Contexte : C'est le levier pour choisir la forme : avec virgule finale, la collection reste éclatée (diffs d'une ligne par ajout) ; sans, le formateur regroupe ce qui tient dans `line-length`. Le formateur ajoute lui-même la virgule finale quand il éclate. `skip-magic-trailing-comma = true` désactive ce comportement.
 - Usage : ✅ listes de SIREN, de colonnes, de règles qui grandissent : virgule finale · ❌ retirer la virgule finale pour compacter à la main : le formateur décide.
@@ -467,6 +481,7 @@ ruff format --diff f.py
 - Profils : ops
 - Prérequis : ruff-check-ou-format
 - Voir aussi : ruff-noqa-une-ligne
+- Mots-clés : formateur, linter
 - Définition : `# fmt: off` et `# fmt: on` encadrent un bloc que `ruff format` laisse intact ; `# fmt: skip` protège une instruction.
 - Contexte : Pour une matrice alignée, un tableau de correspondances lisible en colonnes, du code généré. Les deux commentaires doivent être au même niveau d'indentation. Sans `# fmt: on`, la protection court jusqu'à la fin du bloc qui la contient. Le linter, lui, continue d'analyser le bloc : `fmt: off` n'est pas un `noqa`.
 - Usage : ✅ alignement qui porte du sens (grille, table de codes tribunaux) · ❌ désactiver le formateur sur un fichier entier par confort : `extend-exclude` sous `[tool.ruff.format]`, ou mieux, rien.
@@ -494,6 +509,7 @@ z = [1, 2]
 - Niveau : 2
 - Profils : ops
 - Prérequis : ruff-config-plus-proche
+- Mots-clés : pyproject.toml, TOML
 - Définition : Dans un même dossier, ruff lit `.ruff.toml`, sinon `ruff.toml`, sinon `pyproject.toml` ; le premier trouvé s'applique seul, sans fusion.
 - Contexte : Un `ruff.toml` ajouté pour une option fait perdre toute la section `[tool.ruff]` du `pyproject.toml` voisin : `line-length` revient à 88. Dans `ruff.toml`, les clés sont à la racine (`line-length = 120`, `[lint]`), sans préfixe `tool.ruff`. `ruff check --show-settings <fichier>` affiche le fichier retenu.
 - Usage : ✅ `[tool.ruff]` dans `pyproject.toml` pour un projet Python · ❌ `ruff.toml` et `[tool.ruff]` côte à côte : la seconde est ignorée sans prévenir.
@@ -523,6 +539,7 @@ ruff check --show-settings a.py \
 - Profils : ops, expert
 - Prérequis : ruff-extend-exclude-ou-exclude
 - Voir aussi : pre-commit-files-exclude-regex
+- Mots-clés : pre-commit, hook
 - Définition : `--force-exclude` applique `exclude` et `extend-exclude` même aux fichiers passés en argument, comme le fait pre-commit à chaque commit.
 - Contexte : pre-commit appelle `ruff check a.py b.py` avec les fichiers stagés : sans `--force-exclude`, un fichier exclu dans la config est analysé dès qu'il est commité. Les hooks de `ruff-pre-commit` l'ont dans leur `entry` (`ruff check --force-exclude`) ; un hook `local` ou un script qui appelle ruff sur une liste de fichiers doit l'ajouter. `force-exclude = true` dans la config le rend permanent.
 - Usage : ✅ hook local, script de CI qui passe `git diff --name-only` à ruff · ❌ compter sur `extend-exclude` seul dans un hook maison.
@@ -552,6 +569,7 @@ ruff check --force-exclude docs/gen.py
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : ruff-noqa-une-ligne
+- Mots-clés : linter
 - Définition : La règle `RUF100` signale un `# noqa` qui ne tait plus rien ; `--fix` le retire ou retire les codes en trop.
 - Contexte : Un `noqa` survit au code qu'il couvrait : l'import est utilisé depuis, la ligne a été raccourcie. Il masquera la prochaine vraie erreur de la ligne. RUF100 fait partie de `RUF`, absente de `select = ["E", "F", "I", "UP", "B"]` : à ajouter par `extend-select`. Elle ne vérifie que les règles actives : un code d'une règle désactivée n'est pas signalé comme inutile.
 - Usage : ✅ `extend-select = ["RUF100"]` dans tout projet qui utilise des `noqa` · ❌ nettoyer les `noqa` à la main au fil des revues.
@@ -582,6 +600,7 @@ ruff check --extend-select RUF100 --fix c.py
 - Profils : ops, expert
 - Prérequis : ruff-noqa-une-ligne
 - Voir aussi : ruff-noqa-inutile-ruf100
+- Mots-clés : linter
 - Définition : `ruff check --add-noqa` ajoute un `# noqa: <code>` sur chaque ligne en erreur : la règle s'active tout de suite, la dette existante est marquée.
 - Contexte : Activer `B` sur un code existant peut donner des centaines d'alertes : plutôt que reporter l'activation, on fige l'existant et on bloque le nouveau. Les `noqa` ajoutés sont précis (code nommé), cherchables (`grep -rn "noqa: B006"`) et à retirer au fil des corrections. RUF100 signalera ceux qui deviennent inutiles.
 - Usage : ✅ activer une famille sur un dépôt existant, en un commit dédié · ❌ sur un projet neuf : corriger directement.
@@ -610,6 +629,7 @@ cat d.py
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : ruff-fix-sur-place
+- Mots-clés : linter
 - Définition : `unfixable = ["F401"]` garde la règle active mais interdit à `--fix` de la corriger ; `fixable` restreint à l'inverse la liste des règles corrigeables.
 - Contexte : Cas typique : l'éditeur lance `--fix` à chaque enregistrement et efface l'import qu'on vient d'écrire avant de l'utiliser. Avec `unfixable = ["F401"]`, l'import est signalé, plus supprimé ; le tri I001 continue d'être corrigé. Pour un réglage limité à l'éditeur, le mettre dans la config de l'extension, pas dans le projet, sinon `make fmt` ne nettoie plus les imports.
 - Usage : ✅ règles dont la correction automatique gêne (F401 en cours de frappe, F841) · ❌ `unfixable = ["ALL"]` : autant ne pas lancer `--fix`.
@@ -641,6 +661,7 @@ ruff check --fix a.py
 - Type : piège
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : formateur, Markdown, hook
 - Définition : En ruff 0.17, `ruff format` reformate aussi les blocs ```` ```python ```` des fichiers `.md` ; `ruff check`, lui, n'analyse pas le Markdown.
 - Contexte : `ruff format .` et le hook `ruff-format` (`types_or: [python, pyi, jupyter, markdown]`) touchent donc la documentation : espaces normalisés, commentaires réalignés à deux espaces. C'est la raison de `"learning/**"` dans `extend-exclude` de data-platform : les cartes alignent leurs `# →` pour la lecture sur iPhone. Les blocs d'autres langages ne sont pas modifiés.
 - Usage : ✅ exclure les supports dont la mise en forme est voulue (cours, cartes) · ❌ découvrir le changement dans un diff de 40 fichiers `.md` après `make fmt`.

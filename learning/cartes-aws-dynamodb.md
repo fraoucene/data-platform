@@ -18,6 +18,7 @@ AWS · DynamoDB : choisir, modèle, clés, index, lecture, écriture, transactio
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : dynamodb-acces-inconnus-sql, dynamodb-motifs-acces
+- Mots-clés : item, clé de partition DynamoDB, Scan, Athena
 - Définition : Pour lire un enregistrement par sa clé en quelques ms, à n'importe quel débit, on choisit DynamoDB (≈ une `Map` géante managée).
 - Contexte : On conçoit la table à partir des requêtes : clé de partition (`siren`), éventuellement clé de tri (`date`), index secondaires pour les autres accès prévus. En mode à la demande, on paie à la requête et au Go, rien au repos. Un item fait 400 Ko au plus. Ce qui n'a pas été prévu dans les clés coûte un `Scan` complet de la table.
 - Usage : ✅ API « fiche entreprise » par SIREN, état d'un traitement, déduplication · ❌ requêtes ad hoc, agrégats, jointures : Athena ou une base SQL.
@@ -56,6 +57,7 @@ table["483609327"]["procedures"]  # → 2
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : dynamodb-gros-objets-dans-s3
+- Mots-clés : Spark, Athena, BODACC, partition
 - Source : data-platform · pwa-sync
 - Définition : Pour garder des années d'annonces BODACC brutes, relues en bloc par Spark ou Athena, on choisit S3 et non une table DynamoDB.
 - Contexte : Le brut se lit par journée entière, jamais par clé : c'est un fichier, pas une ligne. Prix Paris (liste de prix AWS, octobre 2026) : S3 Standard 0,024 $ par Go-mois, DynamoDB 0,29715 $ par Go-mois au-delà de 25 Go offerts, plus 100 octets de surcoût par item. Spark et Athena lisent S3 directement ; une table DynamoDB demanderait un export ou un `Scan` complet.
@@ -95,6 +97,7 @@ round(s3, 1), round(ddb, 1)     # → (3.7, 38.5)
 - Niveau : 1
 - Profils : data, ops
 - Voir aussi : dynamodb-creer-si-absent
+- Mots-clés : idempotent, atomique, moto, Aurora
 - Source : data-platform · pwa-sync
 - Définition : Pour un verrou de job ou l'idempotence d'une ingestion, on choisit DynamoDB : un `PutItem` avec `attribute_not_exists(pk)` n'écrit que si la clé est libre.
 - Contexte : La condition est vérifiée et appliquée en une seule opération atomique : de deux Lambda lancées en même temps pour la journée `2026-10-24`, une seule écrit, l'autre reçoit `ConditionalCheckFailedException` (mesuré avec moto). En TS, c'est la classe d'erreur du même nom de `@aws-sdk/client-dynamodb`. Aurora ferait aussi bien, mais avec une instance qui tourne au repos.
@@ -145,6 +148,7 @@ m.stop()
 - Niveau : 1
 - Profils : web, data
 - Prérequis : dynamodb-quand-choisir
+- Mots-clés : OpenSearch, Scan, GSI
 - Source : data-platform · pwa-sync
 - Définition : Pour chercher des mots dans le texte des annonces (« liquidation boulangerie »), on choisit OpenSearch : DynamoDB n'a pas d'index plein texte.
 - Contexte : Dans DynamoDB, `contains(texte, :mot)` n'est qu'un filtre : il sert dans un `Scan`, relit toute la table, respecte la casse et ne classe rien par pertinence. OpenSearch découpe le texte en mots, gère accents et pluriels selon l'analyseur, et trie par score. Selon la doc, une intégration zero-ETL (OpenSearch Ingestion) alimente un index depuis une table DynamoDB. OpenSearch a un coût au repos.
@@ -194,6 +198,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, data, web
 - Prérequis : dynamodb-taille-item-400ko
+- Mots-clés : item, moto, transaction
 - Source : data-platform · pwa-sync
 - Définition : Ce qui dépasse 400 Ko (PDF d'annonce, gros JSON) va dans S3 ; l'item DynamoDB garde seulement la clé de l'objet, comme un pointeur.
 - Contexte : Au-delà de 400 Ko (noms et valeurs des attributs comptés), l'écriture échoue en `ValidationException` (selon la doc, mesuré avec moto). La doc propose trois sorties : compresser l'attribut (gzip en binaire), découper en plusieurs items sous la même `pk`, ou S3 + pointeur. Aucune transaction ne couvre S3 et DynamoDB ensemble : l'application gère les échecs et nettoie les objets orphelins.
@@ -239,6 +244,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, web
 - Prérequis : dynamodb-motifs-acces
+- Mots-clés : RDS, Aurora, Scan, GSI
 - Source : data-platform · pwa-sync
 - Définition : Requêtes encore inconnues : on part sur une base SQL (RDS, Aurora), car DynamoDB exige de connaître les accès avant de dessiner les clés.
 - Contexte : En SQL, une nouvelle question est une nouvelle requête, avec au besoin un index ajouté après coup. En DynamoDB, une lecture non prévue par les clés devient un `Scan`, ou un index secondaire global à créer. Pour data-platform, l'analyse reste dans S3 + Athena : la question se pose pour un backend applicatif dont le modèle bouge encore (prototype, back-office).
@@ -279,6 +285,7 @@ db.execute("SELECT count(*) FROM a"
 - Type : concept
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : attribut DynamoDB, migration
 - Source : data-platform · pwa-sync
 - Définition : Un item est une ligne identifiée par sa clé ; chacun porte ses propres attributs, sans colonne commune imposée hors clés.
 - Contexte : Image TS : un `Record<string, unknown>` par ligne, pas une ligne de tableau SQL. Un attribut absent n'existe pas sur l'item : ce n'est pas `NULL` (type explicite `{"NULL": true}`), il n'apparaît pas dans la réponse et ne coûte rien en stockage. Ajouter un attribut à un seul item ne demande aucune migration ; en échange, le code lecteur doit tolérer l'absence.
@@ -328,6 +335,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : dynamodb-valeurs-typees, dynamodb-ensembles
+- Mots-clés : boto3, Decimal
 - Source : data-platform · pwa-sync
 - Définition : DynamoDB a 10 types : scalaires `S N B BOOL NULL`, documents `M L`, ensembles `SS NS BS` ; boto3 choisit d'après le type Python.
 - Contexte : Correspondance de boto3 : `str` → S, `int`/`Decimal` → N, `bytes` → B, `bool` → BOOL, `None` → NULL, `dict` → M, `list`/`tuple` → L, `set` → SS, NS ou BS selon son contenu. Une liste est ordonnée, accepte doublons et types mêlés ; un ensemble non. En TS, `marshall` fait la même traduction depuis les types JS (`Set` → ensemble).
@@ -356,6 +364,7 @@ s({"a": 1})    # → {'M': {'a': {'N': '1'}}}
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : item, UTF-8, moto, JSONL
 - Source : data-platform · pwa-sync
 - Définition : Un item pèse au plus 400 Ko (409 600 octets), en comptant la longueur UTF-8 des noms d'attributs et des valeurs.
 - Contexte : Selon la doc, l'item `{"shirt-color": "R", "shirt-size": "M"}` pèse 23 octets : les noms comptent. Ils comptent aussi dans la facturation (lecture par tranche de 4 Ko, écriture par 1 Ko) : sur des millions d'items, `nb_procedures` répété coûte plus que `np`. Au-delà de 400 Ko, `PutItem` lève `ValidationException` (mesuré avec moto). Un gros document va dans S3, l'item garde sa clé S3.
@@ -386,6 +395,7 @@ taille({"shirt-color": "R",
 - Niveau : 1
 - Profils : débutant, web, data
 - Voir aussi : dynamodb-updateexpression-clauses
+- Mots-clés : expression DynamoDB, boto3, moto
 - Source : data-platform · pwa-sync
 - Définition : Un nom d'attribut qui est un mot réservé (`date`, `status`, `name`…) doit passer par un alias `#n` déclaré dans `ExpressionAttributeNames`.
 - Contexte : DynamoDB n'interdit pas d'appeler un attribut `date`, mais `SET date = :v` échoue : « Attribute name is a reserved keyword » (mesuré avec moto). La liste compte des centaines de mots anglais (`views`, `count`, `type`, `size`, `ttl`…) ; `statut` ou `vues` n'en sont pas. Dans une expression, `#` introduit un alias de nom, `:` une valeur. Le `Key`/`Attr` de boto3 génère ces alias tout seul.
@@ -435,6 +445,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant
 - Voir aussi : dynamodb-cle-simple-ou-composite
+- Mots-clés : item, partition DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : La clé primaire d'une table est soit la clé de partition seule (`pk`), soit le couple `pk` + clé de tri (`sk`), unique par ligne.
 - Contexte : `pk` regroupe les lignes (toutes celles d'un utilisateur), `sk` les ordonne dans le groupe et les distingue. Image : un `Map<pk, SortedMap<sk, ligne>>`. Deux lignes peuvent partager `pk` ou `sk`, jamais les deux. Le choix des clés se fait à partir des requêtes prévues : on ne pourra lire efficacement que par `pk`, puis par plage de `sk`.
@@ -475,6 +486,7 @@ resource "aws_dynamodb_table" "progress" {
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : dynamodb-item-sans-schema
+- Mots-clés : GSI, terraform apply
 - Source : data-platform · pwa-sync
 - Définition : Dans `aws_dynamodb_table`, les blocs `attribute` ne déclarent que les attributs de clé (table, index) ; les autres colonnes n'ont pas de schéma.
 - Contexte : DynamoDB est sans schéma hors clés : chaque ligne porte ses propres attributs (`ok`, `vues`, `secondes`). Déclarer un attribut qui n'est utilisé par aucune clé fait échouer le plan ou l'apply (« all attributes must be indexed »). Types : `S` (chaîne), `N` (nombre), `B` (binaire).
@@ -506,6 +518,7 @@ attribute {
 - Type : choisir
 - Niveau : 1
 - Profils : débutant
+- Mots-clés : item, GetItem, Query
 - Source : data-platform · pwa-sync
 - Définition : Clé simple (`pk` seule) : un item par entité ; clé composite (`pk` + `sk`) : une collection d'items triés sous la même `pk`.
 - Contexte : Fiche entreprise lue par SIREN, un seul état par SIREN : la clé simple suffit, lue par `GetItem`. Plusieurs faits par entité (annonces d'un SIREN, réponses d'un utilisateur) : clé composite, lue par `Query` et plage de `sk`. Le choix se fait avant la création de la table, à partir des lectures prévues ; la clé simple n'offre aucune plage.
@@ -533,6 +546,7 @@ len(compo["483609327"])  # → 2
 - Type : piège
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : UpdateItem, TransactWriteItems, moto
 - Source : data-platform · pwa-sync
 - Définition : On ne modifie jamais `pk` ou `sk` d'un item : `UpdateItem` sur un attribut de clé est refusé, il faut supprimer puis recréer.
 - Contexte : La clé est l'adresse de l'item : la changer, c'est le déplacer, donc deux opérations. `SET sk = :v` lève « Cannot update attribute sk. This attribute is part of the key » (mesuré avec moto). Pour ne rien perdre ni dupliquer entre les deux, on groupe `Delete` et `Put` dans un `TransactWriteItems`. Conséquence de conception : ne pas mettre dans une clé une donnée qui change (statut, nom).
@@ -581,6 +595,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, web, data
 - Voir aussi : dynamodb-cle-partition-et-tri, dynamodb-single-table-limites
+- Mots-clés : GetItem, Query, Scan, normalisation
 - Source : data-platform · pwa-sync
 - Définition : En DynamoDB, on liste d'abord les lectures et écritures de l'application, puis on choisit `pk`, `sk` et index qui les servent toutes.
 - Contexte : C'est l'inverse du SQL, où l'on normalise puis on écrit les requêtes. Chaque motif doit tenir dans un `GetItem` ou une `Query` (égalité sur `pk`, plage sur `sk`) ; un motif oublié se paie en `Scan` ou en nouvel index. La doc AWS demande de déterminer motifs d'accès et débits de chaque table et index avant de concevoir les clés.
@@ -610,6 +625,7 @@ Annonces d'un SIREN, par date
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : dynamodb-debit-par-partition, dynamodb-write-sharding
+- Mots-clés : cardinalité, partition DynamoDB, hachage
 - Source : data-platform · pwa-sync
 - Définition : Une clé de partition à peu de valeurs distinctes (statut, date du jour, pays) concentre le trafic sur quelques partitions : piège classique.
 - Contexte : DynamoDB répartit les items par hachage de la `pk`, et chaque partition a un débit maximal. `pk = statut` (ouverte, close) ne donne que deux adresses, quelle que soit la taille de la table. `pk = date du jour` envoie toutes les écritures du jour sur la même valeur. Bonne `pk` : beaucoup de valeurs, sollicitées à peu près également (SIREN, identité Cognito).
@@ -638,6 +654,7 @@ len({st for _, st in annonces})  # → 2
 - Type : concept
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : Query, Scan, item
 - Source : data-platform · pwa-sync
 - Définition : Un index secondaire global (GSI) réorganise les items de la table sous une autre clé, interrogée par `Query` avec `IndexName`.
 - Contexte : La table `annonces` est rangée par SIREN ; lire « les annonces du tribunal de Paris » demanderait un `Scan`. Un GSI de clé `tribunal` est une copie maintenue par DynamoDB, qu'on lit comme une table, sans jamais y écrire directement. On ne passe que `IndexName` en plus : la `KeyConditionExpression` porte alors sur les clés de l'index, plus sur celles de la table.
@@ -688,6 +705,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : dynamodb-gsi-autre-cle
+- Mots-clés : GSI, clé de partition DynamoDB, clé de tri DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : Un LSI (index secondaire local) se déclare seulement à la création de la table ; un GSI s'ajoute ou se supprime à tout moment.
 - Contexte : Le LSI garde la clé de partition de la table et ne change que la clé de tri ; il vit et meurt avec la table (`CreateTable` seulement). Le GSI choisit librement sa clé de partition et sa clé de tri, et `UpdateTable` le crée ou le supprime sur une table remplie : DynamoDB le remplit en arrière-plan. Oublier un LSI au départ, c'est recréer la table et migrer les données.
@@ -730,6 +748,7 @@ m.stop()
 - Niveau : 1
 - Profils : web, data
 - Prérequis : dynamodb-gsi-autre-cle
+- Mots-clés : GSI, item
 - Source : data-platform · pwa-sync
 - Définition : La projection fixe les attributs copiés dans l'index : `KEYS_ONLY` (les clés), `INCLUDE` (clés + liste choisie), `ALL` (tout l'item).
 - Contexte : Les clés de la table et de l'index sont toujours projetées. Plus la projection est large, plus l'index coûte en stockage et en écritures (chaque modification d'un attribut projeté réécrit l'entrée d'index), mais moins on a besoin de revenir à la table. `INCLUDE` est le compromis : on copie seulement ce que l'écran affiche (`nom`, `type`).
@@ -770,6 +789,7 @@ m.stop()
 - Niveau : 1
 - Profils : ops
 - Prérequis : dynamodb-gsi-autre-cle, dynamodb-projection-index
+- Mots-clés : GSI, provider, projection
 - Source : data-platform · pwa-sync
 - Définition : Un bloc `global_secondary_index` décrit un GSI dans `aws_dynamodb_table` : nom, clés (`key_schema`), `projection_type`, `non_key_attributes` pour `INCLUDE`.
 - Contexte : Chaque clé d'index doit aussi avoir son bloc `attribute` (type `S`, `N` ou `B`) ; les `non_key_attributes`, non. Depuis le provider AWS 6.x récent, `hash_key` / `range_key` dans le GSI sont dépréciés au profit de `key_schema` (mesuré en 6.69.1 : avertissement au `validate`). Ajouter un GSI est une mise à jour en place.
@@ -807,6 +827,7 @@ global_secondary_index {
 - Niveau : 1
 - Profils : débutant, web, data
 - Voir aussi : dynamodb-scan-toute-la-table
+- Mots-clés : clé de partition DynamoDB, clé de tri DynamoDB, partition DynamoDB, moto
 - Source : data-platform · pwa-sync
 - Définition : `Query` lit les lignes d'une seule clé de partition (`pk = :pk`), éventuellement restreintes à une plage de `sk`, triées par `sk`.
 - Contexte : C'est la lecture efficace : DynamoDB va directement à la partition, on ne paie que ce qui est lu. Le `pk` est obligatoire et toujours en égalité ; sans lui, la requête est refusée (`Query condition missed key schema element`, mesuré avec moto). Pour lire plusieurs utilisateurs, il faut plusieurs `Query`.
@@ -858,6 +879,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : dynamodb-query-une-partition
+- Mots-clés : partition DynamoDB, IAM
 - Source : data-platform · pwa-sync
 - Définition : `Scan` lit toutes les lignes de la table, toutes partitions confondues, et facture tout ce qu'il lit.
 - Contexte : Pas de clé : DynamoDB parcourt la table entière, page par page (1 Mo). Un `FilterExpression` ne réduit pas le coût, il trie après lecture. C'est l'équivalent d'un `SELECT *` sans `WHERE` : acceptable pour un export ou un script d'admin, jamais dans le chemin d'une app. Pour un utilisateur de l'app, il doit être refusé par IAM.
@@ -885,6 +907,7 @@ sum(len(v) for v in table.values())  # → 3
 - Type : concept
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : clé de partition DynamoDB, clé de tri DynamoDB, Query, moto
 - Source : data-platform · pwa-sync
 - Définition : `GetItem` lit une seule ligne par sa clé primaire complète : `pk` seule sur une table simple, `pk` **et** `sk` sur une table composite.
 - Contexte : C'est un accès direct, pas une recherche : DynamoDB calcule où vit la ligne à partir de la clé exacte. Ce n'est pas un `find()` sur un préfixe ni « la première ligne de la partition » : pour ça, il faut `Query`. Une clé en trop (attribut hors schéma) est refusée aussi (mesuré avec moto : « key element does not match the schema »).
@@ -925,6 +948,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, web
 - Prérequis : dynamodb-getitem-cle-complete
+- Mots-clés : SDK AWS, item
 - Source : data-platform · pwa-sync
 - Définition : Si aucune ligne n'a cette clé, `GetItem` répond `200` sans clé `Item` dans la réponse : ni exception, ni `Item` vide.
 - Contexte : En TS, `GetCommand` renvoie `Item: undefined` ; en Python, la clé `Item` manque tout simplement, donc `r["Item"]` lève `KeyError`. On teste donc `r.get("Item")`. Ce n'est pas `ResourceNotFoundException`, réservée à une table ou un index inexistant. La lecture d'une clé absente reste facturée comme une lecture.
@@ -965,6 +989,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, web
 - Prérequis : dynamodb-query-une-partition
+- Mots-clés : clé de tri DynamoDB, Query, UTF-8, ISO 8601
 - Source : data-platform · pwa-sync
 - Définition : `ScanIndexForward` vaut `True` par défaut : une `Query` renvoie la partition dans l'ordre croissant de la `sk`, donc `Limit=1` donne la plus petite.
 - Contexte : L'ordre n'est jamais celui d'insertion : les lignes sont rangées par `sk` à l'écriture. Une `sk` de type `S` se trie octet par octet (UTF-8), une `sk` de type `N` dans l'ordre numérique, selon la doc. Avec des dates ISO dans la `sk`, l'ordre par défaut va de la plus ancienne à la plus récente.
@@ -1006,6 +1031,7 @@ m.stop()
 - Type : concept
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : lecture éventuellement cohérente, GSI, DynamoDB Streams, table globale
 - Source : data-platform · pwa-sync
 - Définition : Les lectures sont éventuellement cohérentes par défaut ; `ConsistentRead=True` garantit de voir toutes les écritures réussies avant la lecture, pour un coût double.
 - Contexte : En éventuel, un `GetItem` juste après un `PutItem` peut rendre l'ancienne valeur (ou rien) ; relu peu après, il rend la nouvelle. La lecture forte coûte 1 unité par 4 Ko au lieu de 0,5. Selon la doc, elle n'existe que sur la table et les index locaux : pas sur un GSI ni un stream, et une table globale en mode par défaut reste éventuelle entre régions.
@@ -1044,6 +1070,7 @@ appel.get("ConsistentRead", False)  # → True
 - Niveau : 1
 - Profils : web, data
 - Prérequis : dynamodb-getitem-cle-complete
+- Mots-clés : GetItem, Query, lecture éventuellement cohérente, moto
 - Source : data-platform · pwa-sync
 - Définition : `BatchGetItem` lit jusqu'à 100 items par clé exacte, dans une ou plusieurs tables, en un seul appel réseau.
 - Contexte : C'est N `GetItem` regroupés, pas une `Query` : chaque clé est complète (`pk` et `sk`). La réponse est rangée par table dans `Responses`. La lecture est éventuellement cohérente par défaut ; `ConsistentRead` se règle table par table, pas pour tout l'appel. Au-delà de 100 clés, ou si une clé apparaît deux fois, tout l'appel est refusé (`ValidationException`, selon la doc et mesuré avec moto).
@@ -1084,6 +1111,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : dynamodb-updateitem-partiel
+- Mots-clés : UpdateItem, idempotent, item
 - Source : data-platform · pwa-sync
 - Définition : `PutItem` écrit la ligne entière : si la clé existe, l'ancienne ligne est remplacée, attributs absents compris.
 - Contexte : Pas de fusion : un `PutItem` avec `{pk, sk, m}` efface `n` qui était là. Pour modifier un attribut sans toucher aux autres, c'est `UpdateItem` (`SET n = :v`). Pour refuser l'écrasement, `ConditionExpression="attribute_not_exists(pk)"`. Dans pwa-sync, chaque ligne porte toute sa valeur (dernier état), donc le remplacement est voulu et idempotent.
@@ -1124,6 +1152,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : dynamodb-putitem-remplace
+- Mots-clés : PutItem, expression DynamoDB, idempotent
 - Source : data-platform · pwa-sync
 - Définition : `UpdateItem` modifie certains attributs d'une ligne par une `UpdateExpression` (`SET`, `REMOVE`…) et laisse les autres intacts.
 - Contexte : C'est le `PATCH` de DynamoDB, là où `PutItem` est un `PUT`. Les valeurs passent par des jetons `:v` dans `ExpressionAttributeValues`, jamais en clair dans l'expression. Les attributs de clé (`pk`, `sk`) ne se modifient pas : mesuré avec moto, `SET sk = :v` lève `ValidationException` (« Cannot update attribute sk »). Changer de clé = supprimer puis recréer la ligne.
@@ -1165,6 +1194,7 @@ m.stop()
 - Profils : débutant, web
 - Prérequis : dynamodb-updateitem-partiel
 - Voir aussi : dynamodb-creer-si-absent
+- Mots-clés : PutItem, expression DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : Sur une clé qui n'existe pas, `UpdateItem` crée la ligne avec la clé et les attributs posés par l'expression (upsert).
 - Contexte : Pas besoin d'un `PutItem` d'initialisation avant le premier incrément : `UpdateItem` fait « insérer ou mettre à jour » en un appel (≈ `INSERT … ON CONFLICT DO UPDATE`). Revers : une faute de frappe dans la clé crée une ligne fantôme, sans erreur. Pour ne modifier qu'une ligne existante, ajouter `ConditionExpression="attribute_exists(pk)"`.
@@ -1203,6 +1233,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, web
 - Prérequis : dynamodb-updateitem-partiel
+- Mots-clés : idempotent, SQS, outbox
 - Source : data-platform · pwa-sync
 - Définition : `ADD n :x` sur un attribut `n` absent le crée avec la valeur `:x`, comme si `n` valait 0.
 - Contexte : Pratique : un compteur n'a pas besoin d'être initialisé, le premier `ADD` le crée (la ligne aussi, grâce à l'upsert). Une valeur négative décrémente. La doc recommande pourtant `SET` quand on veut l'idempotence : rejouer un `ADD` (réessai après un timeout) compte deux fois.
@@ -1244,6 +1275,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : dynamodb-putitem-remplace
+- Mots-clés : PutItem, GetItem, atomique, clé de partition DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : `ConditionExpression="attribute_not_exists(pk)"` fait échouer un `PutItem` si une ligne existe déjà avec cette clé : écriture « créer seulement ».
 - Contexte : La condition est évaluée sur la ligne de même clé, côté serveur, de façon atomique avec l'écriture : pas de course entre « vérifier » et « écrire » comme avec un `GetItem` préalable. On teste la clé de partition parce que toute ligne existante la porte forcément. Refus : `ConditionalCheckFailedException`, la ligne reste intacte.
@@ -1282,6 +1314,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, web
 - Prérequis : dynamodb-creer-si-absent
+- Mots-clés : boto3, ClientError, throttling
 - Source : data-platform · pwa-sync
 - Définition : Une condition fausse lève `ConditionalCheckFailedException`, à attraper par sa classe (`client.exceptions.…`) ou par le code de `ClientError`.
 - Contexte : boto3 génère ses classes d'exception à l'exécution : pas d'import `from botocore… import ConditionalCheckFailedException`. On les trouve sur le client (`t.meta.client.exceptions` depuis une `Table`). Toutes héritent de `ClientError`, dont `e.response["Error"]["Code"]` porte le nom. En TS, `err.name === "ConditionalCheckFailedException"` (ou `instanceof`).
@@ -1323,6 +1356,7 @@ m.stop()
 - Niveau : 1
 - Profils : web, data
 - Voir aussi : Data engineering/ingestion-idempotence-ecraser
+- Mots-clés : idempotent, timeout
 - Source : data-platform · pwa-sync
 - Définition : `DeleteItem` sur une clé absente réussit sans rien faire : supprimer deux fois donne le même résultat qu'une fois.
 - Contexte : Comme `DELETE` HTTP, l'appel est idempotent : un réessai après timeout est sans danger. La réponse est la même dans les deux cas : pour savoir si une ligne a vraiment été supprimée, demander `ReturnValues="ALL_OLD"` (présence de `Attributes`), ou exiger son existence avec `ConditionExpression="attribute_exists(pk)"`.
@@ -1359,6 +1393,7 @@ m.stop()
 - Niveau : 1
 - Profils : web, data
 - Voir aussi : dynamodb-transaction-cout-double, dynamodb-transaction-annulee-raisons
+- Mots-clés : transaction, BatchWriteItem
 - Source : data-platform · pwa-sync
 - Définition : `TransactWriteItems` regroupe jusqu'à 100 actions `Put`, `Update`, `Delete` ou `ConditionCheck`, appliquées toutes ou aucune.
 - Contexte : Chaque action porte sa clé, sa table et une `ConditionExpression` facultative ; si une seule condition échoue, rien n'est écrit. Contrairement à `BatchWriteItem`, `Update` est permis (incrément, `SET` partiel). Limites selon la doc : 100 actions, 4 Mo au total, jamais deux actions sur le même item. La doc déconseille les transactions pour l'ingestion en masse : coût double, `BatchWriteItem` y suffit.
@@ -1399,6 +1434,7 @@ m.stop()
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : dynamodb-mode-provisionne, dynamodb-prix-a-la-demande
+- Mots-clés : throttling, auto scaling
 - Source : data-platform · pwa-sync
 - Définition : `billing_mode = "PAY_PER_REQUEST"` (à la demande) facture chaque lecture et écriture, sans capacité à réserver ni coût de débit au repos.
 - Contexte : L'autre mode, `PROVISIONED`, réserve des unités de lecture et d'écriture par seconde : moins cher sous charge stable, payé même à vide, et limité (throttling) au-delà. À la demande s'adapte seul aux pics. Le stockage est facturé dans les deux modes. Pour une app de révision personnelle (quelques requêtes par session), c'est quelques centimes par mois.
@@ -1429,6 +1465,7 @@ resource "aws_dynamodb_table" "progress" {
 - Niveau : 1
 - Profils : ops
 - Voir aussi : dynamodb-provisionne-rentable
+- Mots-clés : throttling, GSI, provider, lecture éventuellement cohérente
 - Source : data-platform · pwa-sync
 - Définition : En `billing_mode = "PROVISIONED"`, on réserve un débit : `read_capacity` (RCU) et `write_capacity` (WCU) par seconde, payés même sans trafic.
 - Contexte : Une WCU = une écriture par seconde d'un item jusqu'à 1 Ko ; une RCU = une lecture forte par seconde jusqu'à 4 Ko (ou deux lectures éventuelles). Au-delà, les requêtes sont limitées (throttling). Chaque GSI d'une table provisionnée a ses propres capacités. Le mode par défaut du provider est `PROVISIONED` : l'omettre sans capacités est un oubli courant.
@@ -1465,6 +1502,7 @@ resource "aws_dynamodb_table" "annonces" {
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : région AWS, lecture éventuellement cohérente
 - Source : data-platform · pwa-sync
 - Définition : À la demande, on paie par million d'unités de requête : en us-east-1, 0,625 $ l'écriture, 0,125 $ la lecture (classe Standard).
 - Contexte : Prix relevés sur aws.amazon.com/dynamodb/pricing (us-east-1, N. Virginia, octobre 2026) ; pour Paris (eu-west-3), relire l'onglet de la région sur la page. Une unité d'écriture couvre 1 Ko, une unité de lecture 4 Ko en lecture forte (deux lectures éventuelles). Le stockage (0,25 $ par Go-mois en us-east-1) s'ajoute. Pour pwa-sync, quelques milliers de requêtes par mois : moins d'un centime.
@@ -1493,6 +1531,7 @@ round(cout, 5)  # → 0.00394  (dollar)
 - Niveau : 1
 - Profils : ops, web
 - Voir aussi : dynamodb-debit-par-partition
+- Mots-clés : throttling, quota AWS, SDK AWS, métrique
 - Source : data-platform · pwa-sync
 - Définition : Une requête refusée faute de débit lève `ProvisionedThroughputExceededException` (capacité provisionnée dépassée) ou `ThrottlingException` (plafond à la demande, quota).
 - Contexte : Les deux signifient « trop vite, réessaie plus tard », pas « requête invalide ». Le champ `ThrottlingReasons` de l'erreur dit pourquoi (table, index, partition) selon la doc. Les SDK AWS réessaient eux-mêmes ces erreurs avec un délai croissant : l'application ne les voit qu'une fois les réessais épuisés. Pour les lots, le throttling partiel passe par `UnprocessedItems` / `UnprocessedKeys`, sans exception.
@@ -1521,6 +1560,7 @@ err["Error"]["Code"] in REESSAYABLES  # → True
 - Type : piège
 - Niveau : 1
 - Profils : débutant, web, data
+- Mots-clés : TTL DynamoDB, epoch, DeleteItem
 - Source : data-platform · pwa-sync
 - Définition : Le TTL supprime seul un item dont l'attribut désigné (`expire_at`) contient une date passée, en secondes epoch, de type nombre (`N`).
 - Contexte : On active le TTL une fois par table en nommant l'attribut (sensible à la casse) ; chaque item porte ensuite sa propre date. Selon la doc : une chaîne (`"2026-11-24"`) ou tout autre format est ignoré sans erreur, et une date de plus de cinq ans dans le passé n'est jamais traitée. En JS, `Date.now()` donne des millisecondes : diviser par 1000.
@@ -1570,6 +1610,7 @@ m.stop()
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-acces-inconnus-sql
+- Mots-clés : Aurora, RDS, PartiQL, jointure
 - Source : data-platform · pwa-sync
 - Définition : Jointures et transactions relationnelles sur plusieurs tables : on choisit Aurora ou RDS ; DynamoDB ne joint pas, il faudrait joindre dans le code.
 - Contexte : Cas type : relier annonces, entreprises et dirigeants, et modifier un dossier et ses pièces dans une même transaction, avec clés étrangères. DynamoDB n'a ni `JOIN` ni intégrité référentielle : selon la doc, le `SELECT` PartiQL lit une seule table (`FROM table[.index]`). Ses transactions sont atomiques mais ne vérifient aucun lien entre tables. Aurora a un coût au repos, sauf pause à 0 ACU.
@@ -1604,6 +1645,7 @@ db.execute("SELECT nom, type FROM ent"
 - Niveau : 2
 - Profils : web, ops
 - Voir aussi : dynamodb-dax-cache
+- Mots-clés : ElastiCache, TTL DynamoDB, DAX
 - Source : data-platform · pwa-sync
 - Définition : Pour un cache à la microseconde devant une base, on choisit ElastiCache ; DynamoDB répond en millisecondes et suffit comme cache simple.
 - Contexte : Prix Paris (liste de prix AWS, octobre 2026) : ElastiCache Serverless Valkey 0,098 $ par Go-heure, avec 100 Mo facturés au minimum par cache, soit environ 7 $ par mois sans aucune requête. DynamoDB à la demande : 0 $ au repos, et un attribut TTL pour purger. DAX, cache dédié à DynamoDB, existe aussi (nœuds à l'heure). Pour quelques centaines d'appels par jour, une table suffit.
@@ -1641,6 +1683,7 @@ Besoin  : garder 24 h les réponses
 - Niveau : 2
 - Profils : ops
 - Voir aussi : couts-cout-au-repos
+- Mots-clés : RDS, zone de disponibilité
 - Source : data-platform · pwa-sync
 - Définition : À faible trafic, une table à la demande coûte des centimes par mois ; la plus petite base RDS PostgreSQL, environ 16 $ sans requête.
 - Contexte : Prix Paris (liste de prix AWS, octobre 2026) : RDS `db.t4g.micro` PostgreSQL mono-AZ 0,018 $ de l'heure, stockage gp3 0,133 $ par Go-mois avec 20 Go au minimum. DynamoDB à la demande : 0,1487 $ par million de lectures, 0,7423 $ par million d'écritures, 25 Go de stockage offerts. Le point d'équilibre se compte en dizaines de millions de requêtes par mois.
@@ -1669,6 +1712,7 @@ round(ddb, 3)              # → 0.022
 - Type : piège
 - Niveau : 2
 - Profils : web, data
+- Mots-clés : moto, GSI
 - Source : data-platform · pwa-sync
 - Définition : Une chaîne ou un binaire vide est permis dans un attribut ordinaire, refusé dans un attribut de clé de table ou d'index.
 - Contexte : Les valeurs de clé font au moins 1 octet (doc). `pk = ""` lève `ValidationException` : « An AttributeValue may not contain an empty string. Key: pk » (mesuré avec moto). Hors clé, `""` est stocké tel quel et relu `""`, distinct d'un attribut absent et de `NULL`. Un attribut qui sert de clé à un index secondaire est soumis à la même règle.
@@ -1719,6 +1763,7 @@ m.stop()
 - Profils : web, data
 - Prérequis : dynamodb-putitem-remplace
 - Voir aussi : dynamodb-sk-prefixee
+- Mots-clés : idempotent, clé de tri DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : Stocker chaque fait dans sa ligne (`R#<date>#<carte>`, `V#<appareil>#<thème>`) évite que deux appareils qui écrivent en même temps s'écrasent.
 - Contexte : Un document unique par utilisateur (JSON dans S3 ou une seule ligne) impose lire, fusionner, réécrire avec un contrôle de version et des réessais. Avec une ligne par fait et l'appareil dans la `sk` des compteurs, l'iPhone et le Mac n'écrivent jamais la même clé : pas de conflit à gérer, les écritures sont idempotentes. La fusion se fait à la lecture.
@@ -1747,6 +1792,7 @@ sum(lignes.values())  # → 420  (fusion à la lecture)
 - Profils : web, data
 - Prérequis : dynamodb-decimal-lecture
 - Voir aussi : dynamodb-decimal-depuis-float
+- Mots-clés : Decimal, boto3, API Gateway, sérialisation
 - Source : data-platform · pwa-sync
 - Définition : boto3 rend chaque nombre en `Decimal` ; `json.dumps` le refuse, il faut un convertisseur avant de renvoyer l'item en JSON.
 - Contexte : Piège typique d'une Lambda derrière API Gateway : `get_item` puis `json.dumps(item)` lève `TypeError: Object of type Decimal is not JSON serializable` (mesuré). Le paramètre `default=` de `json.dumps` reçoit chaque objet inconnu et rend sa version sérialisable. En TS, `unmarshall` rend directement des `number`, d'où la surprise côté Python.
@@ -1787,6 +1833,7 @@ json.dumps({"vues": Decimal("12"),
 - Type : concept
 - Niveau : 2
 - Profils : data, web
+- Mots-clés : moto, expression DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : Un ensemble (`SS`, `NS`, `BS`) contient des valeurs uniques d'un seul type, sans ordre garanti, et ne peut pas être vide.
 - Contexte : Un `set` Python devient ensemble, les doublons disparaissent, l'ordre n'est pas conservé (doc). Piège : écrire `set()` est refusé par DynamoDB (« may not be empty », mesuré avec moto) alors que `TypeSerializer` le laisse passer en `{'NS': []}`. Pour vider un ensemble : `REMOVE` de l'attribut. `ADD` et `DELETE` d'une `UpdateExpression` modifient un ensemble sans le relire.
@@ -1833,6 +1880,7 @@ m.stop()
 - Type : piège
 - Niveau : 2
 - Profils : data
+- Mots-clés : Decimal, boto3
 - Source : data-platform · pwa-sync
 - Définition : `TypeDeserializer` (et `boto3.resource`) rend tout `N` en `Decimal`, même un entier : `{"N": "5"}` devient `Decimal('5')`.
 - Contexte : Le nombre voyage en chaîne et `Decimal` garde sa valeur décimale exacte, sans l'arrondi binaire des `float`. Un `Decimal` se compare bien à un `int`, et les ensembles `NS` reviennent en `set` de `Decimal`. Les tests qui comparent un item lu à un dict littéral doivent donc écrire `Decimal("…")` ou des entiers, jamais des `float`.
@@ -1862,6 +1910,7 @@ d({"NS": ["1", "2"]})
 - Type : piège
 - Niveau : 2
 - Profils : data
+- Mots-clés : boto3, Decimal, TTL DynamoDB, epoch
 - Source : data-platform · pwa-sync
 - Définition : Un nombre `N` a au plus 38 chiffres de précision ; au-delà, DynamoDB lève une exception (doc) et boto3 refuse déjà côté client.
 - Contexte : Plage selon la doc : de `1E-130` à `9.99…E+125`, en positif comme en négatif. boto3 sérialise avec un contexte décimal à 38 chiffres qui lève `Inexact` au lieu d'arrondir en silence (mesuré). Pour une précision supérieure, la doc conseille une chaîne. Un identifiant (SIREN, numéro d'annonce) se stocke en `S`, même s'il n'a que des chiffres.
@@ -1890,6 +1939,7 @@ s(Decimal("9" * 39))  # ❌ Inexact
 - Type : concept
 - Niveau : 2
 - Profils : web
+- Mots-clés : item, expression DynamoDB, moto
 - Source : data-platform · pwa-sync
 - Définition : Une `M` ou une `L` en contient d'autres (32 niveaux selon la doc) ; `SET stats.IAM = :v` modifie un élément sans réécrire l'item.
 - Contexte : Le chemin de document (`stats.IAM`, `tags[0]`) cible un élément imbriqué : on met à jour un compteur sans relire la map, comme un `obj.stats.IAM = 4` en TS. Pas de limite de nombre d'éléments, seulement les 400 Ko de l'item. La limite de 32 niveaux vient de la doc ; moto ne l'applique pas (40 niveaux acceptés, mesuré).
@@ -1931,6 +1981,7 @@ m.stop()
 - Type : concept
 - Niveau : 2
 - Profils : expert
+- Mots-clés : UTF-8, moto, clé de partition DynamoDB, clé de tri DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : Une valeur de `pk` fait de 1 à 2048 octets, une valeur de `sk` de 1 à 1024 octets, comptés en UTF-8.
 - Contexte : Limites de la doc (« Partition keys and sort keys »). Une `sk` composée (`R#<date>#<thème>/<n>`) grandit avec chaque segment : un texte libre dedans peut dépasser. Au-delà, `ValidationException` (« Aggregated size of all range keys has exceeded the size limit of 1024 bytes », mesuré avec moto). Les clés comptent aussi dans les 400 Ko de l'item et sont recopiées dans chaque index secondaire.
@@ -1958,6 +2009,7 @@ len(titre.encode()) <= 1024  # → False
 - Type : recette
 - Niveau : 2
 - Profils : web, data
+- Mots-clés : clé de tri DynamoDB, partition DynamoDB, table unique
 - Source : data-platform · pwa-sync
 - Définition : Une `sk` préfixée (`R#…`, `V#…`, `T#…`) range plusieurs types de lignes dans la même partition et permet de lire un seul type avec `begins_with`.
 - Contexte : C'est le modèle « une table » : réponses, vues et temps d'un utilisateur vivent ensemble sous son `pk`, distingués par le préfixe. `begins_with(sk, :p)` lit un type, `BETWEEN` une plage de dates (`R#2026-10-01` à `R#2026-10-31`). Le `#` n'a rien de spécial pour DynamoDB : c'est une convention lisible, triée comme n'importe quel caractère.
@@ -1997,6 +2049,7 @@ aws dynamodb query --table-name "$table" \
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-sk-prefixee
+- Mots-clés : table unique, clé de tri DynamoDB, Query
 - Source : data-platform · pwa-sync
 - Définition : Dans une table aux clés surchargées, chaque item porte un attribut `type` (`entreprise`, `annonce`) qui dit quelle entité il représente.
 - Contexte : Le préfixe de `sk` suffit à un `begins_with`, mais le code lecteur, un export ou un index ont besoin d'un attribut explicite : une `Query` sur `SIREN#…` ramène la fiche et les annonces mêlées, et `type` dit vers quelle classe désérialiser chacune. Il sert aussi à filtrer un export. Le reste de l'item suit le schéma de son type, contrôlé par le code, pas par la table.
@@ -2025,6 +2078,7 @@ items = [
 - Type : concept
 - Niveau : 2
 - Profils : data, ops
+- Mots-clés : partition DynamoDB, partition chaude, throttling, lecture fortement cohérente
 - Source : data-platform · pwa-sync
 - Définition : Chaque partition sert au plus 3 000 unités de lecture et 1 000 unités d'écriture par seconde, quel que soit le mode de capacité.
 - Contexte : Selon la doc, une unité d'écriture = 1 écriture/s d'un item ≤ 1 Ko ; une unité de lecture = 1 lecture fortement cohérente/s (ou 2 éventuellement cohérentes) d'un item ≤ 4 Ko. Les items d'une même `pk` sont rangés ensemble : une `pk` très sollicitée devient une partition chaude, freinée (throttling) même si la table est à la demande et calme ailleurs.
@@ -2053,6 +2107,7 @@ annonces * wcu / secondes  # → 3200.0
 - Niveau : 2
 - Profils : ops, expert
 - Prérequis : dynamodb-debit-par-partition
+- Mots-clés : partition chaude, WCU, LSI
 - Source : data-platform · pwa-sync
 - Définition : L'adaptive capacity augmente automatiquement, sans frais, le débit d'une partition chaude et peut isoler un item très sollicité sur sa propre partition.
 - Contexte : Active sur toute table, rien à configurer (doc). Elle redonne aux partitions chargées la capacité inutilisée ailleurs, et déplace les items chauds pour qu'ils ne partagent plus une partition. Limites : ni plus que la capacité de la table, ni plus que le maximum d'une partition (1 000 écritures/s pour un item isolé). Pas de découpage d'une collection si la table a un index local (LSI).
@@ -2081,6 +2136,7 @@ tient(1500)  # → False (même isolé)
 - Niveau : 2
 - Profils : data, expert
 - Prérequis : dynamodb-debit-par-partition
+- Mots-clés : clé de partition DynamoDB, partition chaude, Query
 - Source : data-platform · pwa-sync
 - Définition : Le write sharding ajoute un suffixe (`2026-10-23.1` à `.N`) à une `pk` chaude pour répartir ses écritures sur plusieurs valeurs, donc plusieurs partitions.
 - Contexte : Exemple de la doc : `pk` = date, suffixe aléatoire de 1 à 200 ; les écritures du jour se répartissent, le débit total monte. Prix côté lecture : relire la journée demande une `Query` par suffixe, puis une fusion dans l'application. N se choisit d'après le pic : 3 200 écritures/s pour 1 000 par partition, au moins 4 suffixes, avec marge.
@@ -2112,6 +2168,7 @@ len(lire)  # → 8  (8 Query à fusionner)
 - Niveau : 2
 - Profils : web, expert
 - Prérequis : dynamodb-debit-par-partition, dynamodb-add-compteur
+- Mots-clés : partition DynamoDB, partition chaude, WCU
 - Source : data-platform · pwa-sync
 - Définition : Un compteur de vues très sollicité (`ADD vues :1`) sur une seule clé est plafonné par sa partition : 1 000 unités d'écriture par seconde.
 - Contexte : Selon la doc, chaque partition sert au plus 3 000 unités de lecture et 1 000 unités d'écriture par seconde, à la demande comme en provisionné. Un compteur unique (`VUES#483609327`) devient une clé chaude, limitée au-delà. Solution : l'éclater en N items de `pk` différentes (`…#0` à `…#N-1`), écrire sur l'un au hasard, sommer les N à la lecture. Garder ces items petits.
@@ -2149,6 +2206,7 @@ sum(eclats)        # → 560 (5 éclats lus)
 - Niveau : 2
 - Profils : web, data
 - Prérequis : dynamodb-sk-prefixee
+- Mots-clés : clé de partition DynamoDB, clé de tri DynamoDB, table unique, Query
 - Source : data-platform · pwa-sync
 - Définition : Surcharger les clés, c'est ranger plusieurs entités dans des attributs génériques `pk`/`sk` dont la valeur commence par le type : `SIREN#…`, `ANNONCE#…`.
 - Contexte : Les noms `pk`/`sk` ne disent rien de l'entité, la valeur le dit. Une partition `SIREN#483609327` regroupe la fiche (`sk = META`) et ses annonces (`sk = ANNONCE#<date>#<id>`) : une seule `Query` ramène l'entreprise et son historique. Le préfixe évite aussi la collision entre deux entités qui auraient le même identifiant brut.
@@ -2178,6 +2236,7 @@ sorted(part)[-1]  # → 'META'
 - Niveau : 2
 - Profils : web, data
 - Prérequis : dynamodb-sk-prefixee
+- Mots-clés : clé de tri DynamoDB, ISO 8601
 - Source : data-platform · pwa-sync
 - Définition : Une `sk` de type `S` se trie comme une chaîne, octet par octet : dates ISO bien triées, nombres sans zéros devant mal triés.
 - Contexte : `"T#10"` passe avant `"T#2"` : le caractère `1` est avant `2`. Les dates `AAAA-MM-JJ` sont sûres parce que leur longueur est fixe et que l'année vient d'abord. Pour un numéro, on complète de zéros (`0002`, `0010`). `ScanIndexForward=False` renvoie la partition en ordre décroissant (les plus récents d'abord).
@@ -2207,6 +2266,7 @@ sorted(["T#0009", "T#0010", "T#0002"])
 - Profils : ops
 - Prérequis : dynamodb-cles-immuables
 - Voir aussi : dynamodb-protection-suppression
+- Mots-clés : clé de partition DynamoDB, provider, terraform apply, GSI
 - Source : data-platform · pwa-sync
 - Définition : Dans `aws_dynamodb_table`, `hash_key` et `range_key` sont « Forces new resource » : les changer détruit la table et en crée une neuve, vide.
 - Contexte : DynamoDB ne sait pas changer la clé primaire d'une table : le provider ne peut que remplacer. Avec `deletion_protection_enabled`, l'apply échoue à la destruction ; sans, les données disparaissent. Pour changer de clé : nouvelle table (autre nom), copie (export S3 puis import, ou script), bascule, puis suppression de l'ancienne. Ajouter un GSI, lui, se fait en place.
@@ -2235,6 +2295,7 @@ sorted(["T#0009", "T#0010", "T#0002"])
 - Niveau : 2
 - Profils : web, data
 - Prérequis : dynamodb-gsi-autre-cle
+- Mots-clés : GSI, FilterExpression
 - Source : data-platform · pwa-sync
 - Définition : Un item sans l'attribut de clé d'un index n'y figure pas : l'index ne contient que les items qui portent cet attribut (index creux, *sparse*).
 - Contexte : On s'en sert comme d'une liste filtrée gratuite : `en_cours` n'est posé que sur les procédures ouvertes, et le GSI `ouvertes` (clé `en_cours`) ne contient qu'elles. Le lire coûte la taille de la liste, pas de la table, contrairement à un `FilterExpression`. Un item sans l'attribut ne consomme aucune écriture d'index.
@@ -2274,6 +2335,7 @@ m.stop()
 - Niveau : 2
 - Profils : ops, expert
 - Prérequis : dynamodb-gsi-autre-cle
+- Mots-clés : GSI, LSI, projection, quota AWS, table unique
 - Source : data-platform · pwa-sync
 - Définition : Par table : 20 GSI (quota par défaut, ajustable), 5 LSI au plus, et 100 attributs `INCLUDE` cumulés sur tous les index.
 - Contexte : Chiffres de la page Quotas de la doc DynamoDB. Le plafond de 100 ne compte que les `NonKeyAttributes` des projections `INCLUDE` ; `KEYS_ONLY` et `ALL` n'en consomment pas. Un index par accès finit par buter sur ces limites, d'où la surcharge d'index (un GSI générique pour plusieurs accès) dans le modèle « une table ».
@@ -2304,6 +2366,7 @@ sum(len(a) for a in include.values())  # → 5
 - Profils : web
 - Prérequis : dynamodb-gsi-autre-cle, dynamodb-lecture-forte
 - Voir aussi : dynamodb-lsi-lecture-forte
+- Mots-clés : lecture éventuellement cohérente, LSI, RCU
 - Source : data-platform · pwa-sync
 - Définition : Un GSI est mis à jour de façon asynchrone : sa lecture est toujours éventuellement cohérente, et `ConsistentRead=True` y est refusé.
 - Contexte : L'écriture dans la table répond avant que le GSI soit à jour ; la propagation prend en général une fraction de seconde (selon la doc), plus en cas de panne. Une `Query` sur l'index juste après un `PutItem` peut donc ne pas voir l'item. Sur la table et sur un LSI, `ConsistentRead=True` donne une lecture forte, au double du coût en RCU.
@@ -2342,6 +2405,7 @@ m.stop()
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-lsi-ou-gsi-creation
+- Mots-clés : clé de partition DynamoDB, clé de tri DynamoDB, lecture fortement cohérente, GSI
 - Source : data-platform · pwa-sync
 - Définition : Un LSI garde la clé de partition de la table, remplace la clé de tri, et accepte `ConsistentRead=True`.
 - Contexte : Il trie autrement les items d'une même partition : la table `procedures` (pk = SIREN, sk = `P#<num>`) avec un LSI `par-date` lit les procédures d'un SIREN par date. Comme il est stocké avec la partition, il est cohérent avec elle et autorise la lecture forte. La clé de tri de la table y est projetée comme attribut ordinaire.
@@ -2385,6 +2449,7 @@ m.stop()
 - Profils : web, data
 - Prérequis : dynamodb-gsi-autre-cle
 - Voir aussi : dynamodb-unicite-item-garde
+- Mots-clés : GSI, LSI, clé primaire, Query
 - Source : data-platform · pwa-sync
 - Définition : Dans un GSI, plusieurs items peuvent avoir la même clé d'index : seule la clé primaire de la table est unique.
 - Contexte : Une `Query` sur `tribunal = Paris AND date = 2026-10-01` renvoie toutes les annonces de ce jour, dans un ordre quelconque entre elles. Le GSI ne refuse jamais une écriture pour doublon : c'est une copie, pas une contrainte. Même chose pour la clé de tri d'un LSI. Pour l'unicité d'un autre attribut, il faut une ligne dédiée dont la clé primaire est cet attribut.
@@ -2426,6 +2491,7 @@ m.stop()
 - Niveau : 2
 - Profils : web, expert
 - Prérequis : dynamodb-projection-index
+- Mots-clés : projection, LSI, GSI, moto
 - Source : data-platform · pwa-sync
 - Définition : Demander un attribut non projeté : un LSI va le chercher dans la table (lecture en plus), un GSI ne le peut pas.
 - Contexte : Selon la doc, sur un LSI ce « fetch » est automatique mais facture la lecture de **l'item entier** de la table, arrondie à 4 Ko par item, en plus de l'index, et ajoute de la latence. Une requête GSI ne voit que sa projection : l'attribut manque à la réponse (mesuré avec moto). Il faut alors une 2e lecture sur la table, ou l'ajouter à la projection.
@@ -2466,6 +2532,7 @@ m.stop()
 - Niveau : 2
 - Profils : ops, data
 - Prérequis : dynamodb-gsi-autre-cle
+- Mots-clés : GSI, projection, index creux, BODACC
 - Source : data-platform · pwa-sync
 - Définition : Une écriture qui modifie un index est facturée à la table **et** à chaque index concerné ; changer une clé d'index coûte deux écritures d'index.
 - Contexte : Règles de la doc : nouvel item avec l'attribut indexé = 1 écriture d'index ; clé d'index qui change (Paris → Lyon) = 2 (suppression de l'ancienne entrée, ajout de la nouvelle) ; attribut indexé supprimé = 1 ; attribut ni clé ni projeté modifié = 0. Chaque Ko d'entrée d'index au-delà du premier ajoute une unité. Trois GSI `ALL` peuvent quadrupler le coût d'écriture.
@@ -2494,6 +2561,7 @@ table + sum(gsi.values())   # → 3   (unités)
 - Niveau : 2
 - Profils : ops
 - Prérequis : dynamodb-lsi-ou-gsi-creation
+- Mots-clés : LSI, provider, terraform plan, terraform apply
 - Source : data-platform · pwa-sync
 - Définition : Le bloc `local_secondary_index` (nom, `range_key`, `projection_type`) est « Forces new resource » : le modifier recrée la table.
 - Contexte : Pas de clé de partition dans le bloc : c'est celle de la table. Comme DynamoDB n'accepte un LSI qu'au `CreateTable`, le provider ne peut que détruire et recréer : la table repart vide. `range_key` doit avoir son bloc `attribute`. Le plan l'annonce par `-/+` et `# forces replacement` : à lire avant tout apply sur une table de données.
@@ -2524,6 +2592,7 @@ local_secondary_index {
 - Niveau : 2
 - Profils : web, data
 - Prérequis : dynamodb-query-une-partition
+- Mots-clés : clé de partition DynamoDB, clé de tri DynamoDB, FilterExpression, boto3
 - Source : data-platform · pwa-sync
 - Définition : Une `KeyConditionExpression` accepte `pk = :v` obligatoire, puis au plus une condition sur `sk` : `=`, `<`, `<=`, `>`, `>=`, `BETWEEN`, `begins_with`.
 - Contexte : Pas de `OR`, pas de `IN`, pas de `contains`, rien sur un attribut hors clé : ces filtres vont dans `FilterExpression` (payé quand même). `begins_with` ne marche que sur `sk`, jamais sur `pk` (mesuré avec moto : « Query key condition not supported »). Avec boto3, `Key("pk").eq(…) & Key("sk").begins_with(…)` construit l'expression.
@@ -2550,6 +2619,7 @@ type(c).__name__  # → 'And'
 - Type : concept
 - Niveau : 2
 - Profils : web, data
+- Mots-clés : boto3, SDK AWS
 - Source : data-platform · pwa-sync
 - Définition : L'API bas niveau de DynamoDB type chaque valeur : `{"S": "u1"}`, `{"N": "5"}` (nombre en chaîne), `{"BOOL": true}`, `{"M": {…}}`, `{"L": […]}`.
 - Contexte : La CLI, `fetch` signé et `boto3.client` parlent ce format ; `boto3.resource` (et `DynamoDBDocumentClient` en TS) convertit pour vous. Les nombres voyagent en chaîne pour garder leur précision. Oublier le type (`{":pk": "u1"}`) fait échouer la validation des paramètres côté client (mesuré : `ParamValidationError`).
@@ -2578,6 +2648,7 @@ s.serialize(True)   # → {'BOOL': True}
 - Niveau : 2
 - Profils : ops, data
 - Prérequis : dynamodb-query-une-partition
+- Mots-clés : partition DynamoDB, Query
 - Source : data-platform · pwa-sync
 - Définition : `--select COUNT` renvoie seulement `Count` et `ScannedCount`, sans les lignes : utile pour tester un accès ou compter.
 - Contexte : La lecture est facturée pareil (DynamoDB lit les lignes pour les compter), mais la réponse est minuscule. Le script d'isolation s'en sert : un nombre prouve que la partition est lisible, sans afficher de données. `Count` est par page : au-delà de 1 Mo lu, il faut additionner les pages.
@@ -2608,6 +2679,7 @@ aws dynamodb query --table-name "$table" \
 - Profils : web, data
 - Prérequis : dynamodb-query-une-partition
 - Voir aussi : dynamodb-condition-de-cle, dynamodb-rcu-arrondi-4ko
+- Mots-clés : clé de tri DynamoDB, Query, moto
 - Source : data-platform · pwa-sync
 - Définition : `FilterExpression` retire des lignes **après** leur lecture : `Count` baisse, `ScannedCount` et la facture non.
 - Contexte : La `KeyConditionExpression` choisit ce qui est lu (et payé) ; le filtre ne fait que trier la réponse, comme un `.filter()` côté serveur. Mesuré avec moto : 3 lignes lues, 1 renvoyée (`Count = 1`, `ScannedCount = 3`). Un filtre très sélectif sur une grosse partition est le signe d'une clé de tri mal choisie.
@@ -2650,6 +2722,7 @@ m.stop()
 - Niveau : 2
 - Profils : web, data
 - Prérequis : dynamodb-query-ordre-croissant
+- Mots-clés : clé de tri DynamoDB, partition DynamoDB, FilterExpression, ISO 8601
 - Source : data-platform · pwa-sync
 - Définition : `ScanIndexForward=False` + `Limit=1` lit une seule ligne : la plus grande `sk` de la partition, donc la plus récente avec une date ISO.
 - Contexte : DynamoDB parcourt la partition à l'envers et s'arrête après une ligne : une seule ligne lue et facturée, au lieu de rapatrier toute la partition pour prendre le `max()` en Python. Restreindre la `sk` avec `begins_with` garde le bon type de ligne. Ne pas y ajouter de `FilterExpression` : `Limit` compte avant le filtre.
@@ -2692,6 +2765,7 @@ m.stop()
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : dynamodb-rcu-arrondi-4ko
+- Mots-clés : RCU, item
 - Source : data-platform · pwa-sync
 - Définition : `ProjectionExpression` ne renvoie que les attributs listés : la réponse rétrécit, mais la lecture est facturée sur la taille de la ligne entière.
 - Contexte : DynamoDB lit toujours l'item complet sur disque puis découpe la réponse ; les unités de lecture se calculent sur l'item, pas sur ce qui revient (selon la doc). On gagne en octets transférés et en mémoire Lambda, pas en facture. Un attribut demandé mais absent n'apparaît simplement pas. Pour vraiment lire moins, il faut des items plus petits ou un index qui projette moins.
@@ -2732,6 +2806,7 @@ m.stop()
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-projection-index
+- Mots-clés : projection, GSI, moto
 - Source : data-platform · pwa-sync
 - Définition : `Select` choisit la forme de la réponse : `ALL_ATTRIBUTES` (défaut sur une table), `SPECIFIC_ATTRIBUTES` (ceux de `ProjectionExpression`), `COUNT`, `ALL_PROJECTED_ATTRIBUTES` (index seulement).
 - Contexte : Donner une `ProjectionExpression` sans `Select` revient à `SPECIFIC_ATTRIBUTES`. Les deux paramètres sont liés : `SPECIFIC_ATTRIBUTES` sans projection est refusé, et toute autre valeur avec une projection aussi (selon la doc, mesuré avec moto). Sur un GSI, le défaut est `ALL_PROJECTED_ATTRIBUTES` : seuls les attributs copiés dans l'index sont lisibles.
@@ -2773,6 +2848,7 @@ m.stop()
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : lecture fortement cohérente, lecture éventuellement cohérente, GetItem
 - Source : data-platform · pwa-sync
 - Définition : Une unité de lecture (RCU) = une lecture forte de 4 Ko ou deux éventuelles ; `GetItem` arrondit l'item au multiple de 4 Ko supérieur.
 - Contexte : Selon la doc : 3,5 Ko comptent comme 4 Ko, 10 Ko comme 12 Ko. Lecture forte = 1 unité par tranche, éventuelle (défaut) = 0,5, transactionnelle (`TransactGetItems`) = 2. À la demande, on paie ces mêmes unités, appelées unités de requête de lecture. Garder les items petits est le premier levier de coût.
@@ -2805,6 +2881,7 @@ rcu(8 * 1024, "transaction")  # → 4
 - Niveau : 2
 - Profils : ops, expert
 - Prérequis : dynamodb-rcu-arrondi-4ko
+- Mots-clés : moto, RCU, Query, Scan
 - Source : data-platform · pwa-sync
 - Définition : `ReturnConsumedCapacity="TOTAL"` ajoute `ConsumedCapacity` à la réponse : les unités réellement consommées par cet appel (`INDEXES` détaille table et index).
 - Contexte : Par défaut (`NONE`), la réponse ne dit rien du coût. Activé, il sert à vérifier une estimation, comparer deux modèles de clés, ou journaliser le coût d'une Lambda. Pour `GetItem`, `INDEXES` ne montre que la table : il ne lit jamais d'index (selon la doc). moto renvoie le champ, mais ses valeurs ne suivent pas toutes les règles d'AWS.
@@ -2847,6 +2924,7 @@ m.stop()
 - Profils : data
 - Prérequis : dynamodb-batchgetitem
 - Voir aussi : dynamodb-backoff-jitter
+- Mots-clés : throttling, backoff exponentiel, partition DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : `BatchGetItem` peut rendre une partie des clés dans `UnprocessedKeys` et renvoie les items dans un ordre quelconque, à réassocier par clé.
 - Contexte : Réponse partielle, toujours en `200`, si la réponse dépasse 16 Mo, si le débit est dépassé ou si plus de 1 Mo est demandé à une partition (selon la doc). `UnprocessedKeys` a la forme de `RequestItems` : on le renvoie tel quel, avec un délai croissant. Les items arrivent sans ordre garanti : la doc conseille de projeter les attributs de clé pour les reconnaître. En TS, même logique : construire une `Map` par clé.
@@ -2886,6 +2964,7 @@ bool(demande)  # → True  (re-appel, avec délai)
 - Profils : web, data
 - Prérequis : dynamodb-query-une-partition
 - Voir aussi : s3-pagination-1000
+- Mots-clés : pagination, boto3, Query
 - Source : data-platform · pwa-sync
 - Définition : Une `Query` renvoie au plus 1 Mo (ou `Limit` lignes) ; `LastEvaluatedKey` indique où reprendre avec `ExclusiveStartKey`.
 - Contexte : Pas de `LastEvaluatedKey` : c'est la dernière page. Lire une seule page d'une grosse partition donne un résultat silencieusement incomplet, sans erreur. La CLI pagine seule (désactivable avec `--no-paginate`) ; boto3 a `get_paginator("query")` côté client. Même logique que `ContinuationToken` de S3.
@@ -2927,6 +3006,7 @@ m.stop()
 - Type : concept
 - Niveau : 2
 - Profils : data
+- Mots-clés : throttling, transaction, outbox, backoff exponentiel
 - Source : data-platform · pwa-sync
 - Définition : `BatchWriteItem` envoie jusqu'à 25 `PutRequest` ou `DeleteRequest` en une requête ; ce qui n'a pas été traité revient dans `UnprocessedItems`.
 - Contexte : Le lot n'est pas transactionnel : une partie peut réussir, l'autre revenir dans `UnprocessedItems`, sans erreur HTTP (limitation de débit). Il faut renvoyer ces éléments, idéalement avec un délai croissant. Au-delà de 25 éléments, la requête entière est refusée (`ValidationException`, selon la doc). Côté pwa-sync, les non traités retournent dans l'outbox.
@@ -2965,6 +3045,7 @@ len(reste)  # → 1   (à renvoyer plus tard)
 - Profils : data
 - Prérequis : dynamodb-batchwriteitem-25
 - Voir aussi : dynamodb-batchwrite-cle-en-double
+- Mots-clés : boto3, context manager, BatchWriteItem, botocore
 - Source : data-platform · pwa-sync
 - Définition : `table.batch_writer()` de boto3 met les `put_item` en tampon, envoie des `BatchWriteItem` de 25 et renvoie seul les `UnprocessedItems`.
 - Contexte : Gestionnaire de contexte (`with`) : à la sortie, il vide le tampon jusqu'au dernier élément. Pas d'équivalent dans le SDK JS v3 (`BatchWriteCommand` à découper soi-même). Lu dans le source de boto3 : les non traités sont remis dans le lot suivant sans délai propre ; le backoff ne vient que des réessais de botocore sur exception. `overwrite_by_pkeys` dédoublonne le tampon par clé, le dernier gagne.
@@ -3006,6 +3087,7 @@ m.stop()
 - Niveau : 2
 - Profils : data
 - Prérequis : dynamodb-batchwriteitem-25
+- Mots-clés : moto, outbox, item
 - Source : data-platform · pwa-sync
 - Définition : Un `BatchWriteItem` qui vise deux fois la même clé est refusé en entier, comme un lot de plus de 16 Mo.
 - Contexte : Selon la doc, tout le lot est rejeté (`ValidationException`) si deux requêtes visent le même item, si un item dépasse 400 Ko, si le lot dépasse 16 Mo ou 25 requêtes. Piège : moto accepte deux `Put` de la même clé (mesuré) ; le test passe, la prod échoue. Une outbox pwa-sync qui a enregistré deux fois la même réponse doit être dédoublonnée avant le découpage en lots.
@@ -3038,6 +3120,7 @@ dernier[("u1", "V#mac#IAM")]["vues"]  # → 4
 - Profils : data, ops
 - Prérequis : dynamodb-batchwriteitem-25
 - Voir aussi : dynamodb-reessais-botocore, step-functions-retry-backoff
+- Mots-clés : throttling, timeout
 - Source : data-platform · pwa-sync
 - Définition : On renvoie `UnprocessedItems` après un délai qui double à chaque tentative (backoff exponentiel), tiré au hasard sous ce plafond (jitter), avec un nombre d'essais borné.
 - Contexte : La doc « recommande fortement » le backoff : renvoyé tout de suite, le lot retombe sur la même table saturée. Le jitter évite que plusieurs Lambdas, limitées au même instant, réessaient toutes ensemble et recréent le pic. Plafonner le délai (`cap`) et le nombre d'essais, puis remonter une erreur : sinon la Lambda tourne jusqu'à son timeout. En TS, même schéma avec `setTimeout`.
@@ -3072,6 +3155,7 @@ d = random.uniform(0, plafond)
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-ensembles, dynamodb-updateexpression-clauses
+- Mots-clés : expression DynamoDB, moto
 - Source : data-platform · pwa-sync
 - Définition : Sur un ensemble (`SS`, `NS`), `ADD` ajoute des éléments sans doublon et `DELETE` en retire ; `DELETE` n'accepte que les ensembles.
 - Contexte : Un `set` Python devient un `SS` (équivalent d'un `Set<string>` en TS). `ADD`/`DELETE` modifient l'ensemble côté serveur, sans relire : deux appareils peuvent ajouter chacun un thème en même temps. `ADD` accepte un nombre ou un ensemble, jamais une liste (`L`) ni une chaîne ; `DELETE` sur un nombre lève `ValidationException` (mesuré avec moto).
@@ -3113,6 +3197,7 @@ m.stop()
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-updateitem-partiel
+- Mots-clés : expression DynamoDB, atomique, moto
 - Source : data-platform · pwa-sync
 - Définition : Une `UpdateExpression` combine `SET`, `REMOVE`, `ADD`, `DELETE` dans n'importe quel ordre, chaque mot-clé une seule fois, ses actions séparées par des virgules.
 - Contexte : Tout s'applique en une seule écriture atomique : pas d'état intermédiaire visible. Plusieurs affectations vont dans le même `SET` (`SET a = :a, b = :b`). Un même attribut ne peut pas apparaître dans deux actions (`SET a … REMOVE a`) : mesuré avec moto, `ValidationException` (« Two document paths overlap »).
@@ -3155,6 +3240,7 @@ m.stop()
 - Profils : web
 - Prérequis : dynamodb-updateexpression-clauses
 - Voir aussi : dynamodb-add-compteur
+- Mots-clés : expression DynamoDB, moto
 - Source : data-platform · pwa-sync
 - Définition : `SET a = a + :n` (ou `- :n`) calcule côté serveur à partir de la valeur actuelle ; l'attribut doit exister.
 - Contexte : Contrairement à `ADD`, `SET a = a + :n` échoue si `a` est absent (mesuré avec moto : `ValidationException`, « attribute that does not exist »). Toutes les actions d'une expression lisent les valeurs **d'avant** la mise à jour (selon la doc) : l'ordre d'écriture des actions ne change rien. On peut ainsi décaler des valeurs (`SET b = a, c = b`).
@@ -3196,6 +3282,7 @@ m.stop()
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-updateexpression-clauses
+- Mots-clés : expression DynamoDB, UpdateItem
 - Source : data-platform · pwa-sync
 - Définition : `if_not_exists(a, :v)` vaut `a` s'il existe, sinon `:v` ; il sert à initialiser un compteur ou à figer une « date de première vue ».
 - Contexte : `SET vu = if_not_exists(vu, :d)` pose la date au premier passage et la garde ensuite : les appels suivants réécrivent la même valeur. `SET n = if_not_exists(n, :zero) + :un` est un compteur qui démarre seul, comme `ADD`, mais combinable avec d'autres `SET`. La fonction n'existe que dans une `UpdateExpression`, côté `SET` (selon la doc).
@@ -3236,6 +3323,7 @@ m.stop()
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-chemin-document, dynamodb-updateexpression-clauses
+- Mots-clés : expression DynamoDB, moto
 - Source : data-platform · pwa-sync
 - Définition : `SET h = list_append(h, :x)` ajoute la liste `:x` en fin de `h` ; `list_append(:x, h)` l'ajoute en tête.
 - Contexte : `list_append(l1, l2)` concatène `l2` après `l1` (≈ `[...l1, ...l2]` en TS) : l'ordre des arguments décide du côté. Les deux arguments sont des listes : `:x` vaut `["c"]`, pas `"c"`. Sur une liste absente, l'appel échoue (mesuré avec moto) : on écrit `list_append(if_not_exists(h, :vide), :x)` avec `:vide = []`.
@@ -3277,6 +3365,7 @@ m.stop()
 - Niveau : 2
 - Profils : web
 - Prérequis : dynamodb-updateitem-partiel
+- Mots-clés : RCU, GetItem, PutItem, UpdateItem
 - Source : data-platform · pwa-sync
 - Définition : `ReturnValues` renvoie la ligne dans `Attributes` : `ALL_OLD`/`ALL_NEW` (toute la ligne), `UPDATED_OLD`/`UPDATED_NEW` (attributs modifiés), `NONE` par défaut.
 - Contexte : Évite un `GetItem` après l'écriture : le compteur incrémenté revient dans la même réponse. Selon la doc, aucune RCU n'est consommée pour ces valeurs. `PutItem` et `DeleteItem` n'acceptent que `NONE` et `ALL_OLD` ; les quatre variantes sont pour `UpdateItem`. `UPDATED_OLD` sur un attribut qui n'existait pas ne renvoie pas `Attributes` (mesuré avec moto).
@@ -3318,6 +3407,7 @@ m.stop()
 - Niveau : 2
 - Profils : web, expert
 - Prérequis : dynamodb-creer-si-absent
+- Mots-clés : expression DynamoDB, moto
 - Source : data-platform · pwa-sync
 - Définition : Une `ConditionExpression` combine comparaisons (`=`, `<>`, `<`, `BETWEEN`, `IN`), fonctions (`attribute_exists`, `size`, `begins_with`…) et `AND`/`OR`/`NOT`.
 - Contexte : Elle s'évalue sur la ligne actuelle, avant l'écriture. `size(h)` donne la longueur d'une chaîne, d'une liste ou d'un ensemble : `size(h) < :max` borne un historique. Piège : une comparaison sur un attribut absent est fausse, donc `NOT a > :m` est **vraie** quand `a` manque (mesuré avec moto). Pour exiger la présence, ajouter `attribute_exists(a) AND …`.
@@ -3358,6 +3448,7 @@ m.stop()
 - Profils : data
 - Prérequis : dynamodb-batchwriteitem-25
 - Voir aussi : dynamodb-transactwriteitems
+- Mots-clés : UpdateItem, TransactWriteItems, boto3
 - Source : data-platform · pwa-sync
 - Définition : `BatchWriteItem` n'accepte que `PutRequest` et `DeleteRequest` : ni `UpdateItem`, ni `ConditionExpression`, ni lecture de l'ancienne valeur.
 - Contexte : Chaque élément est un remplacement ou une suppression brute. Pour une mise à jour partielle ou conditionnelle, il faut `UpdateItem` un par un, ou `TransactWriteItems` (100 éléments au plus, tout ou rien, coût double). pwa-sync s'en accommode : chaque ligne porte sa dernière valeur complète, un `Put` suffit. Mesuré : `UpdateRequest` refusé dès la validation des paramètres de boto3.
@@ -3388,6 +3479,7 @@ sorted(next(iter(e)) for e in lot)
 - Type : concept
 - Niveau : 2
 - Profils : web
+- Mots-clés : transaction, GetItem, isolation
 - Source : data-platform · pwa-sync
 - Définition : `TransactGetItems` lit jusqu'à 100 items en une fois et garantit qu'ils viennent du même instant, jamais d'une transaction à moitié appliquée.
 - Contexte : Plusieurs `GetItem` (ou un `BatchGetItem`) lancés pendant une transaction d'écriture peuvent voir l'ancien état d'un item et le nouvel état d'un autre : la doc parle d'isolation « read-committed ». `TransactGetItems` est sérialisable : tout avant, ou tout après. `Responses` suit l'ordre de la requête, case vide pour un item absent. Limites selon la doc : 100 items, 4 Mo.
@@ -3426,6 +3518,7 @@ m.stop()
 - Type : recette
 - Niveau : 2
 - Profils : web
+- Mots-clés : transaction, boto3, throttling
 - Source : data-platform · pwa-sync
 - Définition : Une transaction annulée lève `TransactionCanceledException`, dont `CancellationReasons` donne un code par action, dans l'ordre de `TransactItems`.
 - Contexte : Codes possibles selon la doc : `None` (cette action allait bien, la chaîne littérale `"None"`), `ConditionalCheckFailed`, `TransactionConflict`, `ThrottlingError`, `ValidationError`… Il faut lire la liste pour savoir quelle action a bloqué : la condition métier ou un conflit passager. En boto3, la liste est dans `e.response["CancellationReasons"]`.
@@ -3468,6 +3561,7 @@ m.stop()
 - Niveau : 2
 - Profils : web
 - Voir aussi : dynamodb-unicite-item-garde
+- Mots-clés : transaction, clé étrangère, atomique
 - Source : data-platform · pwa-sync
 - Définition : Une action `ConditionCheck` pose une condition sur un item que la transaction ne modifie pas : si elle est fausse, toute la transaction est annulée.
 - Contexte : Équivalent d'une contrainte de clé étrangère, vérifiée au moment de l'écriture : « le tribunal existe » avant d'enregistrer une annonce qui le référence. Lire le tribunal avant puis écrire laisse une fenêtre où il peut être supprimé ; dans la transaction, la vérification et l'écriture sont atomiques. L'action ne coûte qu'en capacité, l'item vérifié n'est pas modifié.
@@ -3509,6 +3603,7 @@ m.stop()
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : provider, auto scaling
 - Source : data-platform · pwa-sync
 - Définition : Une table passe de provisionné à la demande au plus 4 fois par 24 h glissantes ; en Terraform, on change `billing_mode`.
 - Contexte : Limite relevée dans la doc DynamoDB (on-demand capacity mode). Le changement ne recrée pas la table et ne coupe pas le trafic. En passant en `PROVISIONED`, il faut fournir `read_capacity` et `write_capacity` (requis par le provider en `PROVISIONED`). Idée courante : chargement initial en provisionné avec forte capacité, puis retour à la demande ; la limite empêche de basculer à chaque heure.
@@ -3541,6 +3636,7 @@ resource "aws_dynamodb_table" "progress" {
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : RCU, WCU, alarme CloudWatch
 - Source : data-platform · pwa-sync
 - Définition : En mode provisionné, Application Auto Scaling ajuste RCU et WCU entre un minimum et un maximum pour viser un taux d'utilisation (20 à 90 %).
 - Contexte : C'est un service à part (Application Auto Scaling), configuré par deux ressources Terraform : la cible (`min`, `max`) et la politique (`target_value`, 70 % recommandé par la doc). Il pilote des alarmes CloudWatch : selon la doc, il se déclenche après 2 minutes consécutives au-dessus de la cible, réduit après 15 points sous la cible, et la mise à jour prend plusieurs minutes. Il suit des tendances, pas des pics de secondes.
@@ -3582,6 +3678,7 @@ resource "aws_appautoscaling_policy" "w" {
 - Niveau : 2
 - Profils : ops
 - Prérequis : dynamodb-auto-scaling
+- Mots-clés : lifecycle, auto scaling, terraform plan
 - Source : data-platform · pwa-sync
 - Définition : Avec l'auto scaling (Application Auto Scaling) sur une table provisionnée, `lifecycle { ignore_changes = [read_capacity, write_capacity] }` empêche Terraform d'annuler ses ajustements.
 - Contexte : L'auto scaling modifie la capacité de la table hors de Terraform. Sans `ignore_changes`, le plan suivant voit l'écart avec le `.tf` et remet la valeur écrite, en pleine charge. La doc du provider recommande donc d'ignorer ces deux attributs dès qu'une politique d'auto scaling est attachée. La valeur du `.tf` ne sert plus que de point de départ.
@@ -3614,6 +3711,7 @@ resource "aws_dynamodb_table" "annonces" {
 - Niveau : 2
 - Profils : ops
 - Prérequis : dynamodb-prix-a-la-demande
+- Mots-clés : WCU, RCU, métrique
 - Source : data-platform · pwa-sync
 - Définition : Le provisionné devient moins cher que la demande quand la capacité réservée est utilisée en moyenne à plus de 29 % environ (prix us-east-1).
 - Contexte : Prix us-east-1 (aws.amazon.com/dynamodb/pricing, octobre 2026) : 0,00065 $ par WCU-heure ; à la demande, 1 écriture/s pendant une heure = 3 600 unités à 0,625 $ le million. Le provisionné se paie même à vide : sous 29 % d'utilisation, la demande gagne. La capacité réservée (blocs de 100 WCU ou RCU, 1 ou 3 ans, jusqu'à 54 % ou 77 % de remise selon la page de prix) baisse encore le seuil, contre un engagement.
@@ -3642,6 +3740,7 @@ round(provisionne / a_la_demande, 2)  # → 0.29
 - Niveau : 2
 - Profils : ops, data
 - Prérequis : dynamodb-throttling-exceptions
+- Mots-clés : botocore, boto3, throttling, backoff exponentiel
 - Source : data-platform · pwa-sync
 - Définition : boto3 réessaie seul le throttling et les erreurs 5xx ; pour DynamoDB, le mode par défaut `legacy` va jusqu'à 10 tentatives à délai exponentiel.
 - Contexte : Mesuré dans botocore 1.43 (`data/_retry.json`) : section `dynamodb`, `max_attempts` 10, base 0,05 s, facteur 2. Le guide boto3 donne 5 tentatives par défaut (legacy, autres services) et 3 en mode `standard`. On règle par `Config(retries=…)`. Une Lambda courte peut préférer moins d'essais et rendre la main ; `UnprocessedItems` d'un lot, elles, ne sont jamais réessayées par botocore.
@@ -3675,6 +3774,7 @@ d["retry"]["dynamodb"]["__default__"]["max_attempts"]  # → 10
 - Type : concept
 - Niveau : 2
 - Profils : ops, expert
+- Mots-clés : throttling, auto scaling
 - Source : data-platform · pwa-sync
 - Définition : DynamoDB garde jusqu'à 300 secondes de capacité provisionnée inutilisée et la dépense lors d'un pic bref, au-delà du débit par seconde.
 - Contexte : Selon la doc (burst and adaptive capacity), cette réserve n'est pas garantie : DynamoDB peut la consommer pour sa maintenance, et les détails peuvent changer. C'est elle qui absorbe les pics de quelques secondes que l'auto scaling ne voit pas. Ne pas dimensionner sur elle : un pic régulier la vide et le throttling revient.
@@ -3702,6 +3802,7 @@ reserve_max // (30 - wcu)  # → 150  (secondes tenues)
 - Type : concept
 - Niveau : 2
 - Profils : data, web
+- Mots-clés : item, moto, event source mapping
 - Source : data-platform · pwa-sync
 - Définition : Un flux DynamoDB Streams publie chaque modification d'item ; sa vue fixe le contenu : `KEYS_ONLY`, `NEW_IMAGE`, `OLD_IMAGE` ou `NEW_AND_OLD_IMAGES`.
 - Contexte : Chaque enregistrement porte `eventName` (`INSERT`, `MODIFY`, `REMOVE`) et les clés ; les images dépendent de la vue. Avec `NEW_AND_OLD_IMAGES`, un `INSERT` n'a pas d'`OldImage` et un `REMOVE` pas de `NewImage` (mesuré avec moto). Le flux est asynchrone : aucun impact sur la latence de la table (doc). On lit par un client séparé, `dynamodbstreams`, ou par un event source mapping Lambda.
@@ -3744,6 +3845,7 @@ m.stop()
 - Niveau : 2
 - Profils : ops
 - Voir aussi : dynamodb-pitr-restauration
+- Mots-clés : PITR, migration
 - Source : data-platform · pwa-sync
 - Définition : `CreateBackup` prend un instantané complet de la table, conservé jusqu'à ce qu'on le supprime, sans impact sur ses performances.
 - Contexte : Contrairement au PITR (fenêtre glissante de 35 jours au plus), une sauvegarde à la demande sert à l'archivage long : avant une migration, pour une exigence réglementaire. Elle est facturée au Go et au mois de conservation. La restauration crée toujours une nouvelle table. La sauvegarde survit à la suppression de la table (mesuré avec moto). AWS Backup sait aussi les planifier.
@@ -3784,6 +3886,7 @@ m.stop()
 - Profils : data, ops
 - Prérequis : dynamodb-pitr-restauration
 - Voir aussi : dynamodb-import-s3
+- Mots-clés : PITR, RCU, Athena, data lake
 - Source : data-platform · pwa-sync
 - Définition : `ExportTableToPointInTime` écrit la table dans S3 (DynamoDB JSON ou Ion), à un instant de la fenêtre PITR, sans consommer de capacité de lecture.
 - Contexte : L'export lit les sauvegardes continues, pas la table : aucune RCU, aucun impact sur l'app (doc). D'où le prérequis : PITR actif, sinon `PointInTimeRecoveryUnavailableException`. Il est asynchrone, facturé au Go de la table. Un export incrémental (15 min à 24 h) ne sort que les changements de la période, compactés au dernier état. Ensuite Athena ou Glue lisent les fichiers : c'est la voie analytique propre.
@@ -3825,6 +3928,7 @@ m.stop()
 - Niveau : 2
 - Profils : web, expert
 - Voir aussi : dynamodb-cache-elasticache
+- Mots-clés : VPC, TTL DynamoDB, lecture éventuellement cohérente
 - Source : data-platform · pwa-sync
 - Définition : DAX est un cache en mémoire compatible avec l'API DynamoDB, qui ramène les lectures éventuellement cohérentes de quelques millisecondes à des microsecondes.
 - Contexte : C'est un cluster à démarrer dans un VPC, payé à l'heure par nœud, avec son propre client SDK. Il écrit en write-through vers la table. Il est utile pour des lectures répétées sur les mêmes clés (taux de succès > 90 %, doc), pas pour une charge d'écriture lourde. Le cache des `Query` n'est pas invalidé par les écritures : il attend son TTL. Une app Lambda à faible trafic n'en a aucun besoin.
@@ -3853,6 +3957,7 @@ Besoin : pwa-sync, 10 requêtes/session
 - Type : concept
 - Niveau : 2
 - Profils : ops, expert
+- Mots-clés : région AWS, réplication, SLA
 - Source : data-platform · pwa-sync
 - Définition : Une global table réplique une table dans plusieurs régions, toutes lisibles et écrivables ; en cas de conflit sur un item, la dernière écriture gagne.
 - Contexte : Mode par défaut (MREC, version 2019.11.21) : réplication asynchrone, en général en moins d'une seconde (doc). Deux régions qui écrivent le même item en même temps : DynamoDB garde celle de l'horodatage interne le plus récent, l'autre est perdue sans erreur. Les flux sont actifs d'office sur les réplicas. SLA 99,999 % contre 99,99 % pour une table d'une région.
@@ -3882,6 +3987,7 @@ gagnant["vues"]  # → 5   (partout, à terme)
 - Niveau : 2
 - Profils : ops
 - Voir aussi : dynamodb-pitr-restauration
+- Mots-clés : terraform apply, terraform destroy
 - Source : data-platform · pwa-sync
 - Définition : `deletion_protection_enabled = true` fait refuser `DeleteTable` par DynamoDB, que la demande vienne de Terraform, de la console ou de la CLI.
 - Contexte : En dev, la table doit pouvoir disparaître avec `make down` ; en prod, une suppression par erreur serait définitive, données comprises. La protection se lève par une mise à jour de la table (un apply qui la passe à `false`), après quoi la suppression redevient possible. D'où `var.environment == "prod"` : un code, deux comportements.
@@ -3909,6 +4015,7 @@ resource "aws_dynamodb_table" "progress" {
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : item
 - Source : data-platform · pwa-sync
 - Définition : `point_in_time_recovery` garde un historique continu de la table : on la restaure à n'importe quelle seconde des 35 derniers jours (par défaut).
 - Contexte : Il protège d'une erreur de données (script qui écrase ou supprime des items), pas seulement de la suppression de la table. La restauration crée toujours une **nouvelle** table, à rebrancher ou à relire pour recopier ; l'originale reste en place. Facturé au Go de la table. En dev, inutile : `enabled = var.environment == "prod"`.
@@ -3938,6 +4045,7 @@ resource "aws_dynamodb_table" "progress" {
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : dynamodb-streams-vues
+- Mots-clés : DynamoDB Streams, ARN
 - Source : data-platform · pwa-sync
 - Définition : `stream_enabled = true` publie chaque modification d'item dans un flux (Streams) ; `stream_view_type` choisit le contenu : `KEYS_ONLY`, `NEW_IMAGE`, `OLD_IMAGE`, `NEW_AND_OLD_IMAGES`.
 - Contexte : Les enregistrements sont gardés 24 h, dans l'ordre des modifications de chaque item, sans effet sur les performances de la table. Selon la doc, le type de vue ne se modifie pas sur un flux existant : il faut le désactiver puis en créer un nouveau (nouvel ARN, `stream_arn`). `stream_view_type` sans `stream_enabled` échoue au `validate` (mesuré). Un `PutItem` qui ne change rien n'émet aucun enregistrement.
@@ -3965,6 +4073,7 @@ stream_view_type = "KEYS_ONLY"
 - Profils : web, data
 - Prérequis : dynamodb-ttl-epoch-secondes
 - Voir aussi : dynamodb-filterexpression-apres-lecture
+- Mots-clés : TTL DynamoDB, FilterExpression, WCU, moto
 - Source : data-platform · pwa-sync
 - Définition : Un item expiré reste lisible tant que le TTL ne l'a pas supprimé, en général sous quelques jours : les lectures doivent le filtrer.
 - Contexte : La suppression est un processus de fond, sans délai garanti (doc : « typically within a few days »). Entre-temps, `GetItem`, `Query` et `Scan` renvoient l'item, qui compte encore dans le stockage et les lectures facturées. On ajoute donc `expire_at > :now` en `FilterExpression`. La suppression elle-même est gratuite : aucune WCU. moto ne supprime jamais : l'exemple montre l'état « expiré, pas encore supprimé ».
@@ -4007,6 +4116,7 @@ m.stop()
 - Niveau : 2
 - Profils : data, expert
 - Prérequis : dynamodb-ttl-epoch-secondes, dynamodb-streams-vues
+- Mots-clés : TTL DynamoDB, DynamoDB Streams, event source mapping, WCU
 - Source : data-platform · pwa-sync
 - Définition : Une suppression par le TTL arrive dans le flux comme un `REMOVE` portant `userIdentity` : `type` = `Service`, `principalId` = `dynamodb.amazonaws.com`.
 - Contexte : C'est ce qui distingue une expiration d'un effacement voulu. Usage type : flux + Lambda qui archive les items expirés dans S3, avec un filtre d'event source mapping sur `userIdentity` pour n'invoquer la fonction que pour eux. Selon la doc, la suppression TTL ne consomme pas de WCU ; en global table, le `userIdentity` n'est présent que dans la région où le TTL a agi.
@@ -4046,6 +4156,7 @@ est_ttl(ttl)  # → True
 - Niveau : 2
 - Profils : ops
 - Prérequis : dynamodb-pitr-restauration
+- Mots-clés : PITR, TTL DynamoDB, auto scaling, tag
 - Source : data-platform · pwa-sync
 - Définition : Une restauration PITR crée une nouvelle table avec données, index et chiffrement, mais sans TTL, flux, alarmes, auto scaling, tags ni PITR.
 - Contexte : La table source reste disponible pendant la restauration, dont la durée dépend du volume et du nombre d'index (exclure des index l'accélère). Après coup, tout ce qui vit autour de la table est à reposer : c'est le travail de Terraform (importer la table restaurée ou la recopier). Oublier le TTL fait grossir la table ; oublier le PITR la laisse sans filet. On peut aussi restaurer dans une autre région.
@@ -4088,6 +4199,7 @@ m.stop()
 - Niveau : 2
 - Profils : ops
 - Prérequis : dynamodb-pitr-restauration
+- Mots-clés : PITR
 - Source : data-platform · pwa-sync
 - Définition : `RecoveryPeriodInDays` règle la fenêtre du PITR, de 1 à 35 jours (35 par défaut) ; le prix dépend seulement de la taille de la table.
 - Contexte : Le point le plus récent restaurable est environ 5 minutes avant maintenant. Réduire la fenêtre efface tout de suite les points plus anciens ; l'augmenter ne les fait pas revenir, la fenêtre se remplit avec le temps. Supprimer une table avec PITR crée une sauvegarde système `<table>$DeletedTableBackup` gardée 35 jours, sans frais (doc). Côté Terraform : `recovery_period_in_days` dans `point_in_time_recovery`.
@@ -4130,6 +4242,7 @@ m.stop()
 - Profils : data, ops
 - Prérequis : dynamodb-streams-vues, lambda-event-source-mapping
 - Voir aussi : sqs-eventbridge-echec-partiel-lot
+- Mots-clés : DynamoDB Streams, shard, event source mapping, idempotent
 - Source : data-platform · pwa-sync
 - Définition : Sur un flux DynamoDB, une erreur de la fonction rejoue tout le lot ; sans réglage, le shard reste bloqué jusqu'à expiration (24 h).
 - Contexte : Par défaut, `MaximumRetryAttempts` et `MaximumRecordAgeInSeconds` valent -1 (infini, jusqu'à expiration du flux). On borne les retries, on active `BisectBatchOnFunctionError` (coupe le lot en deux pour isoler l'item fautif, sans compter de retry) et une destination en cas d'échec (SQS, SNS, S3). `ReportBatchItemFailures` permet de ne rejouer que depuis l'item en échec. Lambda traite au moins une fois : handler idempotent.
@@ -4168,6 +4281,7 @@ resource "aws_lambda_event_source_mapping" "s" {
 - Niveau : 2
 - Profils : data
 - Prérequis : dynamodb-streams-vues
+- Mots-clés : shard, DynamoDB Streams, throttling, table globale
 - Source : data-platform · pwa-sync
 - Définition : Un flux DynamoDB garde 24 h de modifications, chacune une seule fois, dans l'ordre réel pour un même item, sans ordre garanti entre items.
 - Contexte : Les enregistrements vivent dans des shards (un par partition de la table) ; deux items peuvent tomber dans deux shards lus en parallèle. Au-delà de 24 h, ils disparaissent : un consommateur arrêté plus d'un jour perd des données. La doc recommande au plus deux lecteurs simultanés par shard (un seul pour une global table), sinon throttling. Une écriture qui ne change rien ne produit pas d'enregistrement (doc ; moto en produit un).
@@ -4197,6 +4311,7 @@ vu = shard_b + shard_a
 - Niveau : 2
 - Profils : data
 - Voir aussi : dynamodb-export-s3
+- Mots-clés : GSI, LSI, gzip, CloudTrail
 - Source : data-platform · pwa-sync
 - Définition : `ImportTable` charge des fichiers S3 (CSV, DynamoDB JSON ou Ion, gzip ou zstd possibles) dans une table qu'il crée, sans consommer de capacité d'écriture.
 - Contexte : Pas d'import dans une table existante : la table naît avec l'import (GSI possibles, pas de LSI). Facturé au Go non compressé de la source, y compris les lignes rejetées. Plus rapide et moins cher qu'un `BatchWriteItem` en boucle pour un chargement initial. Les clés doivent être uniques : sinon la dernière écrase les autres. CloudTrail trace l'opération.
@@ -4231,6 +4346,7 @@ aws dynamodb import-table \
 - Niveau : 2
 - Profils : ops
 - Voir aussi : s3-classe-de-stockage
+- Mots-clés : classe de stockage, TTL DynamoDB, PITR
 - Source : data-platform · pwa-sync
 - Définition : La classe Standard-IA réduit le prix du Go stocké mais renchérit lectures et écritures : rentable quand le stockage domine la facture.
 - Contexte : us-east-1 (doc de prix) : stockage 0,25 → 0,10 $/Go-mois (−60 %), mais écritures 0,625 → 0,78 $ et lectures 0,125 → 0,155 $ par million (≈ +25 %). Seuil de la doc : quand le stockage dépasse 50 % du coût débit en Standard. Même API, mêmes performances, TTL et PITR compris. Au plus deux changements de classe par 30 jours glissants.
@@ -4261,6 +4377,7 @@ stock > 0.5 * debit  # → True  (IA rentable)
 - Profils : ops, web
 - Prérequis : dynamodb-gsi-autre-cle
 - Voir aussi : iam-jokers-actions-arn
+- Mots-clés : ARN, GSI, politique IAM, rôle IAM
 - Source : data-platform · pwa-sync
 - Définition : Un index secondaire a son propre ARN, `…:table/<table>/index/<index>` : l'accorder en plus de la table pour lire par l'index.
 - Contexte : Une `Query` avec `IndexName` vise la ressource index, pas la table : une politique qui ne nomme que `table/progress` la refuse (`AccessDeniedException`). L'exemple officiel de la doc (« table et ses index ») liste les deux ARN. Côté TS, rien ne change dans `QueryCommand` : seul le rôle IAM est en cause, d'où la surprise après l'ajout d'un GSI.
@@ -4298,6 +4415,7 @@ m(gsi, t + "/index/*")  # → True
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : action IAM, politique IAM, transaction
 - Source : data-platform · pwa-sync
 - Définition : Une transaction s'autorise par les actions de ses éléments : `PutItem`, `UpdateItem`, `DeleteItem`, `GetItem`, et `ConditionCheckItem` pour un `ConditionCheck`.
 - Contexte : Selon la doc (Service Authorization Reference), l'API `TransactWriteItems` n'a pas d'action IAM à son nom : elle exige `ConditionCheckItem`, `DeleteItem`, `PutItem` ou `UpdateItem` selon les éléments envoyés. Écrire `dynamodb:TransactWriteItems` dans une politique n'accorde donc rien d'utile. Chaque élément est jugé sur sa propre table : une transaction qui touche `jobs` et `audit` demande des droits sur les deux.
@@ -4328,6 +4446,7 @@ sorted(ACTION[k] for e in tx for k in e)
 - Niveau : 2
 - Profils : ops
 - Voir aussi : kms-cle-aws-ou-client
+- Mots-clés : KMS, politique de clé, SSE-KMS
 - Source : data-platform · pwa-sync
 - Définition : Une table est toujours chiffrée au repos ; `server_side_encryption` choisit la clé : détenue par AWS, gérée par AWS (`aws/dynamodb`) ou la sienne (`kms_key_arn`).
 - Contexte : Sans le bloc, ou avec `enabled = false` : clé détenue par AWS, gratuite, invisible dans le compte. `enabled = true` sans ARN : clé gérée `alias/aws/dynamodb`, frais KMS. Avec `kms_key_arn` : clé client, frais KMS, et sa politique de clé contrôle qui peut déchiffrer (la Lambda qui lit la table a besoin de `kms:Decrypt`). On peut changer de clé sur une table existante.
@@ -4356,6 +4475,7 @@ server_side_encryption {
 - Niveau : 2
 - Profils : ops, expert
 - Prérequis : dynamodb-returnvalues
+- Mots-clés : condition IAM, rôle IAM, PutItem, UpdateItem
 - Source : data-platform · pwa-sync
 - Définition : La condition `dynamodb:ReturnValues` borne ce qu'une écriture renvoie : à `NONE`, `PutItem` ou `UpdateItem` ne peut plus rendre l'ancienne ligne.
 - Contexte : Selon la doc, une écriture fait une lecture implicite : `ReturnValues = ALL_OLD` rend la ligne remplacée, `ALL_NEW` la ligne entière après mise à jour. Un rôle d'écriture sans `GetItem` lit donc des colonnes par ce biais. La doc pose `StringEqualsIfExists` sur `ReturnValues`, à côté de `dynamodb:Select` pour les lectures. `IfExists` : la règle ne joue que si la clé est présente dans la requête.
@@ -4405,6 +4525,7 @@ m.stop()
 - Niveau : 2
 - Profils : ops, expert
 - Prérequis : dynamodb-iam-transactions
+- Mots-clés : condition IAM, transaction, politique IAM
 - Source : data-platform · pwa-sync
 - Définition : `dynamodb:EnclosingOperation` vaut `TransactWriteItems` ou `TransactGetItems` dans une transaction : de quoi autoriser ou bloquer les transactions.
 - Contexte : Une transaction demande les mêmes actions qu'un appel simple (`PutItem`…) : sans cette clé, IAM ne distingue pas les deux. Selon la doc, deux usages : n'autoriser que des transactions (chaque écriture dans `jobs` va avec sa ligne `audit`), ou les interdire en gardant les appels simples (`Deny` avec la clé). La doc l'emploie avec `ForAnyValue:StringEquals` : hors transaction, la clé est absente, la condition est fausse.
@@ -4445,6 +4566,7 @@ any(v in permis for v in tx)    # → True
 - Niveau : 2
 - Profils : ops
 - Prérequis : iam-politique-de-ressource
+- Mots-clés : politique IAM, rôle IAM, condition IAM
 - Source : data-platform · pwa-sync
 - Définition : Depuis mars 2024, une table DynamoDB accepte une politique de ressource : qui peut faire quoi sur la table, ses index et son stream.
 - Contexte : Selon la doc : 20 Ko au plus (espaces comptés), la politique de la table couvre aussi ses index. Dans le même compte, elle suffit seule ; entre deux comptes, il faut un `Allow` des deux côtés (identité et ressource). Terraform : `aws_dynamodb_resource_policy` (`resource_arn`, `policy`). Cas typique : laisser le rôle d'un compte d'analyse lire une table, sans lui créer de rôle chez nous.
@@ -4482,6 +4604,7 @@ resource "aws_dynamodb_resource_policy" "t" {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : couts-nat-gateway-endpoint
+- Mots-clés : endpoint VPC, VPC, politique IAM, région AWS
 - Source : data-platform · pwa-sync
 - Définition : La politique d'un endpoint Gateway DynamoDB filtre ce qui passe par lui : on la borne aux tables `data-platform-*` (défaut : tout).
 - Contexte : Selon la doc, la politique par défaut autorise tout ; elle s'ajoute aux droits IAM (il faut les deux) et ne vise que le trafic qui emprunte l'endpoint. Sur un compte partagé avec d'autres projets, une Lambda du VPC ne joint plus une table d'un autre projet, même avec un rôle trop large. Un changement prend quelques minutes. L'endpoint ne sert que dans sa région.
@@ -4527,6 +4650,7 @@ resource "aws_vpc_endpoint" "ddb" {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : dynamodb-cout-au-repos-rds
+- Mots-clés : Aurora, ACU
 - Source : data-platform · pwa-sync
 - Définition : Avec un minimum à 0 ACU, Aurora Serverless v2 se met en pause après un temps sans connexion : plus de frais d'instance.
 - Contexte : Selon la doc : délai avant pause de 300 s (défaut et minimum) à 86 400 s ; reprise typique d'environ 15 s à la connexion suivante, plus longue après 24 h de pause ; le stockage reste facturé. Une tentative de connexion, même aux identifiants faux, réveille l'instance. Minimum à 0,5 ACU : jamais de pause. Prix Paris : 0,14 $ par ACU-heure (Aurora PostgreSQL).
@@ -4563,6 +4687,7 @@ serverlessv2_scaling_configuration {
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : dynamodb-decimal-lecture
+- Mots-clés : Decimal, float, API Gateway
 - Source : data-platform · pwa-sync
 - Définition : Pour écrire un `float` Python, on le convertit avec `Decimal(str(x))` ; `Decimal(x)` direct reprend l'erreur binaire du float.
 - Contexte : `Decimal(0.1)` vaut exactement la valeur binaire du float : 0.1000000000000000055511151231257827021181583404541015625. `str(0.1)` donne la représentation courte `'0.1'`, que `Decimal` reprend telle quelle. Pour un corps JSON entrant (API Gateway), `json.loads(s, parse_float=Decimal)` produit directement des `Decimal` exacts, sans passer par le float.
@@ -4598,6 +4723,7 @@ b["note"]  # → Decimal('0.1')
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : dynamodb-write-sharding
+- Mots-clés : write sharding, hachage, GetItem
 - Source : data-platform · pwa-sync
 - Définition : Le suffixe calculé dérive le numéro de shard d'un attribut connu (id d'annonce) par un hachage stable, pour retrouver un item par `GetItem`.
 - Contexte : Variante de la doc : suffixe calculé depuis l'`OrderId`, modulo 200, plus 1. Les écritures restent réparties, et qui connaît l'id recalcule la `pk` exacte : un seul `GetItem`. Relire toute la journée exige toujours N `Query`. Le hachage doit donner le même résultat partout (Lambda Python, front TS, demain un autre langage) : CRC32, SHA-256.
@@ -4629,6 +4755,7 @@ pk("2026-10-23", "A123")
 - Profils : web, expert
 - Prérequis : dynamodb-surcharge-des-cles
 - Voir aussi : dynamodb-gsi-surcharge
+- Mots-clés : partition DynamoDB, Query, GSI, clé de tri DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : L'adjacency list modélise un plusieurs-à-plusieurs : chaque entité a sa partition, chaque relation est un item dont la `sk` est l'id de l'autre entité.
 - Contexte : Patron de la doc (factures ↔ lignes de facture). Ici `pk = SIREN#…`, `sk = TRIBUNAL#…` : les tribunaux d'une entreprise sont une `Query` sur sa partition. Le sens inverse (entreprises d'un tribunal) passe par un index secondaire global dont la clé de partition est la `sk` de la table : l'arête n'est écrite qu'une fois. Parcours à plusieurs sauts en temps réel : la doc oriente vers Neptune.
@@ -4662,6 +4789,7 @@ gsi = [(s, p) for p, s in aretes]
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : dynamodb-surcharge-des-cles
+- Mots-clés : table unique, Standard-IA, DynamoDB Streams, KMS
 - Source : data-platform · pwa-sync
 - Définition : Une table unique impose les mêmes réglages à toutes ses entités : sauvegarde, chiffrement, classe de stockage et flux de changements valent pour tout.
 - Contexte : Inconvénients listés par la doc AWS : sauvegardes tout ou rien ; une seule clé de chiffrement ; la classe Standard-IA profite peu si historique et données vives sont mêlés ; DynamoDB Streams émet les changements de toutes les entités ; courbe d'apprentissage, et code client qui reçoit plusieurs classes dans un résultat. En face : localité des lectures, moins de tables, d'alarmes et de politiques IAM.
@@ -4690,6 +4818,7 @@ Cache de réponses d'API : jetable,
 - Niveau : 3
 - Profils : expert
 - Prérequis : dynamodb-lsi-lecture-forte
+- Mots-clés : LSI, partition DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : Dès qu'une table a un LSI, une valeur de `pk` (item collection : items de la table et des LSI) ne peut dépasser 10 Go.
 - Contexte : Avec un LSI, toute la collection d'une `pk` vit dans une seule partition. Au-delà de 10 Go, DynamoDB peut renvoyer `ItemCollectionSizeLimitExceededException` : plus d'ajout ni d'agrandissement pour cette `pk`, les autres restent libres. `ReturnItemCollectionMetrics="SIZE"` sur les écritures renvoie une estimation ; la doc conseille d'alerter avant (8 Go). Les GSI et les tables sans LSI n'ont pas cette limite.
@@ -4719,6 +4848,7 @@ haut >= 8  # → True   (alerte avant 10 Go)
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : dynamodb-cout-ecriture-index
+- Mots-clés : GSI, throttling, WCU
 - Source : data-platform · pwa-sync
 - Définition : Si un GSI manque de capacité d'écriture, DynamoDB limite (throttle) les écritures de la table elle-même, pas seulement l'index.
 - Contexte : Selon la doc, une écriture de table ne réussit que si la table **et** chaque GSI touché ont la capacité nécessaire ; sinon c'est la requête sur la table qui reçoit `ProvisionedThroughputExceededException`. D'où la règle : en provisionné, `write_capacity` d'un GSI au moins égale à celle de la table. La création d'un GSI sur une table chargée peut aussi freiner la production.
@@ -4746,6 +4876,7 @@ besoin = 50   # écritures/s, toutes indexées
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : dynamodb-surcharge-des-cles, dynamodb-gsi-autre-cle
+- Mots-clés : table unique, GSI, quota AWS
 - Source : data-platform · pwa-sync
 - Définition : En modèle « une table », un GSI sur attributs génériques (`gsi1pk`, `gsi1sk`) sert plusieurs accès : chaque type d'item y met sa valeur.
 - Contexte : Procédures et annonces vivent dans la même table ; la procédure écrit `gsi1pk = "TRIB#Paris"`, l'annonce `gsi1pk = "DATE#2026-10-01"`. Un seul index répond aux deux requêtes, sous le quota de 20 GSI et avec un seul index à payer. La doc AWS appelle cela *overloading*. Contrepartie : un seul type de clé (`S`) pour toutes les valeurs, et une lisibilité qui repose sur des préfixes documentés.
@@ -4777,6 +4908,7 @@ q("TRIB#Paris")       # → ['P#1']
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : dynamodb-rcu-arrondi-4ko
+- Mots-clés : RCU, GetItem, Query
 - Source : data-platform · pwa-sync
 - Définition : Une `Query` additionne la taille de tous les items lus puis arrondit **une fois** au multiple de 4 Ko ; `GetItem` arrondit chaque item séparément.
 - Contexte : Selon la doc : 10 items totalisant 40,8 Ko comptent 44 Ko ; 1 500 items de 64 octets, 96 Ko. Lire 100 petites lignes d'une partition en une `Query` coûte donc bien moins que 100 `GetItem`, qui paient chacun une tranche de 4 Ko entière. Un `Scan` compte de même la taille des items évalués, pas celle des items renvoyés.
@@ -4806,6 +4938,7 @@ sum(math.ceil(s / 4096) for s in tailles)
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : dynamodb-scan-toute-la-table
+- Mots-clés : Scan, pagination, hachage
 - Source : data-platform · pwa-sync
 - Définition : Un `Scan` parallèle découpe la table en `TotalSegments` segments ; chaque worker lit le sien (`Segment` de 0 à `TotalSegments - 1`) et pagine seul.
 - Contexte : Un `Scan` séquentiel lit une partition physique à la fois ; plusieurs workers (threads, Lambdas) vont plus vite. Les deux paramètres vont ensemble, et le `LastEvaluatedKey` d'un segment se rejoue avec le même `Segment`. Les items sont répartis par hachage du `pk` (selon la doc) : segments inégaux. Coût identique, mais consommé plus vite : risque de limitation pour les autres lecteurs.
@@ -4847,6 +4980,7 @@ m.stop()
 - Profils : data, expert
 - Prérequis : dynamodb-pagination-query
 - Voir aussi : dynamodb-scan-parallele
+- Mots-clés : Scan, pagination, boto3
 - Source : data-platform · pwa-sync
 - Définition : Un `Scan` complet boucle en repassant `LastEvaluatedKey` comme `ExclusiveStartKey` ; seule l'absence de `LastEvaluatedKey` signifie la fin.
 - Contexte : Chaque page s'arrête à 1 Mo lu ou à `Limit` items évalués. Selon la doc, une page peut revenir vide avec un `LastEvaluatedKey` (filtre), et un `LastEvaluatedKey` présent ne garantit pas qu'il reste des données. En boto3, `client.get_paginator("scan")` fait la boucle ; `Table.scan` du `resource` n'en a pas. Côté CLI, `--max-items` rend un `NextToken`, `--limit` un `LastEvaluatedKey`.
@@ -4889,6 +5023,7 @@ m.stop()
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : dynamodb-condition-echouee-exception
+- Mots-clés : expression DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : Le verrou optimiste lit `version`, puis écrit avec `ConditionExpression="version = :lue"` et `SET version = version + :un` : la seconde écriture concurrente échoue.
 - Contexte : Pas de verrou tenu : on suppose qu'il n'y aura pas de conflit, et la condition le vérifie au moment d'écrire. Celui qui perd reçoit `ConditionalCheckFailedException`, relit la ligne, refait sa fusion et réessaie. Indispensable pour un document unique modifié par plusieurs appareils (préférences), inutile avec une ligne par fait.
@@ -4930,6 +5065,7 @@ m.stop()
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : dynamodb-condition-echouee-exception
+- Mots-clés : verrou optimiste, RCU, moto, boto3
 - Source : data-platform · pwa-sync
 - Définition : `ReturnValuesOnConditionCheckFailure="ALL_OLD"` joint à l'exception la ligne qui a fait échouer la condition, dans `e.response["Item"]`.
 - Contexte : Évite le `GetItem` de diagnostic après un refus (et la course qu'il ouvre) : on sait tout de suite quelle `version` ou quel état bloque. Selon la doc, valeurs `ALL_OLD` ou `NONE`, sans RCU consommée. Piège mesuré avec moto : même avec `boto3.resource`, `Item` arrive au format typé (`{"BOOL": True}`), il faut le désérialiser (`TypeDeserializer`).
@@ -4971,6 +5107,7 @@ m.stop()
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : dynamodb-rcu-arrondi-4ko
+- Mots-clés : WCU, UpdateItem, transaction
 - Source : data-platform · pwa-sync
 - Définition : Une écriture coûte 1 WCU par Ko de la ligne, arrondi au Ko supérieur ; une écriture transactionnelle coûte le double.
 - Contexte : Selon la doc, `UpdateItem` facture la plus grande des tailles avant et après, même si un seul attribut change : modifier un booléen d'une ligne de 3,5 Ko coûte 4 WCU. `PutItem` aussi prend la plus grande des deux ; `DeleteItem` la taille de la ligne supprimée. En mode à la demande, même calcul en unités de requête d'écriture. Garder les lignes souvent écrites petites.
@@ -5002,6 +5139,7 @@ wcu(1100, 900)           # → 2   (avant > après)
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : dynamodb-creer-si-absent
+- Mots-clés : transaction, clé primaire, GSI, BatchWriteItem
 - Source : data-platform · pwa-sync
 - Définition : Pour qu'un attribut non clé soit unique (e-mail), on écrit dans la même transaction l'utilisateur et un item garde `EMAIL#<valeur>` avec `attribute_not_exists`.
 - Contexte : DynamoDB n'a pas de contrainte `UNIQUE` hors clé primaire ; un index secondaire global ne l'impose pas non plus. L'item garde fait de l'e-mail une clé : son `Put` conditionnel échoue s'il existe, et la transaction annule aussi la création de l'utilisateur. Un `BatchWriteItem` ne peut pas le faire : ni condition ni atomicité. Lire d'abord « l'e-mail existe-t-il ? » laisse une course entre deux inscriptions.
@@ -5041,6 +5179,7 @@ m.stop()
 - Type : concept
 - Niveau : 3
 - Profils : expert
+- Mots-clés : idempotent, TransactWriteItems, moto, timeout
 - Source : data-platform · pwa-sync
 - Définition : `ClientRequestToken` (36 caractères au plus) rend un `TransactWriteItems` idempotent : renvoyé avec le même jeton dans les 10 minutes, il n'est pas rejoué.
 - Contexte : Cas typique : timeout réseau, on ne sait pas si la transaction est passée ; on la renvoie avec le même jeton. Selon la doc, le jeton vaut 10 minutes après la fin de la première requête ; même jeton avec d'autres paramètres dans la fenêtre : `IdempotentParameterMismatchException`. Mesuré : moto ignore le jeton (un `ADD` renvoyé deux fois compte 2), donc ce comportement ne se teste pas en local.
@@ -5070,6 +5209,7 @@ len({a["ClientRequestToken"] for a in appels})
 - Type : concept
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : transaction, WCU, RCU, moto
 - Source : data-platform · pwa-sync
 - Définition : Une transaction consomme le double : 2 WCU par Ko écrit, 2 RCU par 4 Ko lus, même annulée.
 - Contexte : Selon la doc, DynamoDB fait deux opérations par item : préparer, puis valider. Exemple de la doc : 3 items de 500 octets par seconde = 6 WCU. Une transaction annulée (`ConditionalCheckFailed`) consomme la même capacité qu'une réussie. Mesuré avec moto : `TransactGetItems` d'un item renvoie `CapacityUnits` 2.0. D'où le conseil de la doc : petites transactions, et `BatchWriteItem` pour la masse.
@@ -5097,6 +5237,7 @@ tx = 2 * simple
 - Type : concept
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : throttling, partition chaude, WCU, RCU
 - Source : data-platform · pwa-sync
 - Définition : Une table à la demande absorbe aussitôt le double de son pic précédent ; dépasser ce double en moins de 30 minutes peut être limité.
 - Contexte : Selon la doc, une table neuve à la demande tient 4 000 écritures/s et 12 000 lectures/s ; la capacité monte ensuite avec le trafic. Pour aller au-delà du double, étaler la montée sur 30 minutes ou préchauffer (warm throughput). Autre limite, indépendante du mode : une partition sert au plus 1 000 WCU et 3 000 RCU par seconde ; une `pk` chaude est limitée même à la demande.
@@ -5124,6 +5265,7 @@ demande <= instantane  # → True  (sans throttling)
 - Type : recette
 - Niveau : 3
 - Profils : ops
+- Mots-clés : throttling, quota AWS, GSI
 - Source : data-platform · pwa-sync
 - Définition : `on_demand_throughput` fixe un maximum de lectures et d'écritures par seconde sur une table à la demande ; au-delà, `ThrottlingException`.
 - Contexte : Garde-fou de coût : une boucle folle dans une Lambda ne peut plus écrire sans limite. Selon la doc, la valeur minimale est 1 unité/s, le plafond est appliqué « au mieux » (la burst capacity peut le dépasser un moment) et se modifie à tout moment. Sans réglage, seul le quota du compte (40 000 unités/s par table par défaut) borne le débit. Existe aussi par index secondaire global.
@@ -5157,6 +5299,7 @@ resource "aws_dynamodb_table" "progress" {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : dynamodb-a-la-demande-double-pic
+- Mots-clés : throttling, GSI, provider
 - Source : data-platform · pwa-sync
 - Définition : Le warm throughput est le débit qu'une table supporte instantanément ; on peut l'augmenter d'avance (préchauffage) avant un pic prévu, sans changer de mode.
 - Contexte : Selon la doc, chaque table a des valeurs par défaut gratuites, relevées avec l'usage ; les augmenter soi-même est facturé. Une fois augmenté, le warm throughput d'une table ne peut plus baisser (celui d'un index secondaire global, si, selon la doc du provider). Minimums Terraform : 12 000 lectures/s, 4 000 écritures/s. Il évite le throttling de la règle « double du pic en 30 min ».
@@ -5189,6 +5332,7 @@ resource "aws_dynamodb_table" "annonces" {
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : dynamodb-streams-vues
+- Mots-clés : Kinesis, DynamoDB Streams, Firehose, data lake
 - Source : data-platform · pwa-sync
 - Définition : Une table peut publier ses changements dans Kinesis Data Streams, plus long et partageable que DynamoDB Streams, sans ordre garanti ni dédoublonnage.
 - Contexte : Rétention Kinesis de 24 h à 365 jours, fan-out amélioré pour plusieurs consommateurs, Firehose vers S3 sans code. En échange (doc) : des enregistrements peuvent arriver dans le désordre ou en double ; on compare `ApproximateCreationDateTime` pour ordonner et dédoublonner. Un seul flux Kinesis par table, même compte et même région. Facturation : Kinesis + unités de capture DynamoDB (1 Ko de changement par unité).
@@ -5222,6 +5366,7 @@ dernier["u1#V#mac"]["vues"]  # → 7
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : dynamodb-global-tables-mrec
+- Mots-clés : table globale, RPO, lecture fortement cohérente, TTL DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : Une global table en MRSC réplique chaque écriture de façon synchrone : une lecture forte renvoie la dernière version dans n'importe quelle région (RPO zéro).
 - Contexte : Choisi à la création, non modifiable. Exactement trois régions : trois réplicas, ou deux réplicas et un témoin (sans lecture ni écriture). Table vide à la conversion. Pas de TTL, pas de transactions, pas de LSI. Écritures et lectures fortes plus lentes (aller-retour entre régions) ; écriture concurrente du même item : `ReplicatedWriteConflictException`, à réessayer. Disponible dans une liste de régions, dont Paris.
@@ -5253,6 +5398,7 @@ RPO             ~ secondes      0
 - Profils : ops, expert
 - Prérequis : dynamodb-chiffrement-kms
 - Voir aussi : kms-cle-desactivee
+- Mots-clés : KMS, clé KMS client
 - Source : data-platform · pwa-sync
 - Définition : Si la clé KMS client d'une table est désactivée ou programmée pour suppression, la table devient inaccessible : plus aucune lecture ni écriture.
 - Contexte : DynamoDB envoie un e-mail et laisse sept jours pour rendre l'accès à la clé (doc). Au-delà, la table est archivée : DynamoDB crée une sauvegarde facturée, restaurable seulement si la dernière clé est réactivée. La clé n'est pas appelée à chaque requête : rafraîchie toutes les 5 minutes par appelant actif. C'est le risque propre à la clé client, absent avec la clé détenue par AWS.
@@ -5285,6 +5431,7 @@ aws kms enable-key --key-id "$key_id"
 - Profils : ops, expert
 - Prérequis : dynamodb-politique-endpoint
 - Voir aussi : iam-condition-null
+- Mots-clés : Deny explicite, endpoint VPC, politique IAM, condition IAM
 - Source : data-platform · pwa-sync
 - Définition : Dans la politique de ressource d'une table, un `Deny` si `aws:sourceVpce` diffère de notre endpoint force tout accès à passer par le VPC.
 - Contexte : Exemple de la doc : `Effect: Deny`, `Principal: *`, `StringNotEquals` sur `aws:sourceVpce`. C'est un `Deny` explicite : il gagne sur tout `Allow`, administrateur compris. Piège : une requête hors VPC n'a pas de `sourceVpce`, la condition est vraie, donc refus ; avec `dynamodb:*`, la console, la CI et `terraform plan` depuis un poste sont bloqués. Les Lambda de data-platform, hors VPC, le seraient aussi.

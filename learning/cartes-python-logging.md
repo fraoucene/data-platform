@@ -19,6 +19,7 @@ Python · Logging : loggers, niveaux, handlers, messages, lambda (format spec v3
 - Profils : débutant, ops
 - Prérequis : logging-niveaux-entiers
 - Voir aussi : logging-basicconfig-une-fois
+- Mots-clés : logger, niveau de log, CloudWatch Logs
 - Définition : Un logger sans niveau hérite de celui du root, `WARNING` par défaut : `info` et `debug` sont filtrés sans réglage (≈ `console.*` filtrable).
 - Contexte : Piège en venant de `console.log` : `log.info(…)` n'écrit rien dans un script non configuré. Les loggers forment un arbre (`bodacc.client` → `bodacc` → root) ; un logger sans niveau prend celui du premier parent réglé. `log.setLevel(logging.INFO)` ou `basicConfig(level=…)` abaisse le seuil. Dans une Lambda, tout ce qui sort sur stdout ou stderr part dans CloudWatch Logs.
 - Usage : ✅ régler le niveau au démarrage (`setLevel`, variable `LOG_LEVEL`) · ❌ `print` dans une Lambda : pas de niveau, pas de filtrage.
@@ -50,6 +51,7 @@ buf.getvalue()
 - Niveau : 1
 - Profils : débutant, ops, data
 - Voir aussi : logging-erreur-format-silencieuse
+- Mots-clés : f-string, handler de log, Ruff
 - Source : data-platform · S1-07
 - Définition : `log.info("lu %d annonces", n)` passe les valeurs en arguments : le message n'est formaté que s'il est émis, par le handler.
 - Contexte : logging utilise le style `%` (pas `{}`). Une f-string est formatée avant l'appel, même si le niveau filtre la ligne, et chaque ligne devient un texte différent : les outils qui regroupent les messages par modèle ne s'y retrouvent plus. Le record garde le modèle (`msg`) et les valeurs (`args`). Ruff signale la f-string (`G004`).
@@ -95,6 +97,7 @@ recs[0].getMessage()  # → 'lu 1423 annonces'
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : logger, module, __name__
 - Source : data-platform · S1-07
 - Définition : `logging.getLogger(__name__)` renvoie le logger nommé d'après le module (`ingest_bodacc.handler`) ; le même nom rend toujours le même objet.
 - Contexte : Le registre des loggers est global au processus : deux `getLogger("ingest_bodacc.handler")` donnent le même objet, configuré une fois, sans le passer en paramètre. `__name__` suit l'arborescence des paquets : le logger se range sous `ingest_bodacc` dans la hiérarchie, et son nom apparaît dans chaque ligne (`%(name)s`).
@@ -130,6 +133,7 @@ h.parent is p  # → True
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : niveau de log, variable d'environnement
 - Source : data-platform · S1-07
 - Définition : Les niveaux sont des entiers (`DEBUG` 10, `INFO` 20, `WARNING` 30, `ERROR` 40, `CRITICAL` 50) ; un message passe s'il atteint le seuil.
 - Contexte : `setLevel` accepte l'entier ou le nom en majuscules (`"INFO"`), pratique pour une variable `LOG_LEVEL`. Un logger sans niveau vaut `NOTSET` (0) et prend celui du premier parent qui en a un : `getEffectiveLevel()` donne le seuil réel. `isEnabledFor(niveau)` dit si un message de ce niveau passerait.
@@ -169,6 +173,7 @@ e.getEffectiveLevel()  # → 40
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : logging-warning-par-defaut
+- Mots-clés : logger racine, handler de log, stderr
 - Source : data-platform · S1-07
 - Définition : `logging.basicConfig(level=…, format=…)` pose un handler stderr sur le logger racine, seulement s'il n'en a encore aucun.
 - Contexte : Pensé pour un script : un appel au démarrage suffit. Un second appel ne fait rien si le root a déjà un handler, sans erreur ni avertissement ; `force=True` retire les handlers existants et reconfigure. Une bibliothèque ne l'appelle jamais : c'est l'application qui configure. Piège : `logging.info(…)` appelé avant fait lui-même un `basicConfig()` implicite.
@@ -203,6 +208,7 @@ root.setLevel(sauve[1])
 - Type : recette
 - Niveau : 1
 - Profils : ops
+- Mots-clés : handler de log, record de log
 - Source : data-platform · S1-07
 - Définition : `logging.Formatter("%(levelname)s %(name)s %(message)s")`, posé sur un handler, choisit les champs du record écrits sur chaque ligne.
 - Contexte : Un `StreamHandler` sans formatter n'écrit que le message. Champs utiles : `asctime`, `levelname`, `name`, `funcName`, `lineno`, `message` (le texte formaté avec ses arguments). `basicConfig` utilise `logging.BASIC_FORMAT`. Un champ absent du record (`%(siren)s` sans `extra`) ne lève pas dans l'appelant : la ligne est perdue et une trace part sur stderr.
@@ -244,6 +250,7 @@ logging.BASIC_FORMAT
 - Niveau : 2
 - Profils : ops
 - Prérequis : logging-arguments-pas-fstring
+- Mots-clés : handler de log, stderr, Ruff
 - Source : data-platform · S1-07
 - Définition : Un message aux arguments faux (`log.warning("%d", "deux")`) ne lève rien : `logging` écrit `--- Logging error ---` sur stderr et perd la ligne.
 - Contexte : Le formatage `msg % args` a lieu dans le handler, au moment d'écrire ; son erreur est attrapée par `Handler.handleError`, qui imprime la trace sur stderr puis continue. Le code appelant ne voit rien et les tests passent. Ruff repère le nombre d'arguments faux (`PLE1205`, `PLE1206`) ; une f-string dans le message plus des arguments est l'erreur classique.
@@ -276,6 +283,7 @@ buf.getvalue()  # → ""  (ligne perdue)
 - Profils : ops, data
 - Prérequis : exceptions-try-except-type
 - Voir aussi : exceptions-raise-seul-relancer
+- Mots-clés : trace d'erreur, CloudWatch, Step Functions
 - Source : data-platform · S1-07
 - Définition : `logger.exception("échec %s", jour)` dans un `except` journalise au niveau `ERROR`, avec la trace complète de l'exception en cours.
 - Contexte : Équivaut à `logger.error(…, exc_info=True)`. La trace fait partie du même événement de log (une seule entrée dans CloudWatch). Il ne relance pas : `raise` derrière si l'appelant (Lambda, Step Functions) doit voir l'échec. Hors d'un `except`, aucune exception n'est en cours : la trace écrite vaut `NoneType: None`.
@@ -328,6 +336,7 @@ recs[0].exc_info[0].__name__  # → "KeyError"
 - Niveau : 2
 - Profils : ops
 - Prérequis : logging-getlogger-name
+- Mots-clés : handler de log, logger racine, CloudWatch
 - Source : data-platform · S1-07
 - Définition : Après ses propres handlers, un logger passe le message aux handlers de ses parents jusqu'au root, sauf `propagate = False`.
 - Contexte : Le seuil n'est vérifié qu'une fois, sur le logger d'origine : le niveau d'un logger parent ne filtre pas un message propagé, seul celui de ses handlers le fait. D'où les lignes en double : un handler sur `ingest_bodacc` et un sur le root (celui du runtime Lambda) écrivent chacun la ligne. Règle : des handlers sur le root seulement ; les modules font `getLogger` et `setLevel`.
@@ -374,6 +383,7 @@ buf.getvalue()  # → "fin\n"
 - Niveau : 2
 - Profils : ops, expert
 - Prérequis : logging-warning-par-defaut
+- Mots-clés : handler de log, stderr
 - Source : data-platform · S1-07
 - Définition : Si aucun handler n'existe sur la chaîne d'un logger, `logging.lastResort` écrit sur stderr, mais seulement à partir de `WARNING`.
 - Contexte : C'est pourquoi un `logger.warning` s'affiche dans un script sans configuration, alors qu'un `logger.info` disparaît même après `logger.setLevel(INFO)` : il passe le seuil du logger, mais le handler de dernier recours a son propre seuil, `WARNING`, et n'écrit que le texte, sans format. Il faut un vrai handler : `basicConfig`, ou celui que pose le runtime Lambda.
@@ -405,6 +415,7 @@ err.getvalue()  # → "lent\n"
 - Niveau : 2
 - Profils : ops, data
 - Prérequis : logging-basicconfig-une-fois
+- Mots-clés : runtime Lambda, logger racine, handler de log
 - Source : data-platform · S1-07
 - Définition : Le runtime Python de Lambda pose un handler sur le logger racine, réglé sur `WARNING` : `basicConfig` n'a plus d'effet et `logger.info` reste filtré.
 - Contexte : Comportement du runtime (doc AWS, simulé ici). Comme le root a déjà un handler, `logging.basicConfig(level=INFO)` est ignoré sans bruit. Ce qui marche : `logger.setLevel(logging.INFO)` sur le logger du module (le message propage jusqu'au handler du root, dont le niveau ne filtre pas), ou `application_log_level` dans `logging_config` avec le format `JSON`, qui règle le root côté Lambda.
@@ -443,6 +454,7 @@ root.setLevel(sauve[1])
 - Niveau : 2
 - Profils : ops
 - Prérequis : logging-niveaux-entiers
+- Mots-clés : handler de log, niveau de log
 - Source : data-platform · S1-07
 - Définition : Un handler a aussi un niveau (`h.setLevel(logging.ERROR)`) : un message doit passer le seuil du logger, puis celui de chaque handler.
 - Contexte : Permet d'envoyer tout vers un flux, mais seulement les erreurs vers une alerte. Les deux filtres s'enchaînent : un logger en `DEBUG` avec un handler en `ERROR` n'écrit que les erreurs dans ce handler. Contrairement au niveau d'un logger parent, le niveau d'un handler filtre aussi les messages propagés depuis les enfants.
@@ -478,6 +490,7 @@ alertes.getvalue()  # → "coupé\n"
 - Niveau : 2
 - Profils : data, expert
 - Prérequis : logging-arguments-pas-fstring
+- Mots-clés : évaluation paresseuse, générateur
 - Source : data-platform · S1-07
 - Définition : Les arguments d'un appel de log sont évalués avant l'appel, même filtré : `log.debug("%s", cher())` exécute `cher()` ; `isEnabledFor` évite ce coût.
 - Contexte : Le `%s` retarde le formatage, pas l'évaluation des expressions passées : Python évalue tous les arguments avant d'appeler la fonction, comme JS. Un calcul coûteux (`json.dumps` d'une journée) ou destructeur (`sum(1 for _ in flux)` consomme un générateur) se garde derrière `if log.isEnabledFor(logging.DEBUG):`.
@@ -525,6 +538,7 @@ len(appels)  # → 0
 - Profils : ops, expert
 - Prérequis : logging-formatter-champs
 - Voir aussi : logging-loggeradapter, AWS/lambda-aws-request-id
+- Mots-clés : handler de log, record de log, request ID, ContextVar
 - Source : data-platform · S1-07
 - Définition : Un `logging.Filter` posé sur un handler voit chaque record : il peut y ajouter un champ (`request_id`) et renvoie vrai pour le laisser passer.
 - Contexte : Injecte l'identifiant de l'invocation Lambda dans toutes les lignes sans le passer à chaque appel : le handler le range (variable, `contextvars.ContextVar`), le filtre l'ajoute au record, le format l'écrit (`%(request_id)s`). Un filtre posé sur un logger ne voit pas les messages propagés depuis ses enfants ; sur le handler, si. Une valeur fausse renvoyée (`None`, `False`) supprime la ligne.
@@ -563,6 +577,7 @@ buf.getvalue()  # → "req-123 fin\n"
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : logging-getlogger-name
+- Mots-clés : logger, import Python
 - Source : data-platform · S1-07
 - Définition : `logging.config.dictConfig(cfg)` désactive par défaut les loggers déjà créés qu'il ne nomme pas : `disable_existing_loggers` vaut `True`.
 - Contexte : Un module importé avant la configuration (son `getLogger(__name__)` tourne à l'import) se tait ensuite, sans erreur : `logger.disabled` passe à `True`. Piège classique quand la config est chargée dans `main()`, après les imports. `"disable_existing_loggers": False` dans le dict l'évite ; les enfants d'un logger nommé dans `loggers` sont gardés, mais remis à `NOTSET` sans handler.
@@ -593,6 +608,7 @@ log.disabled  # → False
 - Profils : ops, expert
 - Prérequis : logging-getlogger-name
 - Voir aussi : logging-filter-request-id
+- Mots-clés : logger, record de log, request ID
 - Source : data-platform · S1-07
 - Définition : `logging.LoggerAdapter(logger, {"request_id": …})` enveloppe un logger et ajoute ces champs à chaque record qu'il émet.
 - Contexte : Alternative au `Filter` quand le contexte est connu à un endroit précis (début d'invocation) : on crée l'adapter dans le handler et on le passe aux fonctions. Les champs arrivent comme avec `extra`, le format les lit. Jusqu'à Python 3.12, le dict de l'adapter remplace l'`extra` passé à l'appel ; 3.13 ajoute `merge_extra=True` pour fusionner.

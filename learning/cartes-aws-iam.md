@@ -17,6 +17,7 @@ AWS · IAM : rôles, politiques, évaluation, moindre privilège (format spec v4
 - Type : comparaison
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : compte root, MFA, SSO, jeton de session
 - Définition : Un utilisateur IAM a des identifiants permanents (mot de passe, clés d'accès) ; un rôle n'en a aucun et s'endosse pour obtenir des identifiants temporaires.
 - Contexte : Le compte a aussi son root (l'e-mail d'inscription), tout-puissant : MFA, et jamais au quotidien. Un groupe n'est qu'un moyen d'attacher des politiques à plusieurs utilisateurs. Les clés d'un utilisateur commencent par `AKIA` et vivent jusqu'à leur rotation manuelle ; celles d'un rôle commencent par `ASIA`, viennent avec un jeton de session et expirent seules.
 - Usage : ✅ rôle pour tout ce qui tourne (Lambda, CodeBuild, CI), utilisateur pour un humain faute de SSO · ❌ utilisateur « technique » avec des clés pour une appli ou une CI.
@@ -43,6 +44,7 @@ aws sts get-caller-identity \
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : iam-utilisateur-ou-role
+- Mots-clés : principal, STS
 - Définition : Un rôle IAM porte deux politiques distinctes : la trust policy dit qui peut l'endosser, la politique de permissions dit ce qu'il peut faire.
 - Contexte : La trust policy (`assume_role_policy`) n'accorde que `sts:AssumeRole` à un principal, ici le service CodeBuild ; elle ne donne aucun droit sur S3 ou CloudFront. Les droits arrivent par une politique attachée au rôle. Confondre les deux est l'erreur classique : un droit placé dans la trust policy n'autorise rien.
 - Usage : ✅ un rôle par service qui appelle AWS (CodeBuild, EventBridge, Lambda) · ❌ un rôle partagé entre services : sa trust policy s'élargit et ses droits s'additionnent.
@@ -86,6 +88,7 @@ resource "aws_iam_role" "deploy" {
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : iam-role-confiance-permissions
+- Mots-clés : CLI AWS, profil AWS, CI, SDK AWS
 - Définition : CodeBuild s'exécute avec un rôle IAM de service : la CLI du build reçoit des identifiants temporaires, aucune clé d'accès n'est stockée.
 - Contexte : Le conteneur obtient les identifiants du rôle par un endpoint local, renouvelés automatiquement ; la CLI et les SDK les trouvent seuls, comme sur une Lambda. Pas de `AWS_ACCESS_KEY_ID` en variable de CI à faire tourner ou à fuiter. Le piège : tout `--profile` passé à la CLI cherche un fichier `~/.aws/config` absent du conteneur et échoue.
 - Usage : ✅ tout build qui appelle AWS (S3, CloudFront, Terraform) · ❌ clés IAM en variables de build : jamais, même en `SECRETS_MANAGER`.
@@ -121,6 +124,7 @@ aws sts get-caller-identity \
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : iam-deny-explicite-gagne
+- Mots-clés : ARN, principal, politique de ressource
 - Définition : Un statement IAM combine `Effect` (`Allow` ou `Deny`), `Action` (`s3:GetObject`), `Resource` (un ARN) et une `Condition` facultative.
 - Contexte : Une action s'écrit `service:Opération` ; une ressource par son ARN (`arn:aws:s3:::bucket/clé`, sans région ni compte pour S3). Une politique d'identité n'a pas de `Principal` : c'est l'identité qui la porte ; une politique de ressource en a toujours un. `"Version": "2012-10-17"` n'est pas une date à tenir à jour : c'est la version du langage, nécessaire aux variables `${aws:…}`.
 - Usage : ✅ un statement par intention, nommé par `sid` · ❌ `Allow` avec `NotAction` pour « tout sauf » : il accorde aussi IAM, KMS et tout service à venir.
@@ -160,6 +164,7 @@ aws sts get-caller-identity \
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : permission boundary, SCP, politique de ressource
 - Définition : IAM refuse par défaut ; un `Allow` ouvre l'accès, un `Deny` explicite le ferme, quel que soit le nombre d'`Allow` ailleurs.
 - Contexte : Pour chaque requête, IAM rassemble toutes les politiques applicables (identité, ressource, boundary, SCP, session), sans ordre : la place des statements ne compte pas. Un seul `Deny` qui correspond donne un refus. Sinon, au moins un `Allow` donne l'accès ; aucun, un refus implicite. Contrairement à un pare-feu, pas de « première règle qui gagne ».
 - Usage : ✅ `Deny` ciblé en garde-fou (`s3:DeleteObject` sur `raw`) au-dessus d'`Allow` larges · ❌ « rouvrir » par un `Allow` plus précis : rien ne lève un `Deny` qui correspond.
@@ -199,6 +204,7 @@ decide(pol, "s3:PutObject")  # → "implicitDeny"
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data, ops
+- Mots-clés : ARN, préfixe S3, output, partition
 - Source : data-platform · S1-07
 - Définition : `s3:PutObject` sur `"${arn_raw}/bodacc/*"` autorise l'écriture sous `bodacc/` seulement : le reste du bucket `raw` reste fermé à la fonction.
 - Contexte : L'ARN d'un objet est `arn:aws:s3:::<bucket>/<clé>` ; le joker `*` couvre toute la suite de la clé, `/` compris (`bodacc/date=2026-10-20/part-0001.jsonl.gz`). Une Lambda par source, un préfixe par source : un bug dans l'ingestion BODACC ne peut pas écraser les données INSEE du même bucket. Le préfixe se construit depuis l'output du module (`module.s3.bucket_arns["raw"]`), jamais en dur.
@@ -234,6 +240,7 @@ data "aws_iam_policy_document" "ingest_bodacc" {
 - Profils : data, ops
 - Prérequis : iam-putobject-prefixe
 - Voir aussi : s3-ecriture-conditionnelle
+- Mots-clés : idempotent, versioning, Object Lock
 - Source : data-platform · S1-07
 - Définition : `s3:PutObject` autorise la création comme le remplacement d'un objet : IAM n'a pas de droit séparé pour « écrire sans écraser ».
 - Contexte : Pour S3, réécrire une clé est un `PutObject` comme un autre. L'ingestion en a besoin : rejouer une journée réécrit la même partition, c'est ce qui la rend idempotente. Pour interdire l'écrasement, il faut d'autres outils : versioning (l'ancienne version reste), Object Lock, ou écriture conditionnelle (`If-None-Match`). `s3:DeleteObject` est un droit à part, absent ici.
@@ -262,6 +269,7 @@ aws s3 rm \
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : statement, Access Analyzer, data source
 - Source : data-platform · S1-07
 - Définition : `sid` nomme un statement (`WriteBodaccPartitions`, `UseProjectKey`) : facultatif, mais unique dans une politique, il dit à quoi sert chaque droit.
 - Contexte : IAM ignore le `sid` pour décider ; il sert aux humains (revue de MR, Access Analyzer, `simulate-principal-policy` qui cite le statement décisif). Lettres et chiffres seulement, sans espace ni tiret. Avec `aws_iam_policy_document`, un `sid` répété fait échouer la lecture du data source, et `override_policy_documents` s'en sert pour remplacer un statement du même nom.
@@ -295,6 +303,7 @@ statement {
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : iam-utilisateur-ou-role
+- Mots-clés : permission set, compte root, utilisateur IAM, clé d'accès
 - Source : data-platform · S1-09
 - Définition : IAM Identity Center (ex-AWS SSO) connecte un humain à un compte par un rôle temporaire, issu d'un permission set, au lieu de clés d'accès permanentes.
 - Contexte : Sur un compte neuf, il n'existe que le root. On active Identity Center, on crée un utilisateur, on lui attribue le compte avec un permission set (`AdministratorAccess` pour un compte perso de dev, plus étroit en entreprise) : AWS crée le rôle correspondant dans le compte. Les identifiants obtenus commencent par `ASIA` et expirent seuls ; une clé `AKIA` d'utilisateur IAM vit jusqu'à sa rotation manuelle.
@@ -322,6 +331,7 @@ aws configure list --profile data-platform
 - Type : concept
 - Niveau : 1
 - Profils : web, ops
+- Mots-clés : politique IAM, condition IAM, sub
 - Source : data-platform · pwa-sync
 - Définition : Une variable `${…}` dans une politique IAM est remplacée, à chaque requête, par une valeur de l'appelant (`${aws:username}`, `${cognito-identity.amazonaws.com:sub}`).
 - Contexte : Une seule politique sert alors à tous les utilisateurs : chacun n'obtient que « ses » ressources, sans une politique par personne. La valeur vient du contexte de la requête (identité, jeton), jamais de ce que l'appelant envoie. Les variables vont dans `Resource` et dans les valeurs de `Condition`, pas dans `Action`.
@@ -359,6 +369,7 @@ Bob   : sub → eu-west-3:9f8e…
 - Type : recette
 - Niveau : 2
 - Profils : ops
+- Mots-clés : HCL, data source, heredoc, statement
 - Définition : `aws_iam_policy_document` écrit une politique IAM en HCL et produit son JSON via `.json`, avec références et validation à la place d'un heredoc.
 - Contexte : C'est un data source calculé localement, sans appel AWS : Terraform assemble le JSON à partir des blocs `statement`. Les ARN viennent de références (`aws_s3_bucket.this["site"].arn`), donc le graphe de dépendances est juste et aucune chaîne n'est recopiée à la main. Chaque `sid` nomme un statement, utile pour lire la politique dans la console.
 - Usage : ✅ toute politique IAM, trust policy ou politique de bucket · ❌ `jsonencode` ou heredoc JSON pour une politique : pas de validation des champs, faute de frappe silencieuse.
@@ -392,6 +403,7 @@ data "aws_iam_policy_document" "deploy" {
 - Niveau : 2
 - Profils : ops
 - Prérequis : iam-policy-document-hcl
+- Mots-clés : rôle IAM, ARN
 - Définition : `aws_iam_role_policy` attache une politique inline à un seul rôle : elle vit et meurt avec lui, adaptée à des droits sur mesure.
 - Contexte : Une politique inline n'a pas d'ARN propre : elle n'existe que dans le rôle, et supprimer le rôle la supprime. Une politique managée (`aws_iam_policy`) est un objet indépendant, versionné, attachable à plusieurs rôles par `aws_iam_role_policy_attachment`. Ici chaque rôle a des droits propres à son projet : l'inline évite un objet de plus.
 - Usage : ✅ droits propres à un seul rôle (ce build, ce bucket) · ❌ mêmes droits pour plusieurs rôles : politique managée attachée à chacun.
@@ -423,6 +435,7 @@ resource "aws_iam_role_policy" "deploy" {
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : iam-putobject-prefixe
+- Mots-clés : ARN, statement, sid
 - Définition : `s3:ListBucket` s'applique à l'ARN du bucket, `PutObject` et `DeleteObject` à ses objets (`arn/*`) : deux statements, deux ressources.
 - Contexte : Dans IAM, chaque action S3 porte sur un type de ressource : le bucket (`arn:aws:s3:::nom`) ou l'objet (`arn:aws:s3:::nom/clé`). Une action associée au mauvais type ne matche jamais, sans erreur à l'`apply` : la politique est acceptée, l'appel est refusé à l'exécution. `s3 sync` liste toujours la destination pour comparer.
 - Usage : ✅ un statement par type de ressource, `sid` explicite (`ListSite`, `WriteSite`) · ❌ `resources = ["*"]` pour « faire marcher » : droits sur tous les buckets du compte.
@@ -464,6 +477,7 @@ statement {
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : iam-listbucket-sur-bucket
+- Mots-clés : préfixe S3, statement, ARN
 - Définition : Un bloc `Condition` teste la requête (`s3:prefix`, `aws:SourceArn`) : le statement ne s'applique que si le test est vrai.
 - Contexte : `s3:ListBucket` porte sur le bucket entier ; pour ne laisser lister qu'un préfixe, on teste `s3:prefix`, le paramètre `Prefix` de la requête. Plusieurs valeurs d'une même clé valent OU ; plusieurs clés ou opérateurs valent ET. `StringLike` accepte `*` et `?`, `StringEquals` compare à l'identique. Une clé absente de la requête rend le test faux.
 - Usage : ✅ rôle de publication qui ne liste que `sources/<projet>/` · ❌ borner `ListBucket` par l'ARN `bucket/sources/*` : ce n'est pas une ressource de `ListBucket`, aucun accès.
@@ -503,6 +517,7 @@ statement {
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : ARN, action IAM, Step Functions
 - Définition : `*` (plusieurs caractères) et `?` (un seul) sont permis dans les actions (`s3:Get*`) et les ARN (`function:${prefix}-*`) pour viser une famille.
 - Contexte : `s3:Get*` couvre `GetObject`, mais aussi `GetBucketPolicy`, `GetObjectAcl` et toute action `Get` ajoutée demain ; `ListBucket` n'en fait pas partie. Dans un ARN, `*` traverse les `/` : `raw/*` couvre toutes les sous-clés. Le rôle Step Functions invoque `function:data-platform-dev-*` : toute Lambda au préfixe du projet, y compris celles créées plus tard.
 - Usage : ✅ joker sur un préfixe de nom maîtrisé (`${prefix}-*`) · ❌ `s3:Get*` pour « lire les objets » : la liste exacte (`s3:GetObject`) ; `*` en tête d'ARN.
@@ -539,6 +554,7 @@ statement {
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : principal, politique d'identité, politique de clé
 - Définition : Une politique basée sur la ressource (bucket, clé KMS, file SQS) est attachée à la ressource, nomme ses `Principal` et s'ajoute aux politiques d'identité.
 - Contexte : Entre deux comptes, il faut l'accord des deux côtés : la ressource autorise le compte étranger, et ce compte accorde l'action à son rôle. Elle sert aussi aux services AWS (CloudFront, logging S3), qui n'ont pas de politique IAM dans le compte. KMS est à part : sa politique de clé fait toujours autorité.
 - Usage : ✅ ouvrir une ressource à un service ou à un autre compte · ❌ disperser les droits d'un rôle interne dans dix politiques de bucket : on ne sait plus lire ce qu'il peut faire.
@@ -572,6 +588,7 @@ aws iam simulate-custom-policy \
 - Profils : ops
 - Prérequis : iam-role-confiance-permissions
 - Voir aussi : api-security-token
+- Mots-clés : politique de confiance, profil AWS, jeton de session
 - Définition : `sts:AssumeRole` échange l'identité de l'appelant contre des identifiants temporaires du rôle (clé `ASIA…`, secret, jeton de session), valables 1 h par défaut.
 - Contexte : La trust policy du rôle `publish` nomme le compte (`root`) : elle délègue à IAM, l'appelant doit donc aussi avoir `sts:AssumeRole` dans ses politiques. La CLI fait l'échange seule depuis un profil `role_arn` + `source_profile`, et le renouvelle. Durée : jusqu'à `max_session_duration` (12 h au plus) ; un rôle endossé depuis un autre rôle (chaînage) plafonne à 1 h.
 - Usage : ✅ profil CLI `role_arn` pour agir avec les droits réduits d'un rôle (`make cards-publish`) · ❌ copier `AWS_SESSION_TOKEN` depuis la console dans le shell : il expire et reste dans l'historique.
@@ -608,6 +625,7 @@ aws sts get-caller-identity \
 - Niveau : 2
 - Profils : ops
 - Prérequis : iam-role-de-service-ci, iam-assumerole-temporaire
+- Mots-clés : OIDC, claim, politique de confiance, STS
 - Définition : Un fournisseur OIDC fait confiance aux jetons signés de GitHub : la CI appelle `sts:AssumeRoleWithWebIdentity` et reçoit des identifiants temporaires, sans clé stockée.
 - Contexte : Le jeton porte des claims : `aud` (ici `sts.amazonaws.com`) et `sub`, qui nomme dépôt et ref (`repo:<org>/<dépôt>:ref:refs/heads/main`). La trust policy doit tester `sub` : sans cette condition, n'importe quel dépôt GitHub du monde peut endosser le rôle. Un seul fournisseur par URL et par compte ; le workflow demande `permissions: id-token: write`. GitLab CI fonctionne pareil, avec ses propres claims.
 - Usage : ✅ toute CI hors AWS (GitHub, GitLab) qui déploie sur AWS · ❌ `sub` en `StringLike` sur `repo:<org>/*` : toutes les branches de tous les dépôts de l'organisation peuvent déployer.
@@ -644,6 +662,7 @@ statement {
 - Niveau : 2
 - Profils : ops
 - Prérequis : iam-role-confiance-permissions
+- Mots-clés : rôle IAM, ARN, élévation de privilège
 - Définition : Créer une Lambda, un projet CodeBuild ou un cluster EMR avec un rôle exige `iam:PassRole` sur ce rôle, en plus de l'action de création.
 - Contexte : Sans ce contrôle, qui peut créer une Lambda pourrait lui attacher un rôle administrateur et agir par procuration : élévation de privilège classique. `PassRole` n'est pas une API qu'on appelle, c'est une permission que le service vérifie quand on lui passe l'ARN du rôle. La condition `iam:PassedToService` borne le service qui peut le recevoir.
 - Usage : ✅ `iam:PassRole` sur l'ARN exact du rôle (`data-platform-dev-lambda`), avec `iam:PassedToService` · ❌ `iam:PassRole` sur `*` : tout rôle du compte, administrateur compris, devient utilisable.
@@ -684,6 +703,7 @@ statement {
 - Profils : ops
 - Prérequis : iam-role-de-service-ci
 - Voir aussi : iam-permission-boundary
+- Mots-clés : ARN, statement, npm
 - Définition : Le rôle de build n'a de droits que sur ce qu'il touche : bucket `site`, invalidation, groupe de logs, `GitPull` du dépôt.
 - Contexte : Un build exécute du code tiers (dépendances npm, scripts `postinstall`) avec les droits du rôle. Le moindre privilège ne l'empêche pas d'être compromis, il borne ce qu'un attaquant peut faire ensuite. Chaque statement liste des actions précises sur des ARN précis, jamais `*`. Le bucket `content` (les cartes) n'apparaît nulle part.
 - Usage : ✅ partir de zéro droit et ajouter l'action exacte que l'erreur `AccessDenied` réclame · ❌ `AdministratorAccess` ou `s3:*` « le temps de tester ».
@@ -711,6 +731,7 @@ aws iam get-role-policy \
 - Type : recette
 - Niveau : 2
 - Profils : ops
+- Mots-clés : politique de ressource, politique de clé, Deny explicite, terraform apply
 - Source : data-platform · S1-04
 - Définition : `aws iam simulate-principal-policy` évalue les politiques d'un rôle pour une action et un ARN, sans rien exécuter : `allowed`, `implicitDeny` ou `explicitDeny`.
 - Contexte : Une politique fausse passe l'`apply` : elle est acceptée, puis l'appel échoue à l'exécution. Le simulateur répond tout de suite. `implicitDeny` : aucun `Allow` ne couvre la demande, le défaut d'IAM ; `explicitDeny` : un `Deny` l'interdit, et aucun `Allow` ne le lève. Côté code, les deux donnent le même `AccessDenied` (HTTP 403).
@@ -753,6 +774,7 @@ aws iam simulate-custom-policy \
 - Profils : data, ops
 - Prérequis : iam-putobject-ecrase
 - Voir aussi : Data engineering/ingestion-idempotence-ecraser
+- Mots-clés : rejeu, partition, manifest, moindre privilège
 - Source : data-platform · S1-07
 - Définition : Sans `s3:DeleteObject`, la fonction ne peut que réécrire ses fichiers : une partie devenue inutile après un rejeu reste en place.
 - Contexte : Le moindre privilège a un effet métier. Une journée écrite en deux parties, puis rejouée en une seule, laisse `part-0002` : un lecteur qui liste la partition compterait des annonces en double. D'où le manifest `_MANIFEST.json`, réécrit à chaque passage : il fait foi sur la liste des parties. Ajouter `DeleteObject` sur `bodacc/*` est possible, mais élargit ce qu'un bug peut détruire.
@@ -783,6 +805,7 @@ aws s3 ls "s3://$RAW/bodacc/date=2026-10-20/"
 - Profils : ops
 - Prérequis : iam-jokers-actions-arn
 - Voir aussi : lambda-sans-create-log-group
+- Mots-clés : flux de logs, groupe de logs, ARN, provider
 - Source : data-platform · S1-07
 - Définition : `logs:CreateLogStream` et `logs:PutLogEvents` portent sur les flux : la ressource est `"${aws_cloudwatch_log_group.this.arn}:*"`, pas l'ARN du groupe seul.
 - Contexte : Un flux a pour ARN `arn:aws:logs:<région>:<account_id>:log-group:<nom>:log-stream:<flux>`. Le provider AWS renvoie l'ARN du groupe sans le suffixe `:*` que l'API ajoute parfois ; il faut le remettre pour couvrir ses flux. Sans lui, la politique est acceptée, et les écritures de logs sont refusées en silence à l'exécution.
@@ -816,6 +839,7 @@ statement {
 - Profils : data, ops
 - Prérequis : iam-listbucket-sur-bucket
 - Voir aussi : s3-cle-absente-403
+- Mots-clés : ClientError, clé S3
 - Source : data-platform · S1-07
 - Définition : Sans `s3:ListBucket` sur le bucket, lire une clé absente répond `403 AccessDenied`, pas `404 NoSuchKey` : S3 ne révèle pas qu'elle n'existe pas.
 - Contexte : Avec `ListBucket`, l'appelant pourrait de toute façon lister : S3 lui dit donc `404`. Sans, répondre `404` ou `403` selon l'existence ferait fuiter le contenu du bucket. Un code qui attrape `NoSuchKey` pour « pas encore écrit » reçoit alors un `ClientError` 403 et plante. L'ingestion n'a ni `GetObject` ni `ListBucket` : elle n'a rien à relire.
@@ -847,6 +871,7 @@ e.response["Error"]["Code"] == "404"  # → False
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : kms-sse-kms-double-droit
+- Mots-clés : SSE-KMS, clé de données, KMS, multipart upload
 - Source : data-platform · S1-07
 - Définition : Écrire dans un bucket SSE-KMS exige `kms:GenerateDataKey` sur la clé, pas `kms:Encrypt` : S3 chiffre avec une clé de données, pas avec la clé KMS.
 - Contexte : `kms:Encrypt` sert à chiffrer directement au plus 4 Ko par la clé KMS, appel que S3 ne fait jamais. S3 demande une clé de données (`GenerateDataKey`), chiffre l'objet localement et stocke la clé de données chiffrée avec lui. La lecture appelle `kms:Decrypt` sur cette clé de données. La ressource est l'ARN de la clé (`module.kms.key_arn`), pas son alias.
@@ -879,6 +904,7 @@ statement {
 - Profils : ops
 - Prérequis : lambda-role-execution
 - Voir aussi : lambda-zip-s3-copie
+- Mots-clés : rôle d'exécution, SSE-S3, SSE-KMS, artefact
 - Source : data-platform · S1-07
 - Définition : Lambda lit le zip sur S3 avec les droits de celui qui appelle `CreateFunction` ou `UpdateFunctionCode`, jamais avec le rôle d'exécution de la fonction.
 - Contexte : Le rôle d'exécution sert au code, à l'invocation ; le déploiement est fait par Terraform, avec le profil du poste ou le rôle de la CI. C'est donc ce principal qui a besoin de `s3:GetObject` sur `artifacts/lambdas/*`, et de `kms:Decrypt` si le bucket était en SSE-KMS. C'est l'autre raison du SSE-S3 sur `artifacts` : aucune clé à autoriser pour chaque déployeur.
@@ -912,6 +938,7 @@ statement {
 - Profils : ops
 - Prérequis : iam-role-confiance-permissions
 - Voir aussi : iam-externalid-tiers
+- Mots-clés : politique de confiance, principal, confused deputy
 - Source : data-platform · S1-08
 - Définition : La condition `aws:SourceAccount` dans la confiance d'un rôle de service n'accepte que les appels que le service fait pour ce compte-là.
 - Contexte : Le principal `scheduler.amazonaws.com` désigne le service entier, utilisé par tous les comptes AWS. La condition lie l'endossement au compte propriétaire de la ressource à l'origine de l'appel (la planification) : c'est la protection « confused deputy » que la doc de chaque service recommande. Même idée que `sts:ExternalId` pour un SaaS, mais posée par AWS, sans identifiant à transmettre.
@@ -950,6 +977,7 @@ data "aws_iam_policy_document" "assume" {
 - Profils : ops
 - Prérequis : iam-jokers-actions-arn
 - Voir aussi : lambda-versions-alias
+- Mots-clés : ARN, version de Lambda, alias de Lambda
 - Source : data-platform · S1-08
 - Définition : `lambda:InvokeFunction` sur l'ARN nu d'une fonction ne couvre pas ses versions et alias ; il faut aussi `<arn>:*`.
 - Contexte : Une version (`:3`) ou un alias (`:prod`) a son propre ARN, dit qualifié, et IAM le compare tel quel. `<arn>:*` couvre tous les qualificatifs de cette fonction, et seulement d'elle : `…ingest-bodacc-v2` n'y correspond pas, car le nom est suivi de `-`, pas de `:`. En revanche `…ingest-bodacc*` (sans `:`) ouvre toute fonction dont le nom commence pareil.
@@ -980,6 +1008,7 @@ data "aws_iam_policy_document" "assume" {
 - Profils : ops
 - Prérequis : iam-simulate-principal-policy
 - Voir aussi : iam-access-analyzer
+- Mots-clés : SCP, permission boundary, politique de ressource, data source
 - Source : data-platform · S1-08
 - Définition : `aws iam simulate-custom-policy` évalue une politique JSON non attachée contre des actions et des ARN, sans créer de rôle ni appeler le service.
 - Contexte : Pratique avant un `apply` : coller le JSON rendu par `aws_iam_policy_document`, lister les ARN à autoriser et ceux à refuser, et lire `EvalDecision`. Les ARN n'ont pas besoin d'exister. Avec plusieurs `--resource-arns`, le résultat global agrège : simuler un ARN à la fois, ou lire `ResourceSpecificResults`. Il ne voit ni SCP ni politique de ressource.
@@ -1010,6 +1039,7 @@ aws iam simulate-custom-policy \
 - Niveau : 2
 - Profils : ops
 - Prérequis : iam-identity-center
+- Mots-clés : SSO, profil AWS, permission set, OIDC
 - Source : data-platform · S1-09
 - Définition : `aws configure sso` écrit le profil SSO une fois ; `aws sso login` ouvre une session par le navigateur, à refaire quand elle expire.
 - Contexte : Le profil ne contient aucune clé : l'URL du portail, le compte, le nom du rôle (permission set), la région. `aws sso login` met un jeton en cache dans `~/.aws/sso/cache/` ; la CLI, boto3 et Terraform en tirent des identifiants temporaires. Session expirée : erreur de jeton jusqu'au prochain `aws sso login`, sans rien changer d'autre.
@@ -1042,6 +1072,7 @@ sso_region     = eu-west-3
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : iam-role-confiance-permissions, cognito-user-ou-identity-pool
+- Mots-clés : identity pool, aud, amr, STS
 - Source : data-platform · pwa-sync
 - Définition : Un rôle endossé via un identity pool fait confiance au principal fédéré `cognito-identity.amazonaws.com`, pour `sts:AssumeRoleWithWebIdentity`, borné par `aud` et `amr`.
 - Contexte : `aud` = l'id de l'identity pool : sans lui, tout identity pool de n'importe quel compte pourrait faire endosser le rôle. `amr` contient `authenticated` : un invité ne passe pas. Le principal n'est pas un service (`Service`) ni un compte (`AWS`), mais `Federated` : l'appelant prouve son identité par un jeton, pas par des clés IAM.
@@ -1082,6 +1113,7 @@ statement {
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : iam-variable-de-politique, dynamodb-cle-partition-et-tri
+- Mots-clés : clé de partition DynamoDB, condition IAM, identity id
 - Source : data-platform · pwa-sync
 - Définition : `dynamodb:LeadingKeys` est la liste des clés de partition touchées par une requête : on la compare à l'identité de l'appelant pour isoler chaque utilisateur.
 - Contexte : `Query` porte une clé (`pk = :pk`), `BatchWriteItem` en porte autant que d'éléments. Avec `ForAllValues:StringEquals` et la variable `${cognito-identity.amazonaws.com:sub}`, la règle se lit « toutes les clés touchées valent mon identity id ». L'isolation est faite par IAM, côté AWS : un client modifié ne peut pas la contourner. Mesuré : sa partition `Count = 0`, celle d'un autre `AccessDeniedException`.
@@ -1111,6 +1143,7 @@ aws dynamodb scan --table-name "$table"
 - Type : comparaison
 - Niveau : 2
 - Profils : ops, expert
+- Mots-clés : condition IAM, amr
 - Source : data-platform · pwa-sync
 - Définition : Pour une clé de condition à plusieurs valeurs : `ForAllValues` exige que **toutes** soient dans la liste permise, `ForAnyValue` qu'**au moins une** y soit.
 - Contexte : `LeadingKeys` (plusieurs clés dans un lot) et `amr` (plusieurs méthodes) sont des listes. Pour borner, il faut `ForAllValues` : avec `ForAnyValue`, un lot qui mélange sa clé et celle d'un autre passe (mesuré au simulateur). À l'inverse, pour vérifier qu'un jeton **contient** `authenticated`, `ForAnyValue` est le bon test.
@@ -1146,6 +1179,7 @@ any(k in permis for k in lot)  # → True
 - Profils : ops, expert
 - Prérequis : iam-forallvalues-foranyvalue
 - Voir aussi : iam-condition-null
+- Mots-clés : Scan, condition IAM, clé de partition DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : `ForAllValues` est vrai quand la requête n'a **aucune** valeur pour la clé : un `Scan`, sans clé de partition, passe une condition `LeadingKeys`.
 - Contexte : Comme `all([])` en Python ou `[].every(…)` en TS : rien ne contredit la règle, donc elle est vraie. Mesuré au simulateur : `Scan` autorisé par `ForAllValues:StringEquals` sur `LeadingKeys`. La vraie protection est donc la liste `Action` : ni `Scan`, ni `dynamodb:*`, ni `dynamodb:Scan*`. Sinon un utilisateur lit toute la table.
@@ -1178,6 +1212,7 @@ all(k in permis for k in scan)  # → True
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : condition IAM, principal
 - Source : data-platform · pwa-sync
 - Définition : Un refus dû à une condition non remplie affiche le même message qu'une action jamais accordée : `no identity-based policy allows the <action> action`.
 - Contexte : IAM ne dit pas quelle condition a échoué : il n'a trouvé aucun `Allow` applicable, c'est tout. Mesuré sur `progress-user` : la `Query` sur la partition d'un autre donne ce message, alors que `Query` est bien accordée. Pour savoir pourquoi, rejouer avec `simulate-principal-policy` en donnant les clés de contexte, ou relire la condition.
@@ -1207,6 +1242,7 @@ all(k in permis for k in scan)  # → True
 - Profils : web, ops
 - Prérequis : iam-variable-de-politique
 - Voir aussi : iam-version-2012-variables
+- Mots-clés : variable de politique, préfixe S3, utilisateur IAM, identity id
 - Source : data-platform · pwa-sync
 - Définition : Une variable placée dans `Resource` borne l'accès à un chemin propre à l'appelant : `arn:aws:s3:::bucket/home/${aws:username}/*`.
 - Contexte : Même idée que `LeadingKeys` pour DynamoDB, appliquée à S3 : chaque utilisateur IAM, ou chaque identité Cognito (`${cognito-identity.amazonaws.com:sub}`), n'atteint que son préfixe. Mesuré au simulateur : `alice` lit `home/alice/x` avec cette politique. Pour lister, il faut en plus `s3:ListBucket` borné par la condition `s3:prefix`, avec la même variable.
@@ -1239,6 +1275,7 @@ all(k in permis for k in scan)  # → True
 - Niveau : 2
 - Profils : ops
 - Prérequis : iam-variable-de-politique
+- Mots-clés : variable de politique, data source
 - Source : data-platform · pwa-sync
 - Définition : Les variables de politique n'existent qu'avec `"Version": "2012-10-17"` ; avec `2008-10-17`, `${aws:username}` est une chaîne littérale.
 - Contexte : Mesuré au simulateur : la même politique en `2008-10-17` refuse `home/alice/x`, mais autorise une clé nommée littéralement `home/${aws:username}/x`. Sans `Version`, la valeur par défaut est l'ancienne. `aws_iam_policy_document` écrit `2012-10-17` d'office ; le risque vient d'un JSON écrit à la main ou copié d'un vieux tutoriel.
@@ -1268,6 +1305,7 @@ all(k in permis for k in scan)  # → True
 - Profils : ops, expert
 - Prérequis : iam-deny-explicite-gagne
 - Voir aussi : iam-scp-plafond-compte
+- Mots-clés : politique managée, politique d'identité, CI
 - Définition : Une permission boundary est une politique managée posée sur un rôle ou un utilisateur : elle plafonne ses droits sans en accorder aucun.
 - Contexte : Le droit effectif est l'intersection : il faut un `Allow` dans la politique d'identité ET dans la boundary. Usage type : laisser une équipe ou une CI créer ses rôles, à condition (clé `iam:PermissionsBoundary`) que chaque rôle créé porte la boundary : personne ne fabrique alors un rôle plus puissant que le plafond.
 - Usage : ✅ rôles que la CI ou un développeur crée lui-même, compte partagé entre équipes · ❌ boundary pour donner un droit qui manque : elle n'accorde rien.
@@ -1304,6 +1342,7 @@ resource "aws_iam_role" "sandbox" {
 - Profils : ops, expert
 - Prérequis : iam-deny-explicite-gagne
 - Voir aussi : iam-permission-boundary
+- Mots-clés : AWS Organizations, compte root, région AWS
 - Définition : Une SCP (Service Control Policy) d'AWS Organizations plafonne tous les principaux d'un compte membre, sans accorder aucun droit.
 - Contexte : Comme une boundary, mais pour tout un compte : un `Allow` IAM n'aboutit que si chaque SCP sur le chemin (racine, OU, compte) l'autorise aussi. `FullAWSAccess`, attachée par défaut, laisse tout passer. Une SCP ne s'applique ni au compte de gestion de l'organisation, ni aux rôles liés à un service. Usages types : interdire toute région hors `eu-west-3`, ou la sortie de l'organisation.
 - Usage : ✅ garde-fous d'entreprise non négociables (régions, CloudTrail) sur les comptes membres · ❌ compter sur une SCP pour protéger le compte de gestion : elle ne s'y applique pas, n'y faire tourner aucune charge.
@@ -1343,6 +1382,7 @@ aws organizations list-policies \
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : iam-assumerole-temporaire
+- Mots-clés : politique de confiance, SaaS, confused deputy
 - Définition : `sts:ExternalId` est une condition de trust policy : un tiers qui endosse le rôle d'un client doit fournir l'identifiant propre à ce client.
 - Contexte : Un SaaS (monitoring, FinOps) sert des milliers de clients depuis son propre compte AWS. Si la trust policy ne nomme que ce compte, un autre client du SaaS peut saisir l'ARN du rôle de quelqu'un d'autre, et le SaaS l'endossera pour lui : le « confused deputy ». L'ExternalId, fixé par le SaaS et unique par client, ferme ce trou. C'est un identifiant de contexte, pas un secret fort.
 - Usage : ✅ tout rôle endossé par un compte tiers multi-clients · ❌ ExternalId entre deux comptes à soi, ou pour un service AWS : `aws:SourceArn` et `aws:SourceAccount`.
@@ -1377,6 +1417,7 @@ statement {
 - Niveau : 3
 - Profils : ops, expert
 - Voir aussi : iam-simulate-custom-policy
+- Mots-clés : politique IAM, CI
 - Définition : IAM Access Analyzer valide une politique avant de la poser (`validate-policy`) et repère les ressources ouvertes hors du compte ou les droits inutilisés.
 - Contexte : `validate-policy` relit le JSON sans rien déployer : erreurs (`INVALID_ACTION` sur une faute de frappe, `MISSING_RESOURCE`), avertissements de sécurité (`PassRole` sur `*`, `NotAction` large). Un analyseur de compte, gratuit pour l'accès externe, liste en continu buckets, clés KMS ou rôles ouverts à un autre compte ; l'analyse des droits inutilisés est payante. Il ne dit pas si la politique fait ce que l'on veut.
 - Usage : ✅ `validate-policy` en CI sur chaque politique générée, un analyseur par compte · ❌ le prendre pour un simulateur : `simulate-principal-policy` répond à « ce rôle peut-il faire X ? ».
@@ -1415,6 +1456,7 @@ aws accessanalyzer list-analyzers \
 - Profils : data, expert
 - Prérequis : iam-putobject-prefixe
 - Voir aussi : s3-multipart-incomplet
+- Mots-clés : multipart upload, boto3, cycle de vie
 - Source : data-platform · S1-07
 - Définition : `CreateMultipartUpload`, `UploadPart` et `CompleteMultipartUpload` sont autorisés par `s3:PutObject` ; annuler exige `s3:AbortMultipartUpload`, un droit à part.
 - Contexte : IAM n'a pas d'action par appel multipart : les trois appels d'écriture se rangent sous `s3:PutObject`. `upload_file` de boto3 découpe au-delà de 8 Mo et, en cas d'échec d'une part, tente d'annuler : sans `AbortMultipartUpload`, l'annulation échoue et les parts déjà envoyées restent facturées. D'où la règle `abort_incomplete_multipart_upload` du cycle de vie, qui les supprime après quelques jours.
@@ -1447,6 +1489,7 @@ rule {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : iam-politique-inline
+- Mots-clés : politique inline, politique managée, quota AWS, terraform apply
 - Source : data-platform · S1-07
 - Définition : Les politiques inline d'un rôle totalisent au plus 10 240 caractères ; une politique managée, 6 144 : au-delà, l'`apply` échoue.
 - Contexte : Les espaces ne comptent pas, mais chaque ARN répété, si. Un rôle partagé par des dizaines de fonctions finit par dépasser ; un rôle par fonction garde chaque politique courte. Si une politique grossit vraiment, les jokers (`bodacc/*`) et le regroupement d'actions réduisent la taille ; un rôle peut aussi porter 10 politiques managées par défaut (quota relevable à 20).
@@ -1480,6 +1523,7 @@ resource "aws_iam_role_policy" "app" {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : iam-sourceaccount-service, sqs-eventbridge-schedule-group
+- Mots-clés : EventBridge Scheduler, ARN, condition IAM, politique de confiance
 - Source : data-platform · S1-08
 - Définition : Pour EventBridge Scheduler, `aws:SourceArn` vaut l'ARN du **groupe** de planifications (`schedule-group/<nom>`), jamais celui d'une planification.
 - Contexte : `SourceArn` borne plus finement que `SourceAccount` : seul un groupe précis peut faire endosser le rôle. La doc Scheduler est explicite : ne pas viser une planification ni un préfixe de nom, la condition ne correspondrait jamais. Avec un joker (`schedule-group/*`), l'opérateur doit être `ArnLike`, pas `StringEquals`. Sans `group_name`, une planification est dans le groupe `default`.
@@ -1510,6 +1554,7 @@ condition {
 - Niveau : 3
 - Profils : ops, expert
 - Voir aussi : iam-forallvalues-ensemble-vide
+- Mots-clés : condition IAM, Scan, clé de partition DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : `"Null": {"dynamodb:LeadingKeys": "false"}` exige que la requête porte une clé de partition : il ferme le trou de `ForAllValues` sur l'ensemble vide.
 - Contexte : `Null = false` signifie « la clé de contexte existe ». Combinée à `ForAllValues` dans la même instruction (conditions en ET), elle refuse un `Scan` même si l'action est accordée par erreur. Mesuré au simulateur : `Scan` autorisé sans `Null`, refusé avec. C'est une ceinture en plus de la liste d'actions, pas un remplacement.
@@ -1546,6 +1591,7 @@ condition {
 - Profils : web, expert
 - Prérequis : iam-leadingkeys-partition
 - Voir aussi : dynamodb-batchwriteitem-25
+- Mots-clés : clé de partition DynamoDB, condition IAM, outbox
 - Source : data-platform · pwa-sync
 - Définition : Pour `BatchWriteItem`, `LeadingKeys` contient les clés de partition de **tous** les éléments du lot : un seul élément étranger fait refuser la requête entière.
 - Contexte : Mesuré au simulateur : `LeadingKeys = [moi, autre]` avec `ForAllValues` → refus. IAM ne trie pas le lot : il autorise ou refuse la requête entière, aucun élément n'est écrit. Côté app, un bug qui glisse une autre clé dans l'outbox bloque donc toute la synchro, au lieu de fuir des données : le bon sens d'échec.
@@ -1575,6 +1621,7 @@ all(k == moi for k in cles)  # → False
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : iam-leadingkeys-partition
+- Mots-clés : condition IAM, Query
 - Source : data-platform · pwa-sync
 - Définition : `dynamodb:Attributes` liste les attributs lus ou écrits par une requête : avec `ForAllValues`, on borne les colonnes, comme `LeadingKeys` borne les lignes.
 - Contexte : Cas typique : l'app lit `score` et `nom`, mais pas `email_interne` stocké dans la même ligne. Il faut alors que la requête nomme ses attributs (`ProjectionExpression`, `Select = SPECIFIC_ATTRIBUTES`, condition `dynamodb:Select`) : une lecture de toute la ligne serait refusée. Plus simple souvent : ne pas stocker dans la table ce que l'app ne doit pas voir.

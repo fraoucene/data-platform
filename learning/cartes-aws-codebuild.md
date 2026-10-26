@@ -18,6 +18,7 @@ AWS · CodeBuild : projet, buildspec, logs, déclenchement, coûts (format spec 
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : codebuild-source-version-tete
+- Mots-clés : CodeCommit, buildspec, clone superficiel, rôle IAM
 - Définition : Le bloc `source` dit où CodeBuild prend le code : dépôt CodeCommit en HTTPS, cloné sur un seul commit, avec le chemin du buildspec.
 - Contexte : `git_clone_depth = 1` fait un clone superficiel (≈ `git clone --depth 1`) : plus rapide, mais sans historique. `buildspec` est un chemin relatif à la racine du dépôt ; le fichier est donc versionné avec le code et change dans le même commit. Le rôle doit avoir `codecommit:GitPull` sur le dépôt, sinon le build échoue dès `DOWNLOAD_SOURCE`.
 - Usage : ✅ build qui n'a besoin que de l'état courant du code · ❌ version calculée depuis l'historique (`git describe`, changelog) : `git_clone_depth = 0` (clone complet).
@@ -47,6 +48,7 @@ source {
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : codebuild-runtime-versions-cout
+- Mots-clés : conteneur, runtime, image Docker, ECR
 - Définition : Le bloc `environment` choisit le conteneur du build : type, taille (`compute_type`) et image fournie par AWS avec ses runtimes.
 - Contexte : `aws/codebuild/standard:7.0` est une image Ubuntu maintenue par AWS, avec Node, Python, Docker et la CLI AWS préinstallés : rien à construire soi-même (≈ `image:` d'un job GitLab). `BUILD_GENERAL1_SMALL` donne 3 Go de RAM et 2 vCPU, assez pour un build Vite. Le conteneur est neuf à chaque build : rien ne persiste d'un build à l'autre sans cache explicite.
 - Usage : ✅ image `standard` pour un build Node ou Python classique · ❌ outils exotiques installés à chaque build : image Docker personnalisée dans ECR.
@@ -75,6 +77,7 @@ environment {
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : codebuild-post-build-deploiement, codebuild-finally
+- Mots-clés : shell, Makefile, YAML
 - Définition : `buildspec.yml` décrit le build en phases ordonnées (`install`, `pre_build`, `build`, `post_build`), chacune une liste de commandes shell.
 - Contexte : Une commande en échec arrête sa phase et passe le build en `FAILED` : `make deploy` placé après `make test lint` ne part jamais si les tests cassent. `runtime-versions` choisit la version de Node fournie par l'image. Les phases ne sont pas toutes équivalentes en cas d'échec : la suite dépend de la phase qui a échoué.
 - Usage : ✅ `install` pour l'outillage, `build` pour tester puis déployer · ❌ logique longue dans le YAML : la mettre dans le Makefile, exécutable aussi en local.
@@ -107,6 +110,7 @@ phases:
 - Type : concept
 - Niveau : 1
 - Profils : ops
+- Mots-clés : artefact, CodePipeline, Makefile
 - Définition : `NO_ARTIFACTS` dit à CodeBuild de ne rien téléverser en fin de build : le buildspec publie lui-même dans S3 via `make deploy`.
 - Contexte : Par défaut, CodeBuild sait copier des fichiers produits vers S3 (phase `UPLOAD_ARTIFACTS`), pour un artefact destiné à une étape suivante. Ici le déploiement est déjà fait par le Makefile pendant `build`, avec ses propres options d'envoi : un artefact ferait doublon. Le bloc `artifacts` reste obligatoire dans la ressource, même vide de sens.
 - Usage : ✅ build qui déploie lui-même (`s3 sync`, `terraform apply`) · ❌ artefact consommé par une autre étape (CodePipeline, Lambda) : `type = "S3"`.
@@ -134,6 +138,7 @@ artifacts {
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : groupe de logs, flux de logs, règle EventBridge
 - Définition : `aws logs tail --follow` affiche en continu dans le terminal les logs du build, lus dans le groupe `/aws/codebuild/<projet>`.
 - Contexte : Chaque build écrit dans un flux nommé par la partie de son ID après `:` (mesuré). `batch-get-builds` donne ensuite le statut final : `SUCCEEDED`, `FAILED` (une commande a échoué), `FAULT` (erreur de CodeBuild), `TIMED_OUT` ou `STOPPED`. Son champ `initiator` dit qui a lancé le build : `rule/revision-pwa-dev-push-main` pour la règle EventBridge (mesuré).
 - Usage : ✅ suivre un déploiement juste après un push, lire l'erreur exacte · ❌ rafraîchir la console : `batch-get-builds` pour statut et durées par phase.
@@ -170,6 +175,7 @@ aws codebuild batch-get-builds \
 - Profils : ops
 - Prérequis : codebuild-suivre-logs
 - Voir aussi : lambda-log-group-avant-fonction
+- Mots-clés : groupe de logs, flux de logs, rétention, ARN
 - Définition : Terraform crée le groupe de logs du build avec une rétention ; le rôle n'a que `CreateLogStream` et `PutLogEvents` dessus.
 - Contexte : Chaque build écrit dans un flux (stream) nommé par son ID, dans le groupe `/aws/codebuild/<projet>`. Créer le groupe soi-même permet de fixer `retention_in_days` (14 ici, mesuré sur le compte) et de retirer `logs:CreateLogGroup` du rôle. L'ARN d'un groupe suivi de `:*` couvre ses flux, ce que demande `CreateLogStream`.
 - Usage : ✅ groupe de logs déclaré en Terraform pour tout CodeBuild ou Lambda · ❌ laisser le service créer le groupe : rétention illimitée et droit de création en plus.
@@ -206,6 +212,7 @@ statement {
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : output, CI, Parameter Store, Secrets Manager
 - Définition : `environment_variable` injecte des valeurs Terraform (bucket, ID de distribution) dans le build, lues par le Makefile comme des variables shell.
 - Contexte : Le Makefile déclare `SITE_BUCKET ?= $(shell terraform output …)` : en local, il lit l'output ; en CI, la variable du projet est déjà définie et `?=` la garde, sans `terraform` dans le conteneur. Le type par défaut est `PLAINTEXT` (mesuré sur le projet) : la valeur est stockée en clair dans la définition du projet.
 - Usage : ✅ noms et ID non sensibles (bucket, distribution) · ❌ secret (jeton d'API) en clair : `type = "PARAMETER_STORE"` ou `"SECRETS_MANAGER"`, droit de lecture au rôle.
@@ -244,6 +251,7 @@ environment_variable {
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : CI, timeout
 - Définition : `build_timeout` (en minutes) arrête un build qui dépasse la durée fixée : ici 15 min, pour un build mesuré à moins de 2 min.
 - Contexte : Sans l'attribut, CodeBuild attend 60 minutes avant d'arrêter un build. Un test qui attend un réseau absent ou une commande interactive bloquée consommerait alors une heure de calcul. Le build arrêté passe en `TIMED_OUT`. Un second délai, `queued_timeout` (480 min par défaut, mesuré), borne l'attente en file avant démarrage.
 - Usage : ✅ plafond à quelques fois la durée normale, sur toute CI payée à la minute · ❌ plafond trop serré : un build lent mais sain échoue au hasard.
@@ -270,6 +278,7 @@ resource "aws_codebuild_project" "deploy" {
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : buildspec
 - Définition : La phase `post_build` s'exécute même quand `build` a échoué : on y met nettoyage ou notification, jamais un déploiement.
 - Contexte : CodeBuild enchaîne `build` → `post_build` quel que soit le résultat de `build`, pour permettre un rapport ou un nettoyage. La variable `CODEBUILD_BUILD_SUCCEEDING` (`1` ou `0`) dit si tout a réussi jusque-là. Le buildspec du projet garde `make deploy` dans `build`, juste après les tests, pour hériter de l'arrêt à la première erreur.
 - Usage : ✅ `post_build` pour notifier ou publier un rapport de tests · ❌ déployer en `post_build` : on publierait un code qui casse les tests.
@@ -300,6 +309,7 @@ phases:
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : shell, bash, buildspec
 - Définition : En `version: 0.2`, toutes les commandes du buildspec tournent dans la même instance du shell : un `cd` ou un `export` vaut pour les suivantes.
 - Contexte : En `0.1`, chaque commande avait son propre shell, d'où les `cd x && …` des vieux buildspecs. Le shell par défaut est `sh` (doc AWS) : sur l'image Ubuntu, c'est `dash`, sans les extensions de bash. `env.shell: bash` change le shell de tout le buildspec. Le build démarre à la racine du dépôt, `CODEBUILD_SRC_DIR`.
 - Usage : ✅ `version: 0.2`, `shell: bash` dès qu'une commande utilise une syntaxe bash · ❌ logique shell longue dans le YAML : la mettre dans le Makefile ou un script versionné.
@@ -340,6 +350,7 @@ phases:
 - Niveau : 2
 - Profils : ops
 - Voir aussi : codebuild-source-version-tete
+- Mots-clés : commit, clone superficiel, règle EventBridge
 - Définition : CodeBuild injecte des variables `CODEBUILD_*` dans chaque build : commit construit, numéro et ID du build, dossier source, déclencheur.
 - Contexte : `CODEBUILD_RESOLVED_SOURCE_VERSION` donne le commit réellement cloné, disponible après `DOWNLOAD_SOURCE`. `CODEBUILD_BUILD_NUMBER` s'incrémente à chaque build du projet (3 builds ici). `CODEBUILD_SRC_DIR` vaut `/codebuild/output/src…/src/git-codecommit…/revision-pwa` (mesuré). `CODEBUILD_INITIATOR` donne le lanceur. Le préfixe `CODEBUILD_` est réservé : n'en définir aucune soi-même.
 - Usage : ✅ écrire la version déployée dans le site (`version.json`), nommer un artefact · ❌ `git describe` sur un clone superficiel : pas d'historique, la variable suffit.
@@ -370,6 +381,7 @@ build:
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : pnpm, uv
 - Définition : Le cache CodeBuild garde des dossiers (store pnpm, `~/.cache/uv`) d'un build à l'autre, dans S3 ou sur l'hôte (`LOCAL`), listés sous `cache.paths`.
 - Contexte : Le projet est en `NO_CACHE` (lu sur le compte) et le log dit `Skip cache due to: no paths specified to be cached` : chaque build retélécharge ses 494 paquets. `type = "S3"` archive les chemins en fin de build et les restaure au début : fiable, mais l'aller-retour prend du temps. `LOCAL` réutilise le disque d'un hôte encore chaud : gratuit, sans garantie.
 - Usage : ✅ dépendances lourdes et stables (store pnpm, roues Python) · ❌ cache S3 pour gagner 4 s sur un build de 100 s : la minute facturée ne bouge pas.
@@ -404,6 +416,7 @@ cache:
 - Niveau : 2
 - Profils : ops
 - Voir aussi : codebuild-source-version-tete
+- Mots-clés : rollback, rôle de service, commit
 - Définition : `aws codebuild start-build` lance le projet à la main et peut surcharger, pour ce build seulement, le commit (`--source-version`) et des variables.
 - Contexte : Rejouer un commit antérieur redéploie l'ancien site sans toucher à git : c'est le rollback le plus rapide de revision-pwa. La surcharge ne vaut que pour ce build, le projet ne change pas. Celui qui lance doit avoir `codebuild:StartBuild` ; le build tourne, lui, avec le rôle de service du projet.
 - Usage : ✅ rollback vers un commit connu, essai d'une branche sans pousser sur main · ❌ changer `source_version` dans Terraform pour un essai : tous les builds suivants changent.
@@ -438,6 +451,7 @@ aws codebuild start-build \
 - Niveau : 2
 - Profils : ops
 - Voir aussi : sqs-eventbridge-event-target
+- Mots-clés : webhook, regex, règle EventBridge, CodeCommit
 - Définition : `aws_codebuild_webhook` lance le build sur un événement d'un dépôt GitHub, GitLab ou Bitbucket, filtré par groupes (`EVENT`, `HEAD_REF`, `FILE_PATH`).
 - Contexte : Dans un groupe, tous les filtres doivent matcher (ET) ; un seul groupe vrai suffit (OU). Les motifs sont des regex RE2, à ancrer : `^refs/heads/main$`. `FILE_PATH` filtre sur les fichiers modifiés, ce que l'événement CodeCommit d'EventBridge ne permet pas. CodeCommit n'a pas de webhook CodeBuild : revision-pwa passe par une règle EventBridge.
 - Usage : ✅ dépôt GitHub ou GitLab, build seulement quand `infra/` change · ❌ dépôt CodeCommit : règle EventBridge ; GitLab CI déjà en place : garder `.gitlab-ci.yml`.
@@ -476,6 +490,7 @@ resource "aws_codebuild_webhook" "w" {
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : Docker, ECR, ECS, Fargate
 - Définition : `privileged_mode = true` donne au conteneur de build l'accès au démon Docker : requis pour `docker build` d'une image Lambda ou ECS.
 - Contexte : Sans ce mode, `docker build` échoue avec `Cannot connect to the Docker daemon`. Le mode élargit les droits du conteneur sur l'hôte : à réserver aux projets qui construisent des images. revision-pwa est à `false` (lu sur le compte) : il ne fait que du Node et de la CLI AWS. L'image se pousse ensuite dans ECR, avec des droits limités au dépôt.
 - Usage : ✅ build d'images (Lambda en conteneur, Fargate) · ❌ projet sans Docker : laisser `false`, moins de surface d'attaque.
@@ -516,6 +531,7 @@ build:
 - Profils : ops, expert
 - Prérequis : iam-role-de-service-ci
 - Voir aussi : lambda-depends-on-droits
+- Mots-clés : depends_on, politique IAM, rôle IAM
 - Définition : `depends_on` force un ordre que les références ne montrent pas : le projet référence le rôle, mais pas la politique qui lui donne ses droits.
 - Contexte : Terraform ordonne par références : le projet cite `aws_iam_role.deploy.arn`, donc le rôle est créé avant, mais rien ne relie le projet à `aws_iam_role_policy.deploy`. Les deux seraient créés en parallèle, et un build lancé aussitôt tournerait sans droits. `depends_on` ajoute l'arête manquante, valable aussi à la destruction, dans l'ordre inverse.
 - Usage : ✅ dépendance réelle sans référence (politique, attachement, blocage d'accès public) · ❌ dépendance déjà exprimée par une référence : bruit qui masque le vrai graphe.
@@ -544,6 +560,7 @@ resource "aws_codebuild_project" "deploy" {
 - Type : piège
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : règle EventBridge, commit, transformateur d'entrée, CodePipeline
 - Définition : `source_version` fixe la référence construite quand le build démarre sans révision précise, ce que fait la cible EventBridge.
 - Contexte : La cible EventBridge appelle `StartBuild` sans commit : le build clone `refs/heads/main` tel qu'il est au démarrage, pas le commit qui a déclenché l'événement. Le commit réellement construit est noté dans `resolvedSourceVersion`. Deux pushs rapprochés peuvent donc produire deux builds du même dernier commit.
 - Usage : ✅ déploiement continu « la tête de main gagne », sans ordre à garantir · ❌ build qui doit construire chaque commit : passer `sourceVersion` à `StartBuild` (transformateur d'entrée) ou CodePipeline.
@@ -571,6 +588,7 @@ aws codebuild batch-get-builds \
 - Type : piège
 - Niveau : 3
 - Profils : web, ops, expert
+- Mots-clés : Corepack, pnpm, package.json, CI
 - Définition : Corepack fournit le gestionnaire de paquets demandé par `packageManager` du `package.json`, au lieu d'un pnpm global de version imprévisible.
 - Contexte : Corepack lit le `package.json` du dossier courant. Le buildspec tourne à la racine, sans `package.json` : Corepack a pris la dernière version (pnpm 12.15.0), puis `pnpm --dir app install` l'a refusée car `app/` exige `pnpm@10.33.0`. C'est l'échec mesuré du 1er build, en `ERR_PNPM_BAD_PM_VERSION`. Correctif : installer en global la version lue dans `app/package.json`.
 - Usage : ✅ épingler pnpm via `packageManager` et `corepack install -g` en CI · ❌ `npm i -g pnpm` sans version : la CI change d'outil le jour d'une sortie majeure.
@@ -601,6 +619,7 @@ install:
 - Niveau : 3
 - Profils : ops, expert
 - Voir aussi : codebuild-minutes-arrondies
+- Mots-clés : runtime, image Docker
 - Définition : `runtime-versions` choisit la version d'un langage dans l'image ; si ce n'est pas celle active par défaut, CodeBuild l'installe à chaque build.
 - Contexte : Mesuré sur le projet : `nodejs: 22` lance `n $NODE_22_VERSION`, qui prend environ 56 s, sur un build d'environ 100 s. Ce temps n'apparaît pas dans la phase `INSTALL` (5 s) : la console le range dans `DOWNLOAD_SOURCE` (65 s). Optimiser `make install` ne gagne donc presque rien ; le levier est l'image ou la version de Node.
 - Usage : ✅ lire les horodatages des logs avant d'optimiser un build · ❌ se fier à la seule durée des phases : `INSTALL` ne compte pas l'installation du runtime.
@@ -639,6 +658,7 @@ aws codebuild batch-get-builds \
 - Niveau : 3
 - Profils : ops, expert
 - Voir aussi : couts-cout-au-repos
+- Mots-clés : offre gratuite, CI
 - Définition : Un build CodeBuild se paie à la minute entamée ; l'offre gratuite (100 min/mois en small) borne donc le nombre de déploiements gratuits.
 - Contexte : Chaque build est arrondi à la minute supérieure, séparément : 61 s coûtent 2 minutes. Le build mesuré dure environ 100 s, soit 2 minutes facturées et 50 déploiements gratuits par mois. Quelques secondes au-dessus d'un multiple de 60 coûtent une minute entière à chaque build, d'où l'intérêt de connaître la durée réelle.
 - Usage : ✅ estimer le budget de CI depuis la durée réelle des builds · ❌ raisonner sur la durée moyenne cumulée : l'arrondi s'applique build par build.
@@ -676,6 +696,7 @@ done
 - Niveau : 3
 - Profils : ops, expert
 - Voir aussi : couts-nat-gateway-endpoint
+- Mots-clés : VPC, sous-réseau, NAT Gateway, endpoint VPC
 - Définition : `vpc_config` place le conteneur de build dans des sous-réseaux d'un VPC pour joindre une ressource privée (base, API interne).
 - Contexte : Dans un VPC, le build sort par le routage du sous-réseau : sans NAT Gateway ni endpoints VPC (S3, ECR, logs), `pnpm install`, l'envoi des logs et les appels AWS échouent par timeout. Le NAT se paie à l'heure, environ 36 $/mois à Paris avant trafic : un coût fixe qui dépasse vite un CodeBuild gratuit.
 - Usage : ✅ tests d'intégration contre une base RDS privée, migrations · ❌ build qui n'appelle que S3 et CloudFront : hors VPC, sans NAT à payer.
@@ -704,6 +725,7 @@ vpc_config {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : codebuild-post-build-deploiement
+- Mots-clés : buildspec
 - Définition : Le bloc `finally` d'une phase s'exécute après ses `commands`, même si l'une a échoué : nettoyage ou rapport, sans sauver la phase.
 - Contexte : Une commande en échec saute les suivantes de `commands`, puis `finally` tourne. La phase ne réussit que si `commands` et `finally` réussissent tous les deux (doc AWS). Contrairement à `post_build`, `finally` reste dans sa phase : il marche aussi pour `install`, après lequel un échec saute `build` et `post_build`.
 - Usage : ✅ effacer un fichier de secrets, publier un rapport de tests partiel · ❌ déployer dans `finally` : il tourne justement quand les tests cassent.

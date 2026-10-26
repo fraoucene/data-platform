@@ -18,6 +18,7 @@ DevOps · CI-CD : chaîne, déclencheurs, secrets, dépendances, artefacts, dép
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : ci-cd-needs-graphe
+- Mots-clés : pipeline, job, CodeBuild, conteneur
 - Définition : Un pipeline enchaîne des étapes (`stages`) : tous les jobs d'une étape tournent en parallèle, l'étape suivante ne démarre que s'ils ont tous réussi.
 - Contexte : L'ordre classique `build` → `test` → `deploy` fait du déploiement la récompense d'un build et de tests verts : un test rouge arrête le pipeline avant la prod. C'est le `buildspec.yml` de CodeBuild découpé en jobs isolés, chacun dans un conteneur neuf, relançable seul. Un job échoue dès qu'une commande de `script` sort avec un code non nul.
 - Usage : ✅ étapes courtes et ordonnées : lint et tests avant tout déploiement · ❌ tout dans un seul job géant : impossible de relancer seulement l'étape cassée.
@@ -50,6 +51,7 @@ deploy:
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : runner, image Docker, YAML, GitLab CI
 - Définition : Dans `.gitlab-ci.yml`, toute clé de premier niveau qui n'est pas un mot réservé est un job : une `image` Docker, une `stage` et un `script`.
 - Contexte : Le runner lance un conteneur de l'`image`, clone le dépôt, exécute `before_script` puis `script` ligne à ligne, arrêt à la première erreur. Les mots réservés (`stages`, `variables`, `default`, `workflow`, `include`) ne sont pas des jobs. Sans `stage`, un job va dans `test`. Pas de runner à soi sur gitlab.com : runners partagés, facturés à la minute.
 - Usage : ✅ un job par commande du Makefile, image légère et épinglée (`python:3.13-slim`) · ❌ un job qui enchaîne tout le pipeline : impossible de relancer seulement l'étape cassée.
@@ -78,6 +80,7 @@ test:
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : job, YAML, GitLab CI
 - Définition : Un workflow `.github/workflows/*.yml` déclare ses déclencheurs (`on`) et ses `jobs` ; chaque job tourne sur une VM (`runs-on`) et enchaîne des `steps`.
 - Contexte : Un step est soit une commande (`run`), soit une action réutilisable (`uses: actions/checkout@v…`). Contrairement à GitLab, rien n'est cloné d'office : sans `actions/checkout`, le dossier de travail est vide. Pas de `stages` : l'ordre entre jobs se déclare avec `needs`. Les steps d'un job partagent la machine ; deux jobs, jamais.
 - Usage : ✅ dépôt GitHub, actions officielles (`checkout`, `setup-node`, `configure-aws-credentials`) · ❌ action tierce non épinglée (`@main`) : épingler un tag, ou mieux un hash de commit.
@@ -109,6 +112,7 @@ jobs:
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : ci-cd-rules-premiere-regle
+- Mots-clés : pipeline, MR, monorepo, EventBridge
 - Définition : Le déclencheur dit quels événements lancent le pipeline : `on: push` filtré par `branches` sur GitHub, `rules` sur `$CI_COMMIT_BRANCH` sur GitLab.
 - Contexte : Sans filtre, chaque push sur chaque branche lance tout, déploiement compris. On sépare donc : tests sur toutes les branches et MR, déploiement sur `main` seulement. `paths` évite un pipeline quand seuls des fichiers sans rapport changent (`learning/`). Le filtre est l'équivalent de la règle EventBridge `push-main` de la chaîne CodeCommit.
 - Usage : ✅ tests sur toute branche, deploy sur `main`, `paths` pour un monorepo · ❌ déploiement lancé sur toute branche : la prod suit la dernière branche poussée.
@@ -143,6 +147,7 @@ deploy:
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : ci-cd-oidc-role-sans-cle, ci-cd-masquage-limites
+- Mots-clés : variable d'environnement, branche protégée, OIDC, YAML
 - Définition : Un secret de CI vit dans les variables du projet, hors du dépôt : `protected` et `masked` sur GitLab, `secrets.NOM` sur GitHub.
 - Contexte : Le YAML est commité : une valeur écrite dedans est publique pour qui lit le dépôt. La variable de projet est injectée au job comme variable d'environnement. `masked` remplace la valeur par `[MASKED]` dans les logs ; `protected` ne la donne qu'aux pipelines des branches et tags protégés (`main`, `v*`). Mieux encore pour AWS : pas de secret du tout, une identité OIDC.
 - Usage : ✅ jeton d'API tiers protégé et masqué, réservé au job de déploiement · ❌ clé AWS en variable : rôle OIDC ; secret écrit dans `.gitlab-ci.yml`.
@@ -179,6 +184,7 @@ sync:
 - Profils : débutant, ops
 - Prérequis : ci-cd-stages-ordre
 - Voir aussi : ci-cd-promotion-meme-artefact
+- Mots-clés : job, cache de CI, tfplan, conteneur
 - Définition : Un artefact est un fichier produit par un job (`dist/`, `tfplan`) et transmis aux suivants : on déploie exactement ce qui a été testé.
 - Contexte : Chaque job démarre dans un conteneur neuf : sans artefact, `deploy` rebâtirait `dist/`, peut-être différemment. Contrairement au cache, l'artefact est garanti et téléchargeable depuis l'interface. Il expire (`expire_in`) et peut contenir des données sensibles : un `tfplan` porte des valeurs en clair. GitHub passe par `upload-artifact` et `download-artifact`, car ses jobs ne partagent rien.
 - Usage : ✅ `dist/` du build vers le deploy, `tfplan` du plan vers l'apply, rapport de tests · ❌ dépendances à réutiliser entre pipelines : le cache.
@@ -210,6 +216,7 @@ deploy:
 - Niveau : 1
 - Profils : ops
 - Voir aussi : AWS/sqs-eventbridge-event-pattern, AWS/codebuild-buildspec-phases
+- Mots-clés : CodeCommit, EventBridge, CodeBuild, Makefile
 - Définition : Un push sur `main` émet un événement CodeCommit ; EventBridge le filtre et lance CodeBuild, qui exécute `buildspec.yml` puis `make deploy`.
 - Contexte : Aucun serveur de CI à maintenir (≈ GitLab CI sans runner) : chaque maillon est un service managé, branché par Terraform. EventBridge n'est qu'un déclencheur, le projet CodeBuild existe seul et se lance aussi à la main. Le build ne fait qu'appeler le Makefile : `make deploy` en local et en CI exécutent les mêmes commandes, ce qui rend la CI reproductible sur le poste.
 - Usage : ✅ dépôt CodeCommit, déploiement simple d'un site statique ou d'une Lambda, coût quasi nul · ❌ pipeline multi-étapes avec validations manuelles : CodePipeline ou GitLab CI.
@@ -245,6 +252,7 @@ aws codebuild batch-get-builds \
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : job, YAML, GitLab CI
 - Définition : `extends` fait hériter un job des clés d'un modèle, souvent un job caché (nom en `.`) ; les clés du job lui-même gagnent.
 - Contexte : Un job dont le nom commence par `.` est caché : jamais exécuté, il ne sert que de modèle. La fusion est profonde pour les dictionnaires (`variables`), mais une liste (`script`, `before_script`) est remplacée en bloc, pas concaténée. Contrairement aux ancres YAML, `extends` traverse les fichiers inclus (`include`). Pour une clé commune à tous les jobs, `default:` suffit.
 - Usage : ✅ image et `before_script` communs à plusieurs jobs, modèle de déploiement par environnement · ❌ ancres YAML copiées dans chaque fichier : `extends` ou `default:`.
@@ -272,6 +280,7 @@ lint:
 - Niveau : 2
 - Profils : ops
 - Prérequis : ci-cd-stages-ordre
+- Mots-clés : job, stage, artefact, monorepo
 - Définition : `needs` fait démarrer un job dès que les jobs listés ont réussi, sans attendre la fin de toute l'étape précédente (graphe de dépendances).
 - Contexte : Avec les seules `stages`, `deploy-site` attend aussi le lent `test-api` sans rapport. `needs: [build-site]` le lance dès que son build est prêt, et il ne récupère que les artefacts des jobs listés. Sur GitHub, `needs` est le seul moyen d'ordonner des jobs. Un job dont un `needs` échoue est sauté.
 - Usage : ✅ monorepo, chaînes indépendantes dans un même pipeline · ❌ `needs` partout dans un pipeline linéaire de trois jobs : les stages suffisent.
@@ -305,6 +314,7 @@ deploy-site:
 - Profils : ops
 - Prérequis : ci-cd-job-gitlab-script
 - Voir aussi : ci-cd-rules-changes-sources
+- Mots-clés : job, pipeline, MR
 - Définition : `rules` décide si un job entre dans le pipeline : les règles sont lues dans l'ordre, la première qui correspond fixe son `when`.
 - Contexte : Chaque règle combine `if` (variables prédéfinies : `$CI_COMMIT_BRANCH`, `$CI_PIPELINE_SOURCE`), `changes` (fichiers modifiés) et `when` (`on_success`, `manual`, `never`). Dès qu'une règle correspond, les suivantes sont ignorées : une règle large en tête masque les autres. `rules` remplace les anciens `only` et `except`, à ne pas mélanger dans un même job.
 - Usage : ✅ `when: never` en tête pour exclure, puis les cas positifs · ❌ `only` et `except` dans un nouveau pipeline : `rules`.
@@ -337,6 +347,7 @@ deploy:
 - Profils : ops
 - Prérequis : ci-cd-rules-premiere-regle
 - Voir aussi : ci-cd-pants-cibles-modifiees
+- Mots-clés : job, Lambda, monorepo, lockfile
 - Source : data-platform · S1-07
 - Définition : `rules: - changes: [...]` ne crée le job que si le push modifie l'un de ces fichiers : on ne reconstruit que la Lambda touchée.
 - Contexte : Avec dix Lambdas, tout reconstruire à chaque push coûte des minutes. Le piège : le code d'une Lambda ne vit pas que dans son dossier. `ingest_bodacc` importe `packages/bodacc-client` et dépend de `uv.lock` : un filtre sur son seul dossier rate ces changements, et la Lambda n'est pas reconstruite. Lister toutes les sources : dossier, paquets internes, lock, script de build.
@@ -370,6 +381,7 @@ build-ingest:
 - Profils : ops
 - Prérequis : ci-cd-job-gitlab-script
 - Voir aussi : ci-cd-matrix-par-lambda
+- Mots-clés : job, variable d'environnement, GitHub Actions
 - Définition : Une matrice génère un job par combinaison de valeurs (versions de Python, environnements) à partir d'une seule définition.
 - Contexte : GitHub : `strategy.matrix`, lue via `${{ matrix.python }}` ; GitLab : `parallel: matrix`, chaque variable devient une variable d'environnement. Deux axes de 2 et 3 valeurs font 6 jobs, tous facturés. Sert à tester une bibliothèque sur plusieurs versions, ou à lancer le même plan Terraform par environnement.
 - Usage : ✅ tests sur Python 3.12 et 3.13, `plan` sur `dev` et `prod` · ❌ variantes qui n'ont rien en commun : jobs séparés, plus lisibles.
@@ -412,6 +424,7 @@ plan:
 - Profils : ops
 - Prérequis : ci-cd-matrix-variantes
 - Voir aussi : ci-cd-pipeline-enfant-genere
+- Mots-clés : job, artefact, Lambda
 - Source : data-platform · S1-07
 - Définition : `parallel: matrix` avec `LAMBDA: [ingest-bodacc, normalize-bodacc]` lance un job de build par fonction, en parallèle, à partir d'une seule définition.
 - Contexte : Le script de build est générique (`build_lambda.py <membre>`) : la matrice ne fait varier que son argument. Chaque variante est un job à part, avec ses logs et ses artefacts ; une variante en échec n'empêche pas les autres de finir. Un job suivant peut viser une seule variante avec `needs: - job: build` et `parallel: matrix:`. La liste reste écrite à la main.
@@ -443,6 +456,7 @@ build:
 - Niveau : 2
 - Profils : ops, web
 - Voir aussi : uv-locked-ou-frozen
+- Mots-clés : lockfile, pnpm, CI
 - Définition : `CI: "true"` fait passer `pnpm install` en `--frozen-lockfile` : le build installe exactement le lockfile commité, ou échoue.
 - Contexte : En local, `pnpm install` met à jour `pnpm-lock.yaml` si `package.json` a changé. En CI, pnpm détecte `CI` et refuse de le réécrire : les versions déployées sont celles relues en revue. Poser `CI` explicitement dans `env.variables` rend ce comportement indépendant de la détection automatique de la plateforme par pnpm.
 - Usage : ✅ toute CI qui installe des dépendances (pnpm, npm `ci`, `uv sync --locked`) · ❌ installation qui modifie le lockfile en CI : build non reproductible.
@@ -472,6 +486,7 @@ env:
 - Niveau : 2
 - Profils : ops
 - Voir aussi : ci-cd-artefact-expiration, uv-cache-ci-prune
+- Mots-clés : lockfile, pipeline, runner, artefact
 - Définition : Le cache garde un dossier (store pnpm, `~/.cache/uv`) d'un pipeline au suivant ; sa clé, calculée sur le lockfile, change dès qu'une dépendance change.
 - Contexte : Sans cache, chaque job retélécharge tout : des minutes facturées à chaque push. Clé sur le hash du lockfile : même lockfile = même cache, lockfile modifié = cache neuf, jamais de dépendances périmées. Le cache est un accélérateur sans garantie : runner différent, cache expiré ou évincé, il manque ; l'installation doit donc toujours tourner après la restauration.
 - Usage : ✅ store du gestionnaire de paquets, clé = lockfile · ❌ cache de `dist/` pour passer le build au job suivant : un artefact.
@@ -512,6 +527,7 @@ test:
 - Profils : ops
 - Prérequis : ci-cd-artefact-construire-une-fois
 - Voir aussi : ci-cd-cache-cle-lockfile
+- Mots-clés : artefact, rollback, règle de cycle de vie, S3
 - Source : data-platform · S1-07
 - Définition : Un artefact de job GitLab passe un fichier aux jobs suivants, puis expire : le livrable gardé pour un rollback va dans un bucket S3.
 - Contexte : Pour redéployer la version de la semaine dernière, il faut le zip déployé ce jour-là. Sur S3, rangé sous son hash, il reste disponible tant qu'une règle de cycle de vie ne le supprime pas. Côté GitLab, `expire_in` règle la durée ; seuls les artefacts du dernier pipeline réussi d'une branche sont gardés au-delà, par défaut.
@@ -546,6 +562,7 @@ publish:
 - Profils : ops
 - Prérequis : ci-cd-variables-protegees
 - Voir aussi : AWS/iam-oidc-ci-sans-cle
+- Mots-clés : OIDC, rôle IAM, politique de confiance
 - Définition : Avec OIDC, la CI reçoit un jeton signé décrivant le pipeline (dépôt, branche) et l'échange contre les identifiants temporaires d'un rôle IAM.
 - Contexte : Aucune clé AWS à stocker, donc rien à faire tourner ni à fuiter : c'est l'équivalent du rôle de service CodeBuild pour une CI externe. Côté AWS, un fournisseur d'identité OIDC et un rôle dont la politique de confiance filtre `sub` (dépôt, branche). GitHub : `permissions: id-token: write` et l'action `configure-aws-credentials` ; GitLab : `id_tokens` puis `assume-role-with-web-identity`.
 - Usage : ✅ tout pipeline GitHub ou GitLab qui appelle AWS · ❌ `AWS_ACCESS_KEY_ID` en secret de CI ; confiance sans condition sur `sub` : tout dépôt de la forge pourrait endosser le rôle.
@@ -591,6 +608,7 @@ deploy:
 - Niveau : 2
 - Profils : ops
 - Voir aussi : ci-cd-concurrence-deploiement
+- Mots-clés : job, rollback, CodePipeline
 - Définition : Un environnement (`dev`, `prod`) nomme la cible d'un job de déploiement ; la CI y attache historique, URL, secrets dédiés et approbation manuelle.
 - Contexte : GitLab : `environment: prod` liste chaque déploiement et permet le rollback ; `when: manual` pose un bouton. GitHub : `environment: production` avec « required reviewers » bloque le job jusqu'à validation, et réserve ses secrets à ce job. Un même pipeline déploie donc `dev` automatiquement, puis attend un humain pour `prod`, comme l'approbation d'une CodePipeline.
 - Usage : ✅ `dev` automatique sur `main`, `prod` sur clic ou approbation · ❌ un pipeline séparé copié-collé pour la prod : même pipeline, deux environnements.
@@ -632,6 +650,7 @@ deploy-prod:
 - Niveau : 2
 - Profils : ops
 - Voir aussi : Data engineering/ingestion-idempotence-ecraser
+- Mots-clés : idempotent, dérive, job
 - Définition : Un déploiement idempotent donne le même état final lancé une ou dix fois : relancer un job raté ne crée ni doublon ni dérive.
 - Contexte : La CI relance des jobs (échec réseau, bouton retry, rollback) : chaque étape doit décrire un état, pas une action. `terraform apply` converge vers le code (`No changes` la 2e fois), `aws s3 sync` ne copie que ce qui diffère. Les pièges : un `create` qui échoue si la ressource existe, une version publiée à chaque passage, un fichier ajouté jamais retiré.
 - Usage : ✅ `terraform apply`, `s3 sync --delete`, `put` plutôt que `create` · ❌ script de déploiement qui suppose un environnement vierge.
@@ -659,6 +678,7 @@ make deploy ENV=dev   # même commit
 - Profils : ops
 - Prérequis : ci-cd-deploiement-idempotent
 - Voir aussi : git-revert-commit-publie, ci-cd-rollback-version-pointeur
+- Mots-clés : pipeline, commit, idempotent
 - Définition : Un rollback remet en service la dernière version saine : on redéploie un commit connu, jamais on ne corrige à la main en prod.
 - Contexte : Deux voies. Rapide : relancer le job de déploiement d'un pipeline précédent (bouton « Rollback » d'un environnement GitLab, « Re-run » sur GitHub) : il redéploie l'ancien commit. Durable : `git revert` du commit fautif, poussé sur `main`, qui repasse par tests et déploiement. Prérequis : un déploiement idempotent, et un schéma de données compatible avec l'ancienne version.
 - Usage : ✅ rollback de l'environnement puis `git revert` pour réaligner `main` · ❌ patch à la main dans la console AWS : Terraform l'écrasera au prochain apply.
@@ -686,6 +706,7 @@ git push origin main
 - Profils : ops
 - Prérequis : ci-cd-artefact-construire-une-fois
 - Voir aussi : ci-cd-cle-hash-hexadecimal, ci-cd-pointeur-artefact
+- Mots-clés : sha256, build reproductible, artefact, Lambda
 - Source : data-platform · S1-07
 - Définition : L'artefact est rangé sous son sha256 (`lambdas/ingest-bodacc/<sha256>.zip`) : même contenu, même clé ; une clé déjà présente n'est pas renvoyée.
 - Contexte : Avec un build reproductible, deux pipelines sur le même code produisent le même hash : l'envoi est sauté (`head-object` répond 200) et Terraform ne voit aucun changement de `s3_key`. Un objet ne change jamais sous sa clé : on sait ce qui tourne, et revenir en arrière revient à remettre l'ancienne clé. Sans build reproductible, chaque pipeline crée une clé neuve et redéploie.
@@ -728,6 +749,7 @@ publish:
 - Profils : ops
 - Prérequis : ci-cd-artefact-adresse-par-hash
 - Voir aussi : Terraform/langage-hcl-filebase64sha256
+- Mots-clés : sha256, base64, hexadécimal, pointeur
 - Source : data-platform · S1-07
 - Définition : La clé S3 de l'artefact porte le sha256 en hexadécimal (`<64 caractères>.zip`) ; le base64, attendu par Terraform, reste dans le pointeur.
 - Contexte : Le base64 contient `/` et `+` : dans une clé S3, `/` crée un faux sous-dossier et `+` s'encode mal dans une URL. L'hexadécimal n'a que `0-9a-f`, se compare d'un coup d'œil à `sha256sum` et se tape sans échappement. Les deux écritures décrivent les mêmes 32 octets ; le script calcule l'une et l'autre depuis un seul `hashlib.sha256`.
@@ -761,6 +783,7 @@ len(d.hexdigest()), len(b64)  # → (64, 44)
 - Profils : ops
 - Prérequis : ci-cd-artefact-adresse-par-hash
 - Voir aussi : ci-cd-pointeur-ou-tf-var
+- Mots-clés : artefact, base64, Lambda
 - Source : data-platform · S1-07
 - Définition : Un pointeur est un petit fichier mutable (`lambdas/<nom>/current.json`) qui désigne l'artefact immuable à déployer (≈ un dist-tag `latest` npm).
 - Contexte : Les zips ne changent jamais sous leur clé ; seul le pointeur bouge. Il contient la clé, le `base64sha256` attendu par Terraform, la taille, le commit et la date. Déployer une autre version revient à réécrire le pointeur, puis `make up`. Même logique qu'une branche git vers un commit : le nom bouge, le contenu désigné reste figé.
@@ -792,6 +815,7 @@ len(d.hexdigest()), len(b64)  # → (64, 44)
 - Niveau : 2
 - Profils : ops
 - Prérequis : ci-cd-pointeur-artefact, make-prerequis-enchainer
+- Mots-clés : cible Make, pointeur, apply, OIDC
 - Source : data-platform · S1-07
 - Définition : `deploy: lambdas-publish up` enchaîne la publication des zips et du pointeur, puis `terraform apply` : la même cible sert au poste et à la CI.
 - Contexte : L'ordre est imposé par Terraform : le plan lit le pointeur, il doit donc exister et être à jour avant. `PROFILE=` vide en CI laisse la CLI prendre le rôle du job ; `LAMBDA=` vide publie toutes les Lambdas trouvées par convention (`lambdas/*/pyproject.toml`). La publication est idempotente : relancer `make deploy` sans changement n'envoie rien et ne modifie rien.
@@ -823,6 +847,7 @@ deploy: lambdas-publish up
 - Profils : ops
 - Prérequis : ci-cd-artefact-adresse-par-hash, ci-cd-deploiement-idempotent
 - Voir aussi : ci-cd-prefix-existence-cle
+- Mots-clés : idempotent, pointeur, versioning S3
 - Source : data-platform · S1-07
 - Définition : La publication n'envoie le zip que s'il manque, et ne réécrit le pointeur que s'il change : relancée, elle ne fait rien.
 - Contexte : Deux contrôles, deux bénéfices. Sauter l'envoi d'un zip déjà présent économise 20 Mo par pipeline. Ne pas réécrire un pointeur identique évite une nouvelle version S3 (le bucket est versionné) et garde `published_at` et `git_commit` de la vraie publication. Le résultat se lit en trois états : `envoyé`, `déjà envoyé, pointeur →`, `à jour`.
@@ -860,6 +885,7 @@ publier("ingest-bodacc", "4881")  # → 'à jour'
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : pointeur, fichier suivi, arbre de travail, CI
 - Source : data-platform · S1-07
 - Définition : `git_dirty: true` dans le pointeur signale un zip construit avec des modifications non commitées : `git_commit` ne suffit pas à le reconstruire.
 - Contexte : Le script lance `git status --porcelain` : toute ligne, même un fichier non suivi, rend l'arbre « sale ». En dev, publier avant de commiter est normal. En CI, l'arbre est un clone propre : un `true` y révèle un fichier généré par le build et non ignoré. La règle d'entreprise : seul un zip `git_dirty: false` part en prod.
@@ -890,6 +916,7 @@ sale("M  infra/lambdas.tf\n")  # → True
 - Profils : ops
 - Prérequis : ci-cd-pointeur-artefact
 - Voir aussi : AWS/s3-version-id
+- Mots-clés : rollback, pointeur, versioning S3, règle de cycle de vie
 - Source : data-platform · S1-07
 - Définition : Le bucket d'artefacts versionné garde chaque version du pointeur : revenir en arrière, c'est remettre l'ancienne valeur, puis `make up`.
 - Contexte : Les zips n'étant jamais réécrits ni expirés, toute ancienne clé reste déployable. Le versioning ajoute l'historique : qui a pointé vers quoi, et quand (`published_at`, `git_commit`). La règle de cycle de vie supprime les versions non courantes après 90 jours : l'historique du pointeur est borné, pas les zips. Le rollback ne reconstruit rien : il redéploie des octets déjà testés.
@@ -922,6 +949,7 @@ aws s3api get-object --bucket "$ARTIFACTS" \
 - Profils : ops
 - Prérequis : ci-cd-artefact-construire-une-fois
 - Voir aussi : ci-cd-pointeur-partage-environnements
+- Mots-clés : artefact, build reproductible, tfvars, politique de bucket
 - Source : data-platform · S1-07
 - Définition : On construit une fois, puis chaque environnement (dev, int, prod) déploie la même clé S3 : la prod reçoit les octets testés en dev.
 - Contexte : Reconstruire par environnement réintroduit le doute : runner différent, résolution différente, build non reproductible. La promotion ne change que la configuration (tfvars, variables) ; la clé passe au Terraform de chaque environnement par une variable. Les comptes de dev et de prod lisent le même bucket `artifacts` (politique de bucket entre comptes si besoin).
@@ -966,6 +994,7 @@ resource "aws_lambda_function" "ingest" {
 - Niveau : 2
 - Profils : ops
 - Prérequis : ci-cd-pointeur-artefact
+- Mots-clés : TF_VAR_, pointeur, dotenv
 - Source : data-platform · S1-07
 - Définition : Le pointeur rend `make deploy` identique partout ; passer la clé en `TF_VAR_` par la CI rend chaque déploiement traçable au pipeline qui l'a lancé.
 - Contexte : Avec le pointeur, ce qui est déployé dépend d'un fichier S3 au moment du plan, pas du dépôt : deux plans du même commit peuvent différer. Avec la clé en variable, le pipeline qui construit transmet le hash au job de déploiement (dotenv, artefact), et le plan ne dépend que de ses entrées. Le plan du projet : pointeur tant que tout part du poste, variable et pointeur supprimé quand la CI existera.
@@ -994,6 +1023,7 @@ TF_VAR_lambda_keys="{\"ingest-bodacc\":\"$KEY\"}" \
 - Niveau : 2
 - Profils : ops, expert
 - Prérequis : ci-cd-rules-changes-sources
+- Mots-clés : monorepo, runtime Lambda, cache de CI
 - Source : data-platform · S1-07
 - Définition : Pants lit les imports du code pour connaître les dépendances : `--changed-since=origin/main --changed-dependents=transitive` ne reconstruit que les cibles touchées.
 - Contexte : Là où un filtre de chemins se trompe dès qu'un paquet partagé change, Pants sait que `ingest_bodacc` importe `bodacc_client`. La cible `python_aws_lambda_function` produit le zip pour un runtime et une plateforme, avec un cache partagé entre runners. Coût : un outil de plus, des fichiers `BUILD`, un apprentissage ; rentable avec beaucoup de fonctions.
@@ -1029,6 +1059,7 @@ python_aws_lambda_function(
 - Type : choisir
 - Niveau : 2
 - Profils : ops
+- Mots-clés : SAM, CDK, roue, conteneur
 - Source : data-platform · S1-07
 - Définition : `sam build --use-container` et `PythonFunction` (CDK) construisent eux-mêmes le zip d'une Lambda Python, dans un conteneur Linux à l'image du runtime.
 - Contexte : Les dépendances s'installent dans l'image de build officielle du runtime : binaires Linux, bonne architecture, sans `--python-platform`, et même compilation d'un paquet sans roue. Les deux supposent leur outil de déploiement (CloudFormation) et Docker sur le runner. Avec Terraform, on garde un script de build et on passe le zip à `aws_lambda_function`.
@@ -1056,6 +1087,7 @@ sam build --use-container
 - Niveau : 3
 - Profils : ops, expert
 - Voir aussi : AWS/codebuild-source-clone-leger
+- Mots-clés : tag git, commit, job
 - Définition : La CI clone peu de commits pour aller vite : `actions/checkout` un seul et sans tags, GitLab 20 par défaut (`GIT_DEPTH`).
 - Contexte : Tout ce qui lit l'historique casse alors en silence ou en erreur : `git describe` pour numéroter une version, `git diff` avec un commit ancien, un changelog depuis le dernier tag. Correctif ciblé : `fetch-depth: 0` (tout l'historique et les tags) sur GitHub, `GIT_DEPTH: 0` sur GitLab, seulement dans le job qui en a besoin, car un clone complet coûte du temps.
 - Usage : ✅ `fetch-depth: 0` dans le job de release qui lit les tags · ❌ clone complet sur tous les jobs : du temps perdu à chaque pipeline.
@@ -1092,6 +1124,7 @@ git rev-list --count HEAD   # → 1
 - Profils : ops, expert
 - Prérequis : ci-cd-environnement-approbation
 - Voir aussi : Terraform/state-backend-use-lockfile
+- Mots-clés : verrou d'état, apply, environnement de déploiement
 - Définition : `concurrency` (GitHub) et `resource_group` (GitLab) empêchent deux déploiements simultanés sur un même environnement : le second attend.
 - Contexte : Deux pushes rapides lancent deux pipelines : sans verrou, deux `terraform apply` se disputent l'état (le lock S3 en fait échouer un) et deux `s3 sync` se mélangent. Sur GitHub, `cancel-in-progress: true` coupe le déploiement en cours, risqué en plein `apply` : à réserver aux tests. GitLab met les jobs du même `resource_group` en file.
 - Usage : ✅ un groupe par environnement (`deploy-dev`), `cancel-in-progress` pour les tests seulement · ❌ annuler un `terraform apply` en cours : état partiel, lock à lever.
@@ -1124,6 +1157,7 @@ deploy-dev:
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : ci-cd-variables-protegees
+- Mots-clés : OIDC, branche protégée, base64, artefact
 - Définition : Le masquage remplace dans les logs la valeur exacte d'un secret par `[MASKED]` (GitLab) ou `***` (GitHub) ; toute variante transformée apparaît en clair.
 - Contexte : La CI cherche la chaîne exacte dans la sortie. Encodée, échappée, découpée ou écrite dans un artefact, elle n'est plus reconnue. Tout script exécuté par le job lit d'ailleurs le secret : une dépendance compromise ou une MR malveillante peut l'exfiltrer. GitLab exige aussi une valeur d'au moins 8 caractères, sur une ligne, pour la masquer. Le vrai garde-fou : identités OIDC et secrets réservés aux branches protégées.
 - Usage : ✅ masquer tous les secrets, en plus de `protected` · ❌ compter sur le masquage pour exposer un secret à un job qui exécute du code non relu.
@@ -1150,6 +1184,7 @@ env | grep INSEE
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : ci-cd-variables-protegees
+- Mots-clés : fork, MR, GitHub Actions
 - Définition : Un workflow `pull_request` venu d'un fork tourne sans les secrets du dépôt, avec un `GITHUB_TOKEN` en lecture seule.
 - Contexte : Le code de la PR est celui d'un inconnu : s'il recevait les secrets, il les exfiltrerait. `pull_request_target`, lui, tourne dans le contexte du dépôt cible, avec ses secrets : y faire un `checkout` du code de la PR puis l'exécuter est la faille classique. GitLab est analogue : un pipeline de MR de fork tourne dans le projet du fork, sans les variables du parent.
 - Usage : ✅ tests sans secret sur les PR externes, déploiement sur `main` seulement · ❌ `pull_request_target` qui construit ou exécute le code de la PR.
@@ -1179,6 +1214,7 @@ jobs:
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : ci-cd-artefact-expiration
+- Mots-clés : artefact, job, variable d'environnement
 - Source : data-platform · S1-07
 - Définition : `artifacts: reports: dotenv: build.env` publie les variables (`NOM=valeur`) écrites par un job ; les jobs qui en dépendent les reçoivent dans leur environnement.
 - Contexte : La clé du zip n'est connue qu'après le build : le job de publication l'écrit dans `build.env`, les déploiements la lisent en `$LAMBDA_KEY` sans recalcul. Format : une variable par ligne. Les variables suivent `needs` et `dependencies`, comme les artefacts. GitHub Actions fait la même chose avec les `outputs` d'un job, lus par `needs.<job>.outputs`.
@@ -1214,6 +1250,7 @@ deploy-dev:
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : ci-cd-matrix-par-lambda
+- Mots-clés : YAML, artefact, matrice, monorepo
 - Source : data-platform · S1-07
 - Définition : Un job écrit un YAML (un job par dossier de `lambdas/`) en artefact, puis `trigger: include: - artifact:` lance ce pipeline enfant.
 - Contexte : Résout ce que la matrice ne fait pas : la liste des fonctions vient du dépôt (convention `lambdas/*`), et le générateur peut n'émettre que les fonctions modifiées (`git diff --name-only`). Le parent prend le statut de l'enfant avec `strategy: depend`. Plus de code à maintenir : à réserver aux dépôts qui ont beaucoup de fonctions.
@@ -1264,6 +1301,7 @@ len(jobs)                 # → 2
 - Niveau : 3
 - Profils : ops
 - Prérequis : ci-cd-pointeur-artefact, ci-cd-promotion-meme-artefact
+- Mots-clés : pointeur, environnement de déploiement, promotion
 - Source : data-platform · S1-07
 - Définition : Un pointeur par Lambda et par compte sert à tous ses environnements : `make up ENV=int` déploie le dernier zip publié, testé ou non.
 - Contexte : Le chemin `lambdas/<nom>/current.json` ne contient pas l'environnement. Tant qu'il n'y a que dev, c'est sans effet. Dès qu'un second environnement partage le compte, la promotion exige un pointeur par environnement (`current-<env>.json`) ou la clé passée en variable : promouvoir revient alors à copier la valeur de dev vers int, jamais à republier.
@@ -1293,6 +1331,7 @@ make up ENV=int
 - Profils : ops, expert
 - Prérequis : ci-cd-artefact-adresse-par-hash
 - Voir aussi : AWS/s3-newer-noncurrent-versions
+- Mots-clés : versioning S3, règle de cycle de vie, multipart, pointeur
 - Source : data-platform · S1-07
 - Définition : Le bucket d'artefacts n'expire jamais un objet courant : seules les anciennes versions (du pointeur) et les envois multipart abandonnés sont nettoyés.
 - Contexte : Un zip déployé n'est pas relu par la fonction, mais il l'est par tout `make up` qui recrée la fonction : après `make down`, dans un nouvel environnement, ou pour un retour arrière. Une règle « expirer après 90 jours » sur `lambdas/` casserait ces cas des mois plus tard, en silence. Le nettoyage des zips inutiles se fait à part, en listant les clés encore désignées par un pointeur ou un état.
@@ -1327,6 +1366,7 @@ rule {
 - Profils : ops, expert
 - Prérequis : ci-cd-publication-idempotente
 - Voir aussi : AWS/s3-head-object
+- Mots-clés : S3, boto3, préfixe S3
 - Source : data-platform · S1-07
 - Définition : `list_objects_v2(Prefix=cle, MaxKeys=1)` teste l'existence d'une clé, mais compte aussi toute clé qui commence par elle (`<sha>.zip.part`).
 - Contexte : Le script de publication préfère ce test à `head_object`, qui lève une `ClientError` à trier (404 absent, 403 sans `s3:ListBucket`) ; la liste répond sans exception. Le préfixe a son piège : un envoi interrompu laissé sous `<sha>.zip.tmp` ferait croire le zip présent. Avec une clé terminée par `.zip` et aucun autre outil qui écrit là, le risque reste théorique.

@@ -17,6 +17,7 @@ Web · Web Crypto : `crypto.subtle` (hachage, HMAC, clés), contexte sécurisé,
 - Type : concept
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : aws4fetch, SigV4, SHA-256, HMAC
 - Source : data-platform · pwa-sync
 - Définition : `crypto.subtle` est la cryptographie native du navigateur (SHA-256, HMAC, AES, signatures) ; chaque opération renvoie une `Promise`, jamais une valeur directe.
 - Contexte : Pas de dépendance à embarquer : c'est ce qui permet à `aws4fetch` de signer SigV4 en quelques Ko, là où une implémentation JS du SHA-256 pèserait plus. Différence avec Python, où `hashlib.sha256(b).hexdigest()` est synchrone : ici tout passe par `await`, et le résultat est un `ArrayBuffer` d'octets bruts, pas une chaîne.
@@ -52,6 +53,7 @@ hashlib.sha256(b"abc").hexdigest()[:16]
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : web-crypto-digest-octets-pas-chaine
+- Mots-clés : UTF-8, vue typée
 - Source : data-platform · pwa-sync
 - Définition : `new TextEncoder().encode(s)` convertit une chaîne en `Uint8Array` UTF-8 : c'est l'entrée attendue par `digest`, `importKey` et `sign`.
 - Contexte : `subtle` ne travaille que sur des octets ; une chaîne JS est en UTF-16, et un caractère accentué fait 2 octets en UTF-8. La longueur d'une chaîne (`s.length`) n'est donc pas sa taille en octets. Équivalent Python : `s.encode()` (UTF-8 par défaut). Sens inverse : `new TextDecoder().decode(octets)`.
@@ -84,6 +86,7 @@ len("é"), len("é".encode())  # → (1, 2)
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : web-crypto-arraybuffer-vue
+- Mots-clés : ArrayBuffer, SHA-256
 - Source : data-platform · pwa-sync
 - Définition : Un hachage arrive en `ArrayBuffer` ; on l'affiche en hexadécimal en convertissant chaque octet sur deux caractères avec `padStart(2, '0')`.
 - Contexte : `b.toString(16)` donne `'5'` pour l'octet 5, pas `'05'` : sans `padStart`, la chaîne est trop courte et ne correspond plus au `hexdigest()` de Python ni aux signatures SigV4 (64 caractères). `Uint8Array.prototype.toHex()` existe dans Chromium récent (mesuré), pas dans Node 22 : la conversion manuelle reste la plus portable.
@@ -112,6 +115,7 @@ hex(new Uint8Array([5, 255]).buffer)
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : web-crypto-issecurecontext-detecter, pwa-service-worker-contexte-securise
+- Mots-clés : CloudFront
 - Source : data-platform · pwa-sync
 - Définition : `crypto.subtle` n'existe que dans un contexte sécurisé : page en HTTPS, ou servie depuis `localhost` / `127.0.0.1` ; sur `http://192.168.x.x`, il vaut `undefined`.
 - Contexte : Le navigateur réserve les API sensibles aux pages dont l'origine est authentifiée. En développement, le Mac sert l'app en HTTP : `localhost` passe, mais l'iPhone qui ouvre `http://<IP du Mac>:5175` est hors contexte sécurisé. L'app s'affiche, puis toute signature échoue. Les clés et la synchro se testent donc sur le Mac en local, puis sur l'iPhone via l'URL HTTPS déployée.
@@ -139,6 +143,7 @@ localhost        true             object
 - Profils : débutant, web
 - Prérequis : web-crypto-subtle-absent-en-http
 - Voir aussi : web-crypto-issecurecontext-detecter
+- Mots-clés : aws4fetch, contexte sécurisé
 - Source : data-platform · pwa-sync
 - Définition : Hors contexte sécurisé, une signature `aws4fetch` lève `TypeError: Cannot read properties of undefined (reading 'importKey')` : c'est `crypto.subtle` qui manque.
 - Contexte : Le message pointe une propriété de `undefined`, pas la crypto : on cherche d'abord un bug dans la bibliothèque ou dans les clés. Le nom lu (`importKey`, `digest`, `sign`) est la première méthode appelée sur `subtle`. Le réflexe : regarder `isSecureContext` dans la console de la page, puis l'URL (HTTP sur une IP ?).
@@ -167,6 +172,7 @@ isSecureContext  // → false
 - Niveau : 1
 - Profils : débutant, web
 - Prérequis : web-crypto-subtle-absent-en-http
+- Mots-clés : service worker, CloudFront
 - Source : data-platform · pwa-sync
 - Définition : `isSecureContext` (booléen global) dit si la page est en contexte sécurisé : le tester permet de désactiver proprement une fonction qui en dépend.
 - Contexte : Plutôt que laisser une `TypeError` obscure remonter à la première synchro, l'app peut afficher « synchro indisponible (page non sécurisée) ». C'est la même logique que `if ('serviceWorker' in navigator)` pour le service worker : on teste la capacité, pas le navigateur. En production derrière CloudFront, la valeur est toujours `true`.
@@ -197,6 +203,7 @@ if (!peutSigner)
 - Profils : web
 - Prérequis : web-crypto-subtle-asynchrone, web-crypto-textencoder-octets
 - Voir aussi : web-crypto-verify-temps-constant, web-crypto-cle-non-extractible
+- Mots-clés : HMAC, SigV4, aws4fetch
 - Source : data-platform · pwa-sync
 - Définition : Un HMAC se calcule en deux temps : `importKey('raw', …, {name: 'HMAC', hash: 'SHA-256'})` crée une `CryptoKey`, puis `sign('HMAC', clé, message)`.
 - Contexte : `subtle` ne prend jamais une clé en octets directement : elle passe par un objet `CryptoKey` opaque, qui déclare ses usages (`['sign']`) et s'il est exportable. C'est exactement ce que fait `aws4fetch` à chaque étape de la dérivation SigV4. En Python, `hmac.new(cle, msg, hashlib.sha256)` fait tout en un appel, de façon synchrone.
@@ -237,6 +244,7 @@ hmac.new(b"secret", b"20261025",
 - Profils : web, ops
 - Prérequis : web-crypto-hmac-importkey-sign
 - Voir aussi : Python/hachage-compare-digest-temps-constant
+- Mots-clés : HMAC, webhook
 - Source : data-platform · pwa-sync
 - Définition : Pour vérifier un HMAC, `subtle.verify('HMAC', clé, signature, message)` compare en temps constant et rend un booléen ; pas de `===` sur deux chaînes hex.
 - Contexte : Un `===` s'arrête au premier caractère différent : sa durée révèle combien de caractères sont justes, ce qu'un attaquant mesure pour deviner une signature octet par octet. `verify` (JS) et `hmac.compare_digest` (Python) prennent le même temps quel que soit l'écart. Cas typique : vérifier la signature d'un webhook dans une Lambda.
@@ -274,6 +282,7 @@ await crypto.subtle.verify('HMAC', cle,
 - Niveau : 2
 - Profils : web
 - Prérequis : web-crypto-hmac-importkey-sign
+- Mots-clés : CryptoKey, XSS, aws4fetch
 - Source : data-platform · pwa-sync
 - Définition : Le 4e argument d'`importKey` (`extractable`) à `false` interdit de relire les octets de la clé : `exportKey` est rejeté.
 - Contexte : Une `CryptoKey` non extractible peut signer sans que le code (ou un script injecté) récupère le secret : il ne voit qu'un objet opaque. Ça limite les dégâts, sans les supprimer : le script peut toujours signer à la place de l'utilisateur tant que la page est ouverte. `aws4fetch` importe ses clés intermédiaires non extractibles.
@@ -305,6 +314,7 @@ await crypto.subtle.exportKey('raw', cle)
 - Niveau : 2
 - Profils : web
 - Voir aussi : vite-vitest-environnement-node
+- Mots-clés : crypto.subtle, Vitest, aws4fetch
 - Source : data-platform · pwa-sync
 - Définition : Node 22 expose `globalThis.crypto.subtle` comme le navigateur : un test Vitest en environnement `node` peut signer avec `aws4fetch` sans navigateur.
 - Contexte : C'est ce que vérifie `cloud.test.ts` : l'en-tête `Authorization` signé est réellement calculé, sous Node, avec de fausses clés. En revanche, les API du DOM n'y sont pas : `localStorage`, `document`, `window` valent `undefined`. D'où l'injection du stockage dans `createCloud`, et pas celle de la crypto.
@@ -331,6 +341,7 @@ typeof localStorage       // → 'undefined'
 - Niveau : 2
 - Profils : web
 - Voir aussi : web-crypto-base64-spread
+- Mots-clés : crypto.subtle
 - Source : data-platform · pwa-sync
 - Définition : `digest` et `sign` rendent un `ArrayBuffer`, zone d'octets brute non indexable : on lit les octets via une vue `new Uint8Array(buf)`.
 - Contexte : `buf[0]` vaut `undefined` sans erreur : le piège ne se voit qu'à l'usage. Un `ArrayBuffer` n'a ni `map` ni `length` (mais `byteLength`). Les vues (`Uint8Array`, `DataView`) partagent sa mémoire sans copie. Côté Python, `digest()` rend directement des `bytes`, indexables (`d[0]` → un entier).
@@ -368,6 +379,7 @@ d[0]  # → 238
 - Profils : web
 - Prérequis : web-crypto-textencoder-octets
 - Voir aussi : web-crypto-digest-pas-incremental
+- Mots-clés : vue typée, ArrayBuffer, aws4fetch
 - Source : data-platform · pwa-sync
 - Définition : `digest` n'accepte qu'un `ArrayBuffer`, une vue typée ou un `DataView` : une chaîne lève `TypeError`, il faut l'encoder avant.
 - Contexte : Pas de conversion implicite comme dans certaines bibliothèques (`crypto-js`, `createHash().update('abc')` de Node) : `subtle` refuse. aws4fetch encode lui-même ses chaînes avec `TextEncoder` avant `digest`. En Python, `hashlib.sha256('abc')` échoue aussi (`TypeError`) : il faut `b'abc'` ou `.encode()`.
@@ -400,6 +412,7 @@ hashlib.sha256("abc")  # ❌ TypeError
 - Type : comparaison
 - Niveau : 2
 - Profils : web
+- Mots-clés : contexte sécurisé, UUID
 - Source : data-platform · pwa-sync
 - Définition : `crypto.randomUUID()` exige un contexte sécurisé, `crypto.getRandomValues()` non : sur une IP en HTTP, le premier vaut `undefined`.
 - Contexte : Les deux tirent du même générateur sûr, mais la spécification réserve `randomUUID` (comme `subtle`) aux contextes sécurisés. Un identifiant de ligne généré avec `randomUUID` casse donc l'app ouverte depuis le téléphone en développement, alors que tout marche sur le Mac. `Math.random()` n'est jamais une alternative pour un identifiant unique.
@@ -427,6 +440,7 @@ localhost         function    function
 - Profils : web, expert
 - Prérequis : web-crypto-digest-octets-pas-chaine
 - Voir aussi : Python/hachage-update-par-morceaux
+- Mots-clés : crypto.subtle, multipart upload
 - Source : data-platform · pwa-sync
 - Définition : `subtle.digest` hache un tampon complet en un appel : pas de `update()` par morceaux, tout le contenu doit tenir en mémoire.
 - Contexte : Pour un fichier de quelques Mo, aucun souci ; pour un gros fichier (vidéo, export de plusieurs centaines de Mo), le charger entier peut faire tomber l'onglet sur un téléphone. Python (`hashlib.sha256().update(bloc)`) et Node (`createHash`) hachent en flux. Côté navigateur, il faut une bibliothèque incrémentale ou découper (hachage par parties, comme les checksums multipart de S3).
@@ -456,6 +470,7 @@ h.hexdigest() == hashlib.sha256(b"abc").hexdigest()
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : web-crypto-hmac-importkey-sign, web-crypto-arraybuffer-vue
+- Mots-clés : vue typée, ArrayBuffer
 - Source : data-platform · pwa-sync
 - Définition : `btoa(String.fromCharCode(...new Uint8Array(buf)))` encode des octets en base64 ; correct pour une signature, il casse sur un gros tampon.
 - Contexte : Le spread passe chaque octet comme un argument de fonction : au-delà de quelques centaines de milliers, la pile déborde (`RangeError`). Pour un gros contenu, on encode par tranches ou via `FileReader.readAsDataURL`. `Uint8Array.prototype.toBase64()` existe dans Chromium récent mais pas dans Node 22 (où `Buffer.from(buf).toString('base64')` sert).

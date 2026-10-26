@@ -17,6 +17,7 @@ Data engineering · Data lake : zones, partitions, fichiers, tables, gouvernance
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : Athena, Spark, partition
 - Définition : Un data lake range les données par étape : `raw` brut et immuable, `processed` nettoyé et typé, `out` prêt à consommer.
 - Contexte : Chaque zone a ses droits et sa rétention (sur AWS : un bucket par zone). `raw` garde la réponse de la source telle quelle : on rejoue n'importe quel traitement sans la rappeler. `processed` est typé et partitionné, lu par Athena et Spark ; `out` porte les exports métier. Contrairement à une base, on ne corrige jamais une ligne en place : on régénère la zone aval depuis l'amont.
 - Usage : ✅ toute ingestion de source externe (BODACC), droits et rétentions distincts par zone · ❌ écrire le nettoyé par-dessus le brut : plus rien à rejouer après un bug.
@@ -63,6 +64,7 @@ processed["2026-10-23"]  # → "483609327"
 - Profils : débutant, data
 - Prérequis : data-lake-trois-zones
 - Voir aussi : ingestion-idempotence-ecraser
+- Mots-clés : zone processed, versioning S3
 - Définition : La zone `raw` garde les octets reçus tels quels, écrits une seule fois, pour pouvoir tout rejouer depuis la source.
 - Contexte : Si un bug de parsing corrompt `processed`, on recalcule à partir de `raw` sans rappeler l'API (quota, données qui ont pu changer). Pour que ce soit possible, `raw` n'est jamais réécrit ni « nettoyé » : on y stocke les octets exacts, plus quelques métadonnées (date de réception, URL). En S3, on le protège avec le versioning ou une politique qui interdit l'écrasement.
 - Usage : ✅ toute source externe, surtout payante ou limitée en débit · ❌ y corriger ou reformater les données : ça se fait en aval, dans `processed`.
@@ -108,6 +110,7 @@ meta["octets"]       # → 9
 - Profils : débutant, data
 - Prérequis : data-lake-trois-zones
 - Voir aussi : formats-parquet-vs-csv
+- Mots-clés : pydantic, SIREN
 - Définition : La zone `processed` stocke des enregistrements validés et typés (dates en `date`, SIREN en `str`), prêts à requêter.
 - Contexte : L'API renvoie du JSON : tout y est chaîne ou nombre, et certains champs BODACC contiennent même du JSON sérialisé. Un modèle pydantic (≈ un schéma `zod`) valide chaque annonce et convertit les types une fois pour toutes. En aval, personne ne re-parse une date. Ce qui ne passe pas la validation ne va pas dans `processed`.
 - Usage : ✅ données requêtées ou jointes ensuite (Athena, Spark), schéma connu · ❌ copier le brut sans valider : on reporte les erreurs sur chaque consommateur.
@@ -154,6 +157,7 @@ a.model_dump(mode="json")
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : data-lake-trois-zones
+- Mots-clés : zone processed
 - Définition : La zone `out` publie des exports figés pour un consommateur (CSV, colonnes choisies), découplés du schéma interne de `processed`.
 - Contexte : `processed` évolue avec le pipeline (nouveaux champs, renommages). Un consommateur (équipe métier, Excel, autre service) veut un contrat stable : colonnes fixes, ordre fixe, format simple. `out` est ce contrat. `csv.DictWriter` impose la liste des colonnes (`fieldnames`) et écrit les lignes dans cet ordre, quel que soit l'ordre des clés du dict.
 - Usage : ✅ export vers un outil externe ou une autre équipe, avec un contrat de colonnes · ❌ y faire lire le pipeline lui-même : il lit `processed`.
@@ -196,6 +200,7 @@ buf.getvalue()  # → "483609327,\r\n"
 - Type : comparaison
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : S3, Athena, Spark, Iceberg
 - Définition : Un data lake garde des fichiers ouverts (JSON, Parquet) dans un stockage objet, lus par des moteurs indépendants, payés à la lecture.
 - Contexte : Dans une base (PostgreSQL), stockage et moteur sont liés : le serveur tourne en permanence et lui seul lit ses fichiers. Dans le lake, S3 garde les fichiers ; Athena, Spark ou une Lambda les lisent chacun leur tour, sans copie ni serveur allumé. Le prix : ni transactions ni index natifs, pas de mise à jour de ligne sans format de table (Iceberg), et une structure (partitions, formats) à concevoir soi-même.
 - Usage : ✅ gros volumes en ajout, lectures analytiques, plusieurs moteurs sur les mêmes données · ❌ lecture par clé en millisecondes, mises à jour fréquentes de lignes : une base (DynamoDB, PostgreSQL).
@@ -227,6 +232,7 @@ len(f.splitlines())  # → 2  (moteur 1)
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : duckdb-hive-partitioning-date, AWS/glue-athena-partition-projection
+- Mots-clés : Athena, Glue, Spark, cardinalité
 - Définition : Un segment `cle=valeur` dans la clé (`raw/bodacc/dt=AAAA-MM-JJ/`) déclare une partition, qu'Athena, Glue et Spark lisent comme une colonne filtrable (style Hive).
 - Contexte : Le stockage objet n'a pas de dossiers : `dt=…/` est un préfixe de chaîne qui sert de répertoire virtuel. `WHERE dt = '2026-10-23'` ne lit que ce préfixe : moins d'octets scannés, donc moins cher. La valeur est une chaîne : format fixe et triable (ISO `AAAA-MM-JJ`, zéros compris), jamais `23/10/2026`. On partitionne par la colonne filtrée dans presque toutes les requêtes, à faible cardinalité.
 - Usage : ✅ données qui arrivent par jour (annonces BODACC, logs), requêtes filtrées sur une date · ❌ partition trop fine (par heure pour 10 lignes) ou à forte cardinalité (`siren`) : des milliers de petits fichiers ralentissent la lecture.
@@ -279,6 +285,7 @@ f"dt={jour:%Y-%m-%d}"
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : qualite-contrat-de-donnees, duckdb-describe-schema
+- Mots-clés : Glue, zone raw, zone processed, pydantic
 - Définition : Dans un lake, le schéma s'applique à la lecture (schema-on-read) : les fichiers s'écrivent sans contrôle, la table dit comment les interpréter.
 - Contexte : Une base refuse une ligne qui ne respecte pas sa table (schema-on-write). Le lake accepte tout : un JSON avec un champ en trop ou en moins est déposé sans erreur, et c'est la définition de table (Glue) qui choisit colonnes et types. Souplesse bienvenue dans `raw`, où l'on garde tout ; danger dans `processed`, où un fichier mal formé ne casse qu'au moment de la requête, chez le consommateur.
 - Usage : ✅ `raw` : tout accepter, interpréter plus tard · ❌ compter sur la lecture pour détecter les erreurs de `processed` : valider à l'écriture (pydantic) avant de publier.
@@ -310,6 +317,7 @@ schema = ["siren"]                   # table
 - Profils : data
 - Prérequis : data-lake-partitionnement-hive
 - Voir aussi : data-lake-jour-de-partition-utc
+- Mots-clés : partition, run, BODACC
 - Source : data-platform · S1-05
 - Définition : Une source datée porte deux dates : quand le fait a eu lieu (événement) et quand on l'apprend (publication) ; on partitionne par la seconde.
 - Contexte : Sur BODACC, `dateparution` est la publication, `jugement.date` la décision du tribunal, souvent dix jours plus tôt. L'ingestion du 20 octobre apporte des jugements de tout le mois : partitionner par événement réécrirait des partitions passées à chaque run et casserait la règle « un run = une partition ». On partitionne `dt=` par publication et on garde la date d'événement en colonne, pour filtrer et agréger.
@@ -355,6 +363,7 @@ len({a["jugement"] for a in lot})  # → 3
 - Profils : data
 - Prérequis : data-lake-partitionnement-hive
 - Voir aussi : data-lake-petits-fichiers
+- Mots-clés : partition, SIREN
 - Définition : La cardinalité d'une colonne de partition (son nombre de valeurs distinctes) fixe le nombre de dossiers : à garder entre quelques dizaines et quelques milliers.
 - Contexte : `dt` donne 365 partitions par an : lisible et filtrable. `siren` en donnerait des millions de quelques lignes chacune : le catalogue et le planificateur passent plus de temps à lister qu'à lire. Combiner deux colonnes multiplie les cardinalités : `dt` × département ≈ 37 000 partitions par an. Règle : partitionner par ce qui est filtré presque toujours, et viser au moins quelques dizaines de Mo par partition.
 - Usage : ✅ `dt` seul, ou `dt` + une colonne à faible cardinalité (bulletin A, B, C) · ❌ identifiant (`siren`, `id`) ou horodatage précis en partition : des millions de minuscules dossiers.
@@ -387,6 +396,7 @@ round(mo_jour / 101, 2)   # → 0.58  (Mo)
 - Niveau : 2
 - Profils : data
 - Prérequis : data-lake-partitionnement-hive
+- Mots-clés : partition, partitionnement Hive
 - Définition : Une date se partitionne en une colonne (`dt=2026-10-23`) ou en trois (`year=2026/month=10/day=23`) ; une seule colonne rend les plages de dates simples.
 - Contexte : Avec trois colonnes, « du 25 septembre au 5 octobre » s'écrit avec des `OR` imbriqués sur année, mois et jour, faciles à rater. Avec `dt` au format ISO, c'est `dt BETWEEN '2026-09-25' AND '2026-10-05'` : l'ordre des chaînes est celui des dates. Le découpage en trois sert surtout à lister un mois par préfixe, ce qu'on obtient aussi avec `dt LIKE '2026-10-%'`.
 - Usage : ✅ `dt=AAAA-MM-JJ` pour des données quotidiennes, plages en `BETWEEN` · ❌ `year/month/day` pour des requêtes par plage : filtres illisibles et fragiles.
@@ -424,6 +434,7 @@ p = [(2026, 9, 24), (2026, 9, 25),
 - Profils : data
 - Prérequis : data-lake-partitionnement-hive
 - Voir aussi : ingestion-deux-fuseaux-deux-roles, ingestion-veille-fuseau-source
+- Mots-clés : partition, UTC, fuseau horaire, Lambda
 - Définition : On choisit le jour de partition dans un fuseau fixe, en général UTC, pour qu'un horodatage tombe toujours dans le même `dt=`.
 - Contexte : Paris est à UTC+2 en été et UTC+1 en hiver : un même instant n'a pas la même date selon le fuseau, et les changements d'heure créent des heures doublées ou manquantes. Un `datetime` sans `tzinfo` (naïf) est interprété dans le fuseau de la machine : celui d'une Lambda est UTC, celui d'un poste de dev Paris. Toujours convertir en UTC avant de calculer `dt=`.
 - Usage : ✅ horodatages d'événements (réception, logs) · ❌ date métier déjà sans heure (`dateparution` BODACC) : la garder telle quelle, sans conversion.
@@ -463,6 +474,7 @@ t.utcoffset().total_seconds()  # → 0.0
 - Niveau : 2
 - Profils : data
 - Voir aussi : data-lake-nombre-de-fichiers, data-lake-compaction
+- Mots-clés : Parquet, partition, micro-batch, Spark
 - Définition : Beaucoup de petits fichiers ralentissent et renchérissent la lecture : chaque objet coûte une requête, une ouverture et des métadonnées, quelle que soit sa taille.
 - Contexte : Lire 1 Go en 8 fichiers de 128 Mo, c'est 8 GET ; en fichiers de 10 Ko, plus de 100 000 GET, facturés au millier, chacun avec sa latence et son en-tête Parquet à parser. Les causes : partitions trop fines, micro-batch qui écrit à chaque événement, job Spark avec trop de tâches en sortie. Les remèdes : écrire moins souvent et plus gros, puis compacter.
 - Usage : ✅ viser 128 Mo à 1 Go par fichier Parquet, surveiller le nombre d'objets par partition · ❌ un fichier par annonce ou par message : la requête passe son temps à ouvrir des fichiers.
@@ -495,6 +507,7 @@ round(104_857 * lat / 60)   # → 35  (min)
 - Niveau : 2
 - Profils : data
 - Prérequis : data-lake-petits-fichiers
+- Mots-clés : Spark, Parquet, gzip
 - Définition : Le nombre de fichiers d'une écriture se calcule : volume divisé par la taille cible (128 Mo à 1 Go en Parquet), arrondi au supérieur.
 - Contexte : Spark écrit un fichier par tâche : sans réglage, c'est le parallélisme du job, pas le volume, qui fixe le nombre de fichiers. On le fixe avec `coalesce(n)`, `repartition(n)` ou `maxRecordsPerFile`. Une journée BODACC en Parquet tient en un fichier. Trop gros nuit aussi : un `.json.gz` de 10 Go n'est pas découpable, un seul worker le lit, quel que soit le cluster.
 - Usage : ✅ calculer `n` d'après le volume du jour, un seul fichier pour un petit jour · ❌ laisser le parallélisme décider ; un énorme gzip unique : lu par un seul worker.
@@ -523,6 +536,7 @@ n_fichiers(2 * 2**40)  # → 16384  (2 To)
 - Niveau : 2
 - Profils : data
 - Voir aussi : data-lake-snapshot-time-travel, AWS/glue-athena-iceberg-modifier
+- Mots-clés : partitionnement Hive, snapshot
 - Définition : Un format de table (Iceberg, Delta, Hudi) tient la liste versionnée des fichiers d'une table : un fichier absent de la liste n'existe pas.
 - Contexte : Une table Hive classique, c'est un préfixe : tout fichier présent est lu, y compris un fichier à moitié écrit ou laissé par un job planté. Avec Iceberg, une écriture ajoute ses fichiers puis publie un nouveau snapshot (la nouvelle liste) en une opération atomique : les lecteurs voient l'avant ou l'après, jamais l'entre-deux. Delta Lake fait de même avec son journal `_delta_log`.
 - Usage : ✅ tables mises à jour, écritures concurrentes, lecteurs qui ne doivent jamais voir de partiel · ❌ zone `raw` en ajout seul : un préfixe et des fichiers suffisent.
@@ -552,6 +566,7 @@ len(hive), len(snapshot)  # → (3, 2)
 - Niveau : 2
 - Profils : data
 - Prérequis : data-lake-format-de-table
+- Mots-clés : Iceberg, Athena, RGPD
 - Définition : Chaque écriture d'une table Iceberg crée un snapshot ; on relit la table telle qu'elle était à un snapshot ou une date (time travel).
 - Contexte : La liste des fichiers étant versionnée, un état passé reste lisible tant que ses fichiers ne sont pas purgés : `FOR TIMESTAMP AS OF` dans Athena. Utile pour comparer avant et après un job, reproduire un rapport, revenir au snapshot précédent après une mauvaise écriture. Mais chaque snapshot retient ses fichiers : sans expiration (`expire_snapshots`, `VACUUM` dans Athena), le stockage grossit, et une ligne effacée pour le RGPD reste lisible dans le passé.
 - Usage : ✅ audit, comparaison avant/après un `MERGE`, rollback · ❌ archive longue durée : les snapshots s'expirent, garder un export à part.
@@ -587,6 +602,7 @@ WHERE dt = '2026-10-22';
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : duckdb-filename-origine-ligne
+- Mots-clés : zone raw, zone processed, run, log structuré
 - Définition : Le lignage relie chaque donnée à sa source : une ligne de `processed` porte le fichier `raw` lu, l'heure d'ingestion et l'id du run.
 - Contexte : Une valeur fausse dans un export : sans lignage, on ne sait ni quel fichier brut la contient ni quel run l'a produite. Avec trois colonnes techniques (`_source`, `_ingere_le`, `_run_id`), on remonte en une requête au fichier `raw` et aux logs du run (le même `run_id` dans les logs JSON). Le `run_id` permet aussi de retirer tout ce qu'un run défectueux a écrit. À l'échelle, OpenLineage trace les dépendances entre tables.
 - Usage : ✅ colonnes techniques sur chaque ligne de `processed`, `run_id` partagé avec les logs · ❌ heure d'ingestion recalculée à la lecture : elle date la requête, pas l'écriture.
@@ -631,6 +647,7 @@ lignes = [{"siren": "1", "_run_id": "r1"},
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : Python/hachage-sha256-empreinte, IA/extraction-masquer-donnees-personnelles
+- Mots-clés : HMAC, SHA-256, RGPD, Secrets Manager
 - Définition : Pour joindre des données personnelles sans les exposer, on remplace l'identifiant par un HMAC à clé secrète, pas par un simple hash.
 - Contexte : Les annonces BODACC citent des personnes physiques (5 983 le 20 octobre). Le SHA-256 d'un nom se renverse par force brute : on hache tous les candidats et on compare. Le HMAC mélange une clé gardée hors du lake (Secrets Manager) : même entrée, même jeton, donc les jointures marchent, mais impossible à recalculer sans la clé. Au sens du RGPD, c'est une pseudonymisation : les données restent personnelles, la clé est la protection.
 - Usage : ✅ colonnes de personnes physiques dans `processed` et `out`, une clé par environnement · ❌ SHA-256 sans clé d'un nom ou d'un numéro court ; clé stockée dans le même bucket que les données.
@@ -677,6 +694,7 @@ jeton("MARTIN Paul") == sha.hexdigest()
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : data-lake-petits-fichiers, data-lake-format-de-table
+- Mots-clés : partitionnement Hive, Iceberg, micro-batch, backfill
 - Définition : La compaction relit les petits fichiers d'une partition, les réécrit en quelques gros, puis remplace l'ancienne version en une seule bascule.
 - Contexte : Sur une table Hive, l'ordre sûr : écrire les gros fichiers sous un préfixe temporaire, vérifier le nombre de lignes, basculer (repointer la partition avec `ALTER TABLE … PARTITION … SET LOCATION`), puis seulement supprimer les petits. Écrire les gros au même préfixe fait lire les deux versions pendant un moment. Iceberg rend la bascule atomique (`OPTIMIZE` dans Athena). On compacte les partitions closes, jamais celle où un job écrit encore.
 - Usage : ✅ partitions closes alimentées en micro-batch, après un backfill · ❌ compacter la partition du jour pendant l'écriture : fichiers perdus ou relus.
@@ -715,6 +733,7 @@ len(lu)  # → 4  (doublons, avant nettoyage)
 - Profils : data, expert
 - Prérequis : data-lake-partitionnement-hive
 - Voir aussi : ingestion-idempotence-ecraser
+- Mots-clés : Spark, partition, rejeu, backfill
 - Définition : Réécrire un jour doit remplacer sa seule partition ; or en mode statique (défaut), `mode("overwrite")` de Spark efface toute la table avant d'écrire.
 - Contexte : `df.write.mode("overwrite").partitionBy("dt")` avec `spark.sql.sources.partitionOverwriteMode=static` supprime toutes les partitions existantes, puis écrit celles du DataFrame : rejouer le 23 octobre efface deux ans d'historique. En mode `dynamic`, seules les partitions présentes dans le DataFrame sont remplacées. Sur Iceberg, `overwritePartitions()` se comporte en dynamique. À tester sur une copie avant le premier rejeu.
 - Usage : ✅ `partitionOverwriteMode=dynamic`, ou écrire directement sous `dt=…/`, pour tout rejeu ou backfill · ❌ `overwrite` statique sur une table partitionnée : l'historique disparaît.
@@ -754,6 +773,7 @@ spark.conf.set(
 - Profils : data, expert
 - Prérequis : data-lake-format-de-table
 - Voir aussi : AWS/dynamodb-verrou-optimiste
+- Mots-clés : Iceberg, snapshot, upsert, Step Functions
 - Définition : Deux jobs qui écrivent la même table Iceberg préparent leurs fichiers en parallèle ; au commit, le second constate un conflit et doit réessayer.
 - Contexte : Iceberg ne verrouille pas pendant l'écriture : chaque écrivain part du snapshot courant, écrit ses fichiers, puis tente de publier le snapshot suivant par un échange atomique dans le catalogue (compare-and-swap). Si un autre a publié entre-temps, le commit échoue (`CommitFailedException`) ; le moteur réessaie si les changements ne se recouvrent pas (ajouts), sinon le job échoue. Deux `MERGE` sur les mêmes fichiers se contrarient : sérialiser les écrivains reste le plus simple.
 - Usage : ✅ ajouts concurrents, compaction pendant les écritures · ❌ plusieurs `MERGE` simultanés sur une même partition : conflits répétés ; un seul job à la fois (Step Functions, concurrence de 1).

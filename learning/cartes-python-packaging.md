@@ -17,6 +17,7 @@ Python · Packaging : dépendances, distribution, layout, noms, pyproject (forma
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : pyproject.toml, wheel, PEP, uv
 - Définition : La table `[project]` de `pyproject.toml` décrit le paquet : `name`, `version`, `requires-python`, `dependencies` (≈ `package.json`, standard PEP 621).
 - Contexte : Tous les outils lisent ce même format : uv, pip, le backend de build. Au build, ces champs deviennent les métadonnées du wheel (`METADATA`) : `Requires-Dist` pour chaque dépendance, `Requires-Python`. `name` et `version` sont obligatoires ; une version calculée (tag git) se déclare `dynamic = ["version"]`. Les réglages d'outils vivent à côté, sous `[tool.<outil>]`, jamais dans `[project]`.
 - Usage : ✅ une source unique pour nom, version et dépendances de chaque membre · ❌ `setup.py` ou `requirements.txt` en parallèle : deux vérités qui divergent.
@@ -56,6 +57,7 @@ unzip -p dist/bodacc_client-*.whl \
 - Type : comparaison
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : PyPI, uv, module
 - Source : data-platform · S1-03
 - Définition : `dp-common` est le nom de distribution (uv, lock, PyPI), `dp_common` le nom de module importé : tiret pour `uv add`, underscore pour `import`.
 - Contexte : Deux espaces de noms, reliés par le dossier `src/dp_common/` que le backend embarque. `import dp-common` se lit `dp - common` : erreur de syntaxe. Côté distribution, les noms sont normalisés : tiret, underscore, point et casse sont équivalents, `version("DP_Common")` trouve le paquet. Les deux noms peuvent même différer : `PyYAML` s'importe `yaml`, `python-dateutil` `dateutil`. Pas de `@scope/` : on préfixe (`dp-`).
@@ -90,6 +92,7 @@ version("dp.common")  # → "0.1.0"
 - Profils : débutant, ops
 - Prérequis : packaging-table-project
 - Voir aussi : packaging-ordre-pep440
+- Mots-clés : PEP 440, semver, uv.lock
 - Définition : Une dépendance s'écrit `nom` + spécificateurs PEP 440 : `>=2.14`, `<3`, `==0.28.1`, `~=2.14` (compatible), combinables par virgule.
 - Contexte : `~=2.14` veut dire `>=2.14, <3` ; `~=2.14.1` veut dire `>=2.14.1, <2.15` : le dernier chiffre écrit est celui qui peut monter. Différence avec npm : pas de `^` ni de `~` à la sauce semver, et pas de borne haute implicite. `==2.14.*` fige une série. `uv add` écrit `>=` + la version résolue, la version exacte vivant dans `uv.lock`.
 - Usage : ✅ `>=` minimal dans une lib, `~=` ou `<` quand une rupture est connue · ❌ `==` dans une lib publiée : conflits inévitables chez le consommateur.
@@ -128,6 +131,7 @@ s = S(">=0.28.1,<0.29")
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : packaging-specificateurs-version
+- Mots-clés : PEP 440, pré-version
 - Définition : Les versions Python se comparent selon PEP 440 (`packaging.version.Version`) : par segments numériques, avec pré-versions `a`, `b`, `rc` avant la finale.
 - Contexte : Comparer des chaînes est faux : `"0.10.0" > "0.9.0"` est `False`, caractère par caractère. `Version` compare des nombres et connaît les suffixes : `1.0.0.dev1 < 1.0.0a1 < 1.0.0rc1 < 1.0.0 < 1.0.0.post1`. Les zéros de fin ne comptent pas. C'est ce que font uv et pip pour choisir une version ; on s'en sert dans un script de release ou un contrôle de compatibilité.
 - Usage : ✅ comparer, trier, valider des versions dans un script (`Version(v)`) · ❌ comparer des chaînes ou découper sur `.` à la main.
@@ -161,6 +165,7 @@ sorted(tags, key=Version)
 - Type : comparaison
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : site-packages, uv, Lambda
 - Définition : `uv build` produit un sdist (`.tar.gz`, les sources à construire) et un wheel (`.whl`, un zip prêt à installer, sans étape de build).
 - Contexte : Le wheel se décompresse tel quel dans `site-packages` : installation rapide, sans exécuter de code. Il contient le module et un dossier `.dist-info` (métadonnées), mais ni `pyproject.toml` ni les tests. Le sdist garde le projet source (`pyproject.toml`, `src/`, `README`) : l'installer demande de reconstruire le wheel. Sur PyPI, on publie les deux ; pour une Lambda, on n'installe que des wheels.
 - Usage : ✅ publier sdist + wheel, installer depuis des wheels (CI, image, zip Lambda) · ❌ dépendre d'un sdist en production : build à chaque installation, compilateur parfois requis.
@@ -195,6 +200,7 @@ unzip -l dist/dp_common-0.1.0-*.whl
 - Type : concept
 - Niveau : 1
 - Profils : débutant
+- Mots-clés : paquet
 - Définition : `__init__.py` fait d'un dossier un paquet et s'exécute au premier import : il réexporte l'API publique, listée dans `__all__` (≈ un `index.ts`).
 - Contexte : `from bodacc_client import Annonce` marche parce que `__init__.py` importe `Annonce` depuis `models` : l'appelant ne dépend pas de l'organisation interne. `__all__` déclare l'API publique (lue par `import *`, les linters, la doc). Sans `__init__.py`, le dossier reste importable comme « paquet namespace » : pas d'erreur, mais pas de façade et des pièges de découverte.
 - Usage : ✅ un `__init__.py` court qui réexporte les noms publics · ❌ du code lourd dans `__init__.py` (appel réseau, lecture de fichier) : il s'exécute à chaque import.
@@ -223,6 +229,7 @@ bodacc_client.__all__[0]  # → "Annonce"
 - Niveau : 2
 - Profils : ops
 - Prérequis : packaging-table-project
+- Mots-clés : backend de build, monorepo, venv
 - Source : data-platform · S1-03
 - Définition : `[build-system]` déclare le backend qui construit le paquet ; sans lui, uv traite le projet comme virtuel : ses dépendances sont installées, lui non.
 - Contexte : C'est voulu pour la racine d'un monorepo : un conteneur qui porte le lock, le venv et les outils de dev, rien à importer ni à publier (≈ `"private": true`). Un membre de `packages/` en a besoin pour être importé : `uv init --lib` l'écrit (backend `uv_build`), `uv init --bare` non. Exception : un projet cité en dépendance par un autre est construit quand même, avec setuptools par défaut.
@@ -262,6 +269,7 @@ uv pip list
 - Profils : ops
 - Prérequis : packaging-init-facade
 - Voir aussi : packaging-installation-editable
+- Mots-clés : sys.path, installation éditable
 - Source : data-platform · S1-03
 - Définition : En src layout, le code vit dans `src/<module>/` : il n'est importable qu'une fois installé, jamais par accident depuis le dossier courant.
 - Contexte : Python met le dossier courant en tête de `sys.path`. En flat layout (`dp_common/` à la racine du projet), `import dp_common` marche sans installation : les tests passent sur un dossier, pas sur le paquet installé, et un fichier oublié par le build passe inaperçu. `src/` n'a pas de `__init__.py` : le module est `dp_common`, jamais `src.dp_common`.
@@ -300,6 +308,7 @@ python3 -c "import dp_common"
 - Niveau : 2
 - Profils : débutant, ops
 - Prérequis : packaging-init-facade
+- Mots-clés : paquet, module, Ruff
 - Définition : `from .util import propre` importe depuis le même paquet ; le point désigne le paquet du module courant, `..` le paquet parent.
 - Contexte : Un import relatif dépend de `__package__`, connu seulement quand le fichier est importé comme partie du paquet (`import dp_demo.models`, `python -m`). L'import absolu (`from dp_demo.util import propre`) marche partout et se lit mieux ; la plupart des projets le préfèrent, ruff peut l'imposer (`TID252`). Pas d'équivalent des chemins `./` de TS : on importe des modules, jamais des fichiers.
 - Usage : ✅ imports absolus par défaut, relatifs à la rigueur dans un sous-paquet profond · ❌ lancer un module du paquet par son chemin de fichier : `python -m paquet.module`.
@@ -333,6 +342,7 @@ uv run python -m dp_demo
 - Profils : ops
 - Prérequis : packaging-init-facade
 - Voir aussi : ligne-de-commande-garde-main
+- Mots-clés : sys.path, venv, paquet
 - Définition : `python -m dp_demo` exécute le module `dp_demo/__main__.py` du paquet installé (≈ le champ `bin` d'un package npm, sans installation).
 - Contexte : `-m` cherche le module sur `sys.path` comme un `import`, puis l'exécute en `__main__` : les imports du paquet marchent, quel que soit le dossier courant. Pour un paquet, il faut un `__main__.py` ; pour un module simple, `python -m dp_demo.cli` suffit. C'est aussi la façon fiable de lancer un outil du venv : `python -m pytest`, `python -m pip`.
 - Usage : ✅ point d'entrée d'un paquet en dev, job lancé en CI ou en conteneur · ❌ `python chemin/vers/fichier.py` dans un paquet : les imports relatifs cassent.
@@ -361,6 +371,7 @@ uv run python -m dp_demo
 - Profils : ops
 - Prérequis : packaging-table-project
 - Voir aussi : packaging-python-m
+- Mots-clés : pyproject.toml, wheel, code de sortie
 - Définition : `[project.scripts]` déclare une commande (`dp-ingest = "dp_demo.models:main"`) que l'installation crée dans `.venv/bin`, appelant cette fonction.
 - Contexte : Le wheel porte un `entry_points.txt` ; l'installeur écrit un petit script qui importe la fonction et fait `sys.exit(main())`. La commande s'appelle par son nom, sans `python -m` (≈ `bin` dans `package.json`). La valeur de retour de `main` devient le code de sortie : `None` ou `0` = succès, un entier non nul = échec, une chaîne = affichée puis code 1.
 - Usage : ✅ CLI d'un paquet (`dp-ingest --day 2026-10-20`), lancée par `uv run dp-ingest` · ❌ scripts internes jamais installés : un `Makefile` ou `python -m` suffit.
@@ -392,6 +403,7 @@ tail -3 .venv/bin/dp-ingest
 - Type : concept
 - Niveau : 2
 - Profils : ops, data
+- Mots-clés : wheel, zsh, dependency group
 - Définition : `[project.optional-dependencies]` déclare des extras : `s3 = ["boto3>=1.35"]` n'est installé que si on demande `dp-demo[s3]`.
 - Contexte : Dans le wheel, chaque dépendance d'extra porte un marqueur `extra == 's3'` : ignorée sans l'extra. Un consommateur choisit : `uv add 'dp-demo[s3]'`, plusieurs extras séparés par des virgules (`[s3,cli]`). Sous zsh, les crochets sont un motif de fichiers : sans guillemets, la commande échoue avant d'atteindre uv. À distinguer des dependency groups (`dev`), jamais publiés.
 - Usage : ✅ dépendance lourde utile à une partie des usages (boto3, pyarrow) · ❌ outils de test ou de lint : `uv add --dev`.
@@ -430,6 +442,7 @@ sorted(Requirement(
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : uv.lock, stdlib
 - Définition : Un marqueur d'environnement (`; python_version < "3.11"`, `; sys_platform == "linux"`) n'installe la dépendance que si la condition est vraie.
 - Contexte : Le marqueur suit la dépendance après un `;` et s'évalue à l'installation, sur la machine cible. `python_version` se compare comme une **version**, pas comme une chaîne : `"3.10" > "3.9"` est vrai. uv résout pour toutes les plateformes à la fois (lock universel) et garde le marqueur dans `uv.lock`. Cas classique : `tomli` seulement avant 3.11, où `tomllib` est arrivé dans la bibliothèque standard.
 - Usage : ✅ rétroportage pour une vieille version de Python, dépendance propre à un OS · ❌ dépendance requise partout : sans marqueur ; choix d'option par l'utilisateur : un extra.
@@ -464,6 +477,7 @@ m.evaluate({"python_version": "3.10"})
 - Niveau : 2
 - Profils : ops
 - Prérequis : packaging-specificateurs-version
+- Mots-clés : uv.lock, résolution de dépendances, runtime Lambda
 - Définition : `requires-python = ">=3.12"` déclare les versions de Python supportées ; uv résout les dépendances pour **toute** cette plage, pas seulement pour le Python local.
 - Contexte : Le lock d'uv est universel : il doit fonctionner pour chaque version permise. Une dépendance qui exige `>=3.13` rend la résolution impossible tant que le projet promet 3.12, même si le `.venv` tourne déjà en 3.13. Le message le dit et propose de relever la borne. Côté consommateur, `Requires-Python` empêche l'installation sur un Python trop ancien.
 - Usage : ✅ aligner `requires-python` sur le runtime réel (Lambda `python3.12`), relever quand une dépendance l'exige · ❌ borne haute (`<3.14`) par précaution : elle bloque les consommateurs sans raison.
@@ -498,6 +512,7 @@ uv add ../new
 - Niveau : 2
 - Profils : ops
 - Prérequis : packaging-specificateurs-version
+- Mots-clés : uv.lock, wheel, sdist
 - Définition : Une lib publie des plages (`pydantic>=2.14.1`) ; les versions exactes de `uv.lock` ne servent qu'au projet lui-même, jamais à ses consommateurs.
 - Contexte : `uv.lock` n'entre ni dans le wheel ni dans le sdist : un projet qui installe `bodacc-client` résout ses propres versions dans la plage `Requires-Dist`. D'où la règle : une application (Lambda, job) garantit ses versions par le lock ; une lib reste large pour cohabiter avec d'autres. Comme en npm, où le `package-lock.json` d'une dépendance est ignoré.
 - Usage : ✅ lib : `>=` minimal testé ; application : `uv.lock` commité, `uv sync --frozen` en CI · ❌ figer `==` dans une lib pour « stabiliser » : conflits chez chaque consommateur.
@@ -527,6 +542,7 @@ unzip -p dist/bodacc_client-*.whl \
 - Niveau : 2
 - Profils : ops
 - Prérequis : packaging-build-system-virtuel
+- Mots-clés : site-packages, sys.path, workspace uv
 - Définition : Une installation éditable (`uv sync` pour un membre du workspace) pointe vers les sources sans les copier : un `.pth` ajoute `src/` au `sys.path`.
 - Contexte : Dans `site-packages`, `dp_common.pth` contient une seule ligne, le chemin de `packages/dp-common/src` ; Python l'ajoute au `sys.path` au démarrage. Une modification du code est donc visible sans réinstaller (≈ `pnpm link` / `workspace:*`). Un wheel installé, lui, copie les fichiers dans `site-packages` : les sources peuvent changer, l'installé non. `direct_url.json` porte `"editable": true`.
 - Usage : ✅ membres du monorepo en dev, installés éditables par `uv sync` · ❌ image Docker ou zip de Lambda : installer le wheel (copie figée, reproductible).
@@ -560,6 +576,7 @@ f = dp_common.__file__
 - Niveau : 2
 - Profils : ops, data
 - Prérequis : packaging-src-layout
+- Mots-clés : wheel, PEP, Lambda
 - Définition : Un fichier non Python placé dans le module (`src/dp_demo/tribunaux.json`) est embarqué dans le wheel ; on le lit avec `importlib.resources.files(...)`.
 - Contexte : `files("dp_demo")` désigne le dossier du paquet installé, où qu'il soit (site-packages, zip de Lambda) : le chemin ne dépend pas du dossier courant. Le backend `uv_build` embarque tout ce qui est sous `src/<module>/`, `py.typed` compris : ce fichier vide (PEP 561) annonce aux vérificateurs de types que le paquet est annoté. Un fichier hors du module (racine du projet) n'est pas dans le wheel.
 - Usage : ✅ référentiels livrés avec le code (liste de tribunaux, schéma JSON, SQL) · ❌ `open("tribunaux.json")` ou un chemin bâti sur le dossier courant : faux dès qu'on lance ailleurs.
@@ -594,6 +611,7 @@ unzip -l dist/dp_demo-0.1.0-*.whl
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : packaging-wheel-vs-sdist
+- Mots-clés : wheel, ABI, Lambda, manylinux
 - Définition : Le nom d'un wheel porte ses tags `python-abi-plateforme` : `py3-none-any` tourne partout, `cp312-cp312-macosx_11_0_arm64` seulement sur ce Python et cet OS.
 - Contexte : httpx est pur Python (`py3-none-any`) ; pydantic-core est compilé en Rust, avec un wheel par plateforme. Installer sur un Mac puis zipper pour Lambda (Linux) embarque le `.so` macOS : la Lambda plante à l'import. On installe pour la cible : `uv pip install --python-platform x86_64-manylinux2014 --python-version 3.12 --target build/`, ou on construit dans une image Linux.
 - Usage : ✅ zip de Lambda construit pour la plateforme et l'architecture de la fonction (x86_64 ou arm64) · ❌ zipper le `.venv` du Mac : binaires incompatibles.
@@ -634,6 +652,7 @@ ls build/pydantic_core | grep so
 - Profils : ops, expert
 - Prérequis : packaging-nom-distribution-vs-module
 - Voir aussi : packaging-dist-info
+- Mots-clés : métadonnées de paquet, pyproject.toml, installation éditable
 - Définition : `importlib.metadata.version("bodacc-client")` lit la version dans les métadonnées installées (`.dist-info`), pas dans `pyproject.toml`.
 - Contexte : Une seule source : la `version` de `pyproject.toml`, recopiée dans `METADATA` à l'installation ; inutile de dupliquer un `__version__` en dur, qui finit par diverger. Piège en éditable : le code suit les sources, mais les métadonnées datent du dernier `uv sync`. Après un changement de version dans `pyproject.toml`, `.venv/bin/python` lit encore l'ancienne ; `uv run`, qui resynchronise d'abord, lit la nouvelle.
 - Usage : ✅ afficher la version dans un log, un `User-Agent` (`data-platform-bodacc-client/0.1`), une sortie `--version` · ❌ `__version__` écrit à la main en plus de `pyproject.toml`.
@@ -668,6 +687,7 @@ print(v('dp-demo'))"
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : packaging-wheel-vs-sdist
+- Mots-clés : métadonnées de paquet, installation éditable, empreinte
 - Définition : Chaque paquet installé a un dossier `<nom>-<version>.dist-info` : `METADATA`, `RECORD` (fichiers installés), `entry_points.txt`, `direct_url.json`.
 - Contexte : C'est ce que lisent `importlib.metadata`, `uv pip list` et la désinstallation : `RECORD` liste chaque fichier posé, avec son empreinte, pour pouvoir tout retirer. `distribution(nom).files` en donne la liste. Une installation éditable n'y inscrit que le `.pth` et les métadonnées : le code reste dans `src/`. `entry_points(group="console_scripts")` retrouve les commandes déclarées.
 - Usage : ✅ diagnostiquer « quelle version, installée d'où, avec quels fichiers » · ❌ modifier un `.dist-info` à la main : réinstaller.

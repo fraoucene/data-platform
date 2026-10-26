@@ -18,6 +18,7 @@ AWS · Cognito : user pool, identity pool, flux d'identifiants, identités (form
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : cognito-ou-api-gateway
+- Mots-clés : JWT, MFA, STS, OIDC
 - Source : data-platform · pwa-sync
 - Définition : Le user pool répond « qui es-tu ? » (jetons JWT) ; l'identity pool, « que peux-tu faire dans AWS ? » (identifiants IAM temporaires).
 - Contexte : Le user pool gère comptes, mots de passe, MFA et émet id token, access token et refresh token, comme NextAuth ou Auth0. Il ne donne aucun droit AWS. L'identity pool prend un jeton (de Cognito, Google, OIDC…), attribue un identity id stable et l'échange contre des identifiants STS d'un rôle IAM. On peut utiliser l'un sans l'autre.
@@ -56,6 +57,7 @@ resource "aws_cognito_identity_pool" "this" {
 - Type : piège
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : identity pool, id token, sub, clé de partition DynamoDB
 - Source : data-platform · pwa-sync
 - Définition : L'identity id (`eu-west-3:<uuid>`) est l'identifiant attribué par l'identity pool, distinct du `sub` du user pool, même pour le même compte.
 - Contexte : Le `sub` (UUID sans préfixe) est dans l'id token ; l'identity id est créé par `GetId` au premier échange puis retrouvé à chaque fois pour le même compte. Côté IAM, `${cognito-identity.amazonaws.com:sub}` vaut l'identity id, jamais le `sub` du JWT : c'est lui qui doit servir de clé de partition.
@@ -92,6 +94,7 @@ identity id : réponse de GetId,
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : cognito-enhanced-ou-classic
+- Mots-clés : identity id, id token, STS, SDK AWS
 - Source : data-platform · pwa-sync
 - Définition : Le flux « enhanced » tient en deux appels : `GetId` (jeton → identity id), puis `GetCredentialsForIdentity` (identity id + jeton → clés STS).
 - Contexte : Les deux reçoivent la même map `Logins` : `{"<fournisseur>": "<id token>"}`. Le second renvoie `AccessKeyId`, `SecretKey`, `SessionToken`, `Expiration`, pour le rôle `authenticated` choisi par le pool. Côté TS, c'est ce que fait `fromCognitoIdentityPool` du SDK v3 ; à la main, deux `fetch` JSON suffisent.
@@ -133,6 +136,7 @@ aws cognito-identity \
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : api-sigv4-authorization
+- Mots-clés : id token, profil AWS, user pool
 - Source : data-platform · pwa-sync
 - Définition : `GetId` et `GetCredentialsForIdentity` sont des API publiques : l'app les appelle sans clé AWS, la preuve est le jeton dans `Logins`.
 - Contexte : Logique : l'app n'a encore aucune clé, c'est justement ce qu'elle vient chercher. En CLI, `--no-sign-request` reproduit la situation de l'app (sinon la CLI signerait avec votre profil, ce qui masquerait un problème). Même chose pour `initiate-auth` du user pool. Ensuite seulement, les requêtes DynamoDB sont signées avec les clés reçues.
@@ -171,6 +175,7 @@ unset AWS_PROFILE   # par clarté
 - Profils : web, ops
 - Prérequis : iam-role-confiance-permissions
 - Voir aussi : iam-confiance-cognito
+- Mots-clés : identity pool, rôle IAM, politique de confiance
 - Source : data-platform · pwa-sync
 - Définition : `aws_cognito_identity_pool_roles_attachment` dit quel rôle IAM l'identity pool donne aux identités connectées (`authenticated`) et invitées (`unauthenticated`).
 - Contexte : Dans le flux enhanced, c'est le pool qui choisit le rôle, jamais l'app : un client modifié ne peut pas demander un autre rôle. Le rôle doit en plus faire confiance à `cognito-identity.amazonaws.com` pour ce pool. Sans rattachement, `GetCredentialsForIdentity` échoue : aucun rôle à endosser.
@@ -199,6 +204,7 @@ resource "aws_cognito_identity_pool_roles_attachment" "this" {
 - Type : piège
 - Niveau : 2
 - Profils : web
+- Mots-clés : id token, access token, user pool, aud
 - Source : data-platform · pwa-sync
 - Définition : Dans `Logins`, la clé est le nom du fournisseur (`cognito-idp.<région>.amazonaws.com/<user pool id>`), la valeur est l'**id token** du user pool.
 - Contexte : Le nom vient de l'attribut `endpoint` du user pool en Terraform, ou de `describe-identity-pool`. Une faute de région ou d'id dans la clé donne un `NotAuthorizedException`. On donne l'id token et non l'access token : c'est lui que l'identity pool vérifie (`aud` = client de l'app).
@@ -236,6 +242,7 @@ aws cognito-identity describe-identity-pool \
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : cognito-role-authenticated
+- Mots-clés : identity pool, rôle IAM, politique de confiance, amr
 - Source : data-platform · pwa-sync
 - Définition : `allow_unauthenticated_identities = false` interdit les identités invitées : sans jeton valide, `GetId` refuse au lieu de créer une identité anonyme.
 - Contexte : Une identité invitée reçoit des clés du rôle `unauthenticated`, sans compte : utile pour une démo ou des métriques anonymes. Pour une synchro de progression, ça n'a pas de sens (rien à retrouver sur un autre appareil). Si on l'active un jour, la confiance du rôle des connectés doit tester `amr = authenticated`, sinon un invité endosse aussi ce rôle.
@@ -272,6 +279,7 @@ aws cognito-identity get-id \
 - Type : comparaison
 - Niveau : 2
 - Profils : web, ops
+- Mots-clés : STS, rôle IAM, politique de confiance, OIDC
 - Source : data-platform · pwa-sync
 - Définition : Enhanced : le pool choisit le rôle et appelle STS pour l'app. Classic (`allow_classic_flow`) : l'app reçoit un jeton OpenID et appelle elle-même `AssumeRoleWithWebIdentity`.
 - Contexte : Classic = `GetId`, `GetOpenIdToken`, puis `sts:AssumeRoleWithWebIdentity` avec l'ARN de rôle de son choix : le client décide du rôle, la seule barrière est la confiance des rôles. Enhanced = `GetId`, `GetCredentialsForIdentity`, un appel de moins et le rôle imposé par le pool. AWS recommande l'enhanced.
@@ -302,6 +310,7 @@ classic  : GetId
 - Niveau : 2
 - Profils : web
 - Voir aussi : api-expiration-secondes
+- Mots-clés : STS, id token, refresh token, localStorage
 - Source : data-platform · pwa-sync
 - Définition : Les clés données par l'identity pool expirent (1 h, champ `Expiration`) : l'app les garde en cache et en redemande juste avant l'échéance.
 - Contexte : Redemander à chaque requête coûte un aller-retour et ralentit ; attendre l'expiration donne un `ExpiredTokenException` en pleine écriture. On renouvelle avec une marge (1 min avant). L'id token, lui, vit 1 h aussi : s'il a expiré, il faut d'abord le rafraîchir avec le refresh token, puis refaire l'échange.
@@ -334,6 +343,7 @@ a_renouveler(exp, exp - timedelta(seconds=30))  # → True
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : cognito-logins-fournisseur
+- Mots-clés : user pool, identity pool, id token, STS
 - Source : data-platform · pwa-sync
 - Définition : `server_side_token_check = true` : avant de donner des clés, l'identity pool vérifie auprès du user pool que le compte existe et reste connecté.
 - Contexte : Sans cette option, un id token encore dans sa durée de vie suffit, même après `GlobalSignOut` ou suppression du compte. Avec, l'échange est refusé. Limite : les clés STS déjà délivrées restent valides jusqu'à leur expiration (1 h au plus) ; la révocation n'est donc jamais instantanée.
@@ -362,6 +372,7 @@ cognito_identity_providers {
 - Type : piège
 - Niveau : 2
 - Profils : web
+- Mots-clés : user pool, OAuth, bundle, PWA
 - Source : data-platform · pwa-sync
 - Définition : Un client de user pool utilisé par un navigateur ou un mobile se crée sans secret (`generate_secret = false`) : embarqué, il serait public.
 - Contexte : Avec un secret, chaque appel (`InitiateAuth`…) doit porter un `SECRET_HASH` calculé avec lui : impossible à garder secret dans du JavaScript livré au client. La sécurité vient alors du mot de passe, des jetons courts et, pour AWS, du rôle IAM minimal. Le secret sert aux clients serveurs (backend, confidential client OAuth).
@@ -390,6 +401,7 @@ resource "aws_cognito_user_pool_client" "app" {
 - Niveau : 2
 - Profils : web
 - Prérequis : cognito-client-sans-secret
+- Mots-clés : user pool, SRP, refresh token
 - Source : data-platform · pwa-sync
 - Définition : `explicit_auth_flows` liste les façons de se connecter qu'accepte un client ; `initiate-auth --auth-flow USER_PASSWORD_AUTH` exige `ALLOW_USER_PASSWORD_AUTH`.
 - Contexte : `USER_PASSWORD_AUTH` envoie le mot de passe (en HTTPS) à Cognito : simple pour un script ou une app sans SDK. `USER_SRP_AUTH` ne l'envoie jamais (preuve SRP), au prix d'un calcul côté client. `ALLOW_REFRESH_TOKEN_AUTH` permet de renouveler les jetons sans redemander le mot de passe. Un flux absent de la liste est refusé.
@@ -429,6 +441,7 @@ aws cognito-idp initiate-auth \
 - Profils : web
 - Prérequis : cognito-identity-id-vs-sub
 - Voir aussi : iam-variable-dans-resource
+- Mots-clés : identity id, clé de partition DynamoDB, sub, user pool
 - Source : data-platform · pwa-sync
 - Définition : Le même compte obtient le même identity id sur tous ses appareils : `GetId` retrouve l'identité liée au fournisseur et au `sub` du jeton.
 - Contexte : C'est ce qui rend la synchro possible : iPhone et Mac écrivent sous la même clé de partition sans se concerter. L'identity id ne change pas tant que le compte existe dans le user pool et que l'identité n'est pas supprimée du pool. Supprimer puis recréer le compte (nouveau `sub`) donne une nouvelle identité : les anciennes lignes deviennent orphelines.
@@ -456,6 +469,7 @@ pk = eu-west-3:1b2c… pour les deux
 - Type : choisir
 - Niveau : 2
 - Profils : web
+- Mots-clés : identity pool, API Gateway, politique IAM, backend
 - Source : data-platform · pwa-sync
 - Définition : Identity pool + IAM fin : l'app parle directement à AWS ; API Gateway + Lambda : un backend intermédiaire porte la logique métier.
 - Contexte : Sans backend : identity pool gratuit, aucune Lambda à maintenir, latence d'un seul saut ; l'isolation tient dans la politique IAM (`LeadingKeys`). Limite : aucune règle métier côté serveur (validation, quotas, agrégats) ; l'app peut écrire n'importe quel contenu dans ses lignes. Avec Lambda : validation et logique centralisées, au prix d'un service à coder, tester, payer.
@@ -488,6 +502,7 @@ Pourquoi: 0 serveur, ~1,4 $ par
 - Profils : web, ops
 - Prérequis : cognito-role-authenticated
 - Voir aussi : iam-refus-condition-message
+- Mots-clés : ARN, principal, CloudTrail, identity pool
 - Source : data-platform · pwa-sync
 - Définition : En flux enhanced, Cognito endosse le rôle avec le nom de session `CognitoIdentityCredentials` : on le retrouve dans l'ARN de l'appelant d'un refus.
 - Contexte : Un `AccessDeniedException` affiche `assumed-role/<rôle>/CognitoIdentityCredentials` : on sait que l'appel venait bien des clés de l'identity pool, avec ce rôle-là, et non de votre profil. C'est le premier réflexe de lecture d'un refus : quel principal, quelle action, quelle ressource. Les données de l'utilisateur, elles, n'apparaissent pas dans ce nom.
@@ -519,6 +534,7 @@ AccessDeniedException: User:
 - Niveau : 3
 - Profils : web, expert
 - Voir aussi : iam-confiance-cognito
+- Mots-clés : politique de confiance, condition IAM, sub
 - Source : data-platform · pwa-sync
 - Définition : `cognito-identity.amazonaws.com:amr` est une **liste** : `authenticated` ou `unauthenticated`, puis le fournisseur, puis le fournisseur suivi du `sub`.
 - Contexte : Pour un compte du user pool : `["authenticated", "cognito-idp.<région>.amazonaws.com/<pool>", "cognito-idp…:CognitoSignIn:<sub>"]`. Comme c'est une liste, la confiance la teste avec `ForAnyValue:StringLike` : « au moins une valeur vaut `authenticated` ». On peut aussi y restreindre un rôle à un fournisseur précis (Google seulement, par exemple).

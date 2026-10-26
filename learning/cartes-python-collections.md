@@ -17,6 +17,7 @@ Python · Collections : copies, outils, set, tuple (format spec v3 de revision-p
 - Type : concept
 - Niveau : 1
 - Profils : débutant
+- Mots-clés : set, NamedTuple, dataclass
 - Définition : `tuple` est une séquence ordonnée **non modifiable** : on la lit comme une liste, sans pouvoir ajouter ni remplacer (≈ `readonly [a, b]`).
 - Contexte : Un tuple regroupe quelques valeurs liées dont la position a un sens (code, SIREN, date). Comme il est figé, il peut servir de clé de dict ou d'élément de set, ce que la liste ne peut pas. Les parenthèses sont souvent facultatives : c'est la virgule qui fabrique le tuple.
 - Usage : ✅ enregistrement fixe (ligne CSV, coordonnées), plusieurs valeurs de retour, clé composée · ❌ collection qui grandit : `list` ; champs nommés : `NamedTuple` ou `dataclass`.
@@ -53,6 +54,7 @@ par_jour[cle]        # → 2
 - Profils : débutant
 - Prérequis : collections-tuple-fige
 - Voir aussi : listes-deballer-etoile, tests-destructurer-un-element
+- Mots-clés : tuple, dataclass
 - Définition : Le déballage affecte chaque élément d'une séquence à une variable (≈ déstructuration `const [a, b] = t`).
 - Contexte : Une fonction qui fait `return a, b` renvoie en réalité un tuple, que l'appelant déballe. Le nombre de variables doit correspondre exactement, sinon `ValueError`. Une variable étoilée ramasse le surplus. `_` désigne par convention une valeur ignorée. Échanger deux variables s'écrit `a, b = b, a`, sans variable temporaire.
 - Usage : ✅ récupérer plusieurs valeurs de retour, parcourir des paires (`for k, v in d.items()`) · ❌ plus de 3 ou 4 valeurs : renvoyer une `dataclass` aux champs nommés.
@@ -91,6 +93,7 @@ x, y = (1, 2, 3)  # ❌ ValueError
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : collections-set-vide-dict, collections-hashable
+- Mots-clés : hashable, temps constant
 - Définition : `set` est une collection sans doublons ni ordre, au test d'appartenance très rapide (≈ `Set` en TS).
 - Contexte : Un set garde un seul exemplaire de chaque valeur, comparée par égalité et par hash. `x in s` est en temps constant, alors que `x in liste` parcourt tout : sur 100 000 SIREN, la différence est énorme. Les éléments doivent être hashables (nombres, chaînes, tuples, pas de listes). Un set n'a pas d'index : `s[0]` n'existe pas.
 - Usage : ✅ dédoublonner, tester « déjà vu ? » dans une boucle, comparer deux extractions · ❌ garder l'ordre ou les doublons : `list` ; associer une valeur : `dict`.
@@ -130,6 +133,7 @@ doublons                  # → ["A", "B"]
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : pandas, DuckDB, Lambda
 - Définition : Le module `statistics` calcule moyenne, médiane, mode et écart-type sur une liste de nombres, sans dépendance externe.
 - Contexte : `mean` est tirée par les valeurs extrêmes, `median` non : sur des comptes d'annonces par jour, une journée exceptionnelle fausse la moyenne. Sur une liste de taille paire, `median` renvoie la moyenne des deux valeurs du milieu, donc souvent un float. `mode` donne la valeur la plus fréquente. Pas de `Math.mean` en JS : ici c'est fourni.
 - Usage : ✅ indicateurs rapides dans un script ou une Lambda (volume moyen par jour) · ❌ millions de valeurs ou calcul par groupe : numpy, pandas, DuckDB.
@@ -168,6 +172,7 @@ round(st.stdev([2, 4, 6]), 1)  # → 2.0
 - Profils : débutant
 - Prérequis : collections-tuple-fige
 - Voir aussi : fonctions-lambda-renvoyer-tuple
+- Mots-clés : tuple
 - Définition : C'est la virgule, pas les parenthèses, qui crée un tuple : `x = 1,` est un tuple, `(1)` un simple nombre.
 - Contexte : Les parenthèses ne servent qu'à grouper ; un tuple d'un seul élément exige une virgule finale : `(1,)`. Le piège classique est une virgule restée en fin de ligne après avoir copié un argument de fonction : la variable devient un tuple, et l'erreur apparaît plus loin, loin de sa cause.
 - Usage : ✅ écrire `(x,)` quand une API attend un tuple d'un élément (paramètres SQL) · ❌ virgule finale hors d'un appel ou d'une collection : à traquer en relecture.
@@ -202,6 +207,7 @@ siren.upper()         # ❌ AttributeError
 - Profils : débutant, web
 - Prérequis : listes-modifier-sur-place
 - Voir aussi : collections-copie-superficielle-profonde
+- Mots-clés : référence
 - Définition : `b = a` ne copie pas : `a` et `b` désignent la même liste, et toute modification se voit des deux côtés (comme en JS).
 - Contexte : En Python, une variable est une étiquette posée sur un objet. Affecter, passer en argument ou ranger dans une autre liste partage l'objet, sans copie. `is` teste si deux noms désignent le même objet, `==` si les valeurs sont égales. Pour une liste indépendante : `a.copy()`, `list(a)` ou `a[:]`.
 - Usage : ✅ partager volontairement un état (accumulateur passé à une fonction) · ❌ modifier une donnée reçue en argument : copier d'abord, ou renvoyer une nouvelle liste.
@@ -242,6 +248,7 @@ len(sirens)     # → 2
 - Niveau : 2
 - Profils : data, web
 - Prérequis : collections-alias-pas-de-copie
+- Mots-clés : référence
 - Définition : `copy()` copie le conteneur mais partage ses éléments ; `copy.deepcopy()` copie aussi tout ce qu'il contient.
 - Contexte : Une copie superficielle suffit pour une liste de chaînes ou de nombres, qui ne se modifient pas. Dès que les éléments sont eux-mêmes modifiables (listes, dicts), copie et original partagent ces éléments. `deepcopy` duplique récursivement : plus sûr, mais plus lent sur de gros volumes (≈ `structuredClone` en JS).
 - Usage : ✅ `copy()` pour une liste ou un dict de valeurs simples, `deepcopy` pour une config imbriquée qu'on va modifier · ❌ `deepcopy` par réflexe dans une boucle sur des milliers d'annonces : coûteux.
@@ -278,6 +285,7 @@ a[0]            # → ["x"]
 - Niveau : 2
 - Profils : débutant
 - Prérequis : collections-set-unicite
+- Mots-clés : set, annotation de type
 - Définition : `{}` crée un dict vide, pas un set : un set vide s'écrit `set()`.
 - Contexte : Les accolades servent aux deux types : `{1, 2}` est un set, `{"a": 1}` un dict, et `{}` est réservé au dict, plus ancien. L'erreur ne se voit qu'au premier appel d'une méthode de set. Même confusion possible dans les annotations : `set[str]` pour le type, `set()` pour la valeur.
 - Usage : ✅ `set()` pour tout set vide, `{…}` seulement avec des éléments · ❌ `{}` en pensant « collection vide » : c'est toujours un dict.
@@ -313,6 +321,7 @@ sorted(vus)              # → ["A1", "B2"]
 - Profils : data
 - Prérequis : collections-set-unicite
 - Voir aussi : dictionnaires-vues-ensemblistes
+- Mots-clés : set, itérable, Counter
 - Définition : `|` union, `&` intersection, `-` différence et `^` différence symétrique comparent deux ensembles en une opération.
 - Contexte : Ces opérateurs renvoient un nouveau set ; les méthodes `union`, `intersection`… font pareil et acceptent en plus n'importe quel itérable. Bien plus rapides et lisibles qu'une double boucle pour comparer deux extractions : SIREN apparus, disparus, communs. `<=` teste l'inclusion.
 - Usage : ✅ comparer deux jours d'annonces, vérifier que des champs obligatoires sont présents · ❌ besoin des doublons ou de l'ordre : passer par des listes et `Counter`.
@@ -349,6 +358,7 @@ requis.issubset(["siren", "date"])  # → True
 - Profils : data
 - Prérequis : dictionnaires-creer
 - Voir aussi : collections-set-unicite
+- Mots-clés : hashable
 - Définition : `list(dict.fromkeys(seq))` retire les doublons en gardant l'ordre de première apparition.
 - Contexte : Un dict garde l'ordre d'insertion et ses clés sont uniques : `dict.fromkeys` crée une clé par élément (valeur `None`), puis `list` récupère les clés. C'est l'idiome standard, en temps linéaire. Les éléments doivent être hashables. Pour dédoublonner des enregistrements selon un champ, un dict `{champ: enregistrement}` garde le dernier vu.
 - Usage : ✅ dédoublonner des SIREN dans l'ordre de lecture · ❌ ordre sans importance : `set` suffit.
@@ -387,6 +397,7 @@ derniere = {a["siren"]: a for a in annonces}
 - Profils : data, expert
 - Prérequis : collections-set-unicite
 - Voir aussi : classes-dataclass-frozen, hachage-hash-builtin-instable
+- Mots-clés : hash, frozenset
 - Définition : Seuls les objets hashables (`str`, nombres, `tuple` d'objets hashables, `frozenset`) peuvent être clés de dict ou éléments de set.
 - Contexte : Un dict et un set rangent leurs éléments selon leur hash, calculé une fois à l'insertion. Si l'objet pouvait changer, son hash changerait et on ne le retrouverait plus : listes, dicts et sets sont donc refusés avec `TypeError: unhashable type`. Pour une clé composée, on convertit en tuple ; pour un set dans un set, en `frozenset`.
 - Usage : ✅ convertir une ligne (`list`) en `tuple` pour la dédoublonner ou l'utiliser comme clé · ❌ utiliser un objet modifiable comme clé « parce que ça marche » : c'est refusé, à juste titre.
@@ -423,6 +434,7 @@ frozenset({1, 2}) in {frozenset({2, 1})}
 - Profils : data
 - Prérequis : listes-sorted-key
 - Voir aussi : classes-dataclass-order
+- Mots-clés : clé de tri, tri stable, heapq
 - Définition : Une `key` qui renvoie un tuple trie sur plusieurs critères dans l'ordre ; un signe `-` inverse un critère numérique seul.
 - Contexte : Les tuples se comparent élément par élément : le 2e critère ne départage qu'en cas d'égalité sur le 1er. Le `-` ne marche que sur un nombre ; pour inverser une chaîne seule, on trie en deux passes, car le tri de Python est stable. `sorted` renvoie une nouvelle liste, `list.sort` trie sur place et renvoie `None`. Pas de comparateur `(a, b) => …` comme en JS : une clé.
 - Usage : ✅ classement par volume puis par nom, tri de lignes avant export · ❌ seulement les N premiers d'une grande liste : `heapq.nlargest`.
@@ -464,6 +476,7 @@ r = sorted(r, key=lambda x: x[1])
 - Profils : data
 - Prérequis : listes-sorted-key
 - Voir aussi : dictionnaires-defaultdict-grouper
+- Mots-clés : itérateur, Counter, defaultdict
 - Définition : `itertools.groupby` regroupe les éléments **consécutifs** de même clé ; l'entrée doit donc être triée sur cette clé.
 - Contexte : `groupby` renvoie des paires `(clé, groupe)` où le groupe est un itérateur, épuisé dès qu'on passe au groupe suivant : on le consomme tout de suite (`list(g)`). Le `key=` du tri et celui de `groupby` doivent être identiques. Pour seulement compter, `Counter` est plus simple ; `groupby` sert quand on veut les éléments de chaque groupe.
 - Usage : ✅ regrouper des annonces triées par tribunal ou par jour · ❌ simple comptage : `Counter` ; données non triées et volumineuses : `defaultdict(list)` en un passage.

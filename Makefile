@@ -114,5 +114,5 @@ cards-validate:
 # --delete ne peut retirer que nos propres cartes. sync n'envoie que les fichiers modifiés.
 cards-publish: cards-validate
 	aws s3 sync learning/ s3://$(CARDS_BUCKET)/sources/data-platform/ \
-	  --exclude "*" --include "cartes-*.md" --delete \
+	  --exclude "*" --include "cartes-*.md" --include "glossaire-*.md" --delete \
 	  --profile $(PUBLISH_PROFILE) --region eu-west-3

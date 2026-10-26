@@ -17,6 +17,7 @@ IA · LLM : appel, bedrock, coûts, production (format spec v3 de revision-pwa).
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : LLM, token, rôle IAM, SigV4
 - Définition : Bedrock expose des modèles de plusieurs fournisseurs derrière l'API AWS `bedrock-runtime` : pas de GPU à gérer, facturation au token, accès par IAM.
 - Contexte : On appelle un modèle comme n'importe quel service AWS : SDK ou CLI, signature SigV4, rôle IAM de la Lambda, aucune clé d'API du fournisseur. Deux plans distincts : `bedrock` (lister les modèles, créer des jobs) et `bedrock-runtime` (inférer). L'ID du modèle change à chaque version : le garder en variable Terraform, jamais en dur dans le code.
 - Usage : ✅ LLM dans un pipeline AWS (Lambda, Step Functions) avec IAM, VPC et CloudTrail déjà en place · ❌ besoin d'un modèle absent du catalogue Bedrock : API du fournisseur, avec gestion de la clé.
@@ -57,6 +58,7 @@ aws bedrock list-foundation-models \
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : llm-bedrock-api-aws
+- Mots-clés : Bedrock, inférence, région AWS
 - Définition : Un profil d'inférence interrégional (`eu.`, `us.`, `apac.`, `global.`) devant l'ID du modèle répartit les appels entre plusieurs régions.
 - Contexte : Les modèles récents ne s'appellent souvent à la demande que via un profil : l'ID de base seul est refusé. La requête part de la région source (celle du client) et Bedrock la route vers une région de destination du profil, selon la charge. Le profil fait gagner du débit ; il ne coûte pas plus cher que la région source, mais change l'endroit où la donnée est traitée.
 - Usage : ✅ appels à la demande d'un modèle récent, absorber les pics de charge · ❌ contrainte stricte de résidence sans vérifier les régions de destination du profil.
@@ -90,6 +92,7 @@ aws bedrock list-inference-profiles \
 - Profils : débutant, data, web
 - Prérequis : llm-bedrock-api-aws
 - Voir aussi : llm-stopreason-reponse-tronquee
+- Mots-clés : Bedrock, tool use
 - Définition : `Converse` est l'API unifiée de Bedrock : mêmes `messages` en entrée et même enveloppe de réponse, quel que soit le modèle appelé.
 - Contexte : Changer de modèle ne change pas le code de lecture : la réponse a toujours `output.message.content` (liste de blocs), `stopReason`, `usage` et `metrics`. Le contenu est une liste, pas une chaîne : un bloc peut être du texte, un appel d'outil (`toolUse`) ou autre. Lire `content[0]["text"]` sans vérifier le type de bloc casse dès que le modèle appelle un outil.
 - Usage : ✅ tout appel texte, pour pouvoir changer de modèle sans réécrire le parsing · ❌ paramètre propre à un modèle absent de Converse : `additionalModelRequestFields`, ou `InvokeModel` au format natif.
@@ -134,6 +137,7 @@ content[1]["text"]  # ❌ KeyError
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : llm-converse-lire-reponse
+- Mots-clés : Converse, token, guardrail, tool use
 - Définition : `stopReason` dit pourquoi le modèle s'est arrêté ; `"max_tokens"` signifie que `inferenceConfig.maxTokens` a coupé la réponse en cours.
 - Contexte : Les valeurs utiles : `end_turn` (fin normale), `max_tokens` (plafond atteint), `tool_use` (le modèle veut un outil), `stop_sequence`, `guardrail_intervened`, `content_filtered`. Une sortie coupée a l'air normale : seul `stopReason` le dit. Dans un pipeline, on le teste avant tout parsing, et on journalise la valeur pour savoir s'il faut monter `maxTokens` ou raccourcir la demande.
 - Usage : ✅ tester `stopReason` à chaque appel de pipeline, avant de lire le contenu · ❌ se fier à la longueur ou à l'aspect du texte pour détecter une coupure.
@@ -176,6 +180,7 @@ lire(resp)       # ❌ RuntimeError
 - Type : choisir
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : LLM, token
 - Définition : `inferenceConfig.temperature` règle le hasard du choix des tokens : proche de 0 pour extraire ou classer, plus haute pour rédiger.
 - Contexte : À chaque token, le modèle a une distribution de probabilités ; une température basse la resserre sur le plus probable, une haute laisse passer des choix moins attendus. Pour une extraction BODACC, on veut la même réponse pour la même annonce : température 0. On règle `temperature` ou `topP`, rarement les deux : certains modèles refusent les deux à la fois.
 - Usage : ✅ 0 pour extraction, classification, JSON ; 0,5 à 0,8 pour résumé ou rédaction · ❌ monter la température pour « corriger » une mauvaise extraction : revoir le prompt.
@@ -206,6 +211,7 @@ lire(resp)       # ❌ RuntimeError
 - Niveau : 1
 - Profils : débutant, data, ops
 - Voir aussi : llm-cache-par-empreinte, llm-inference-par-lot
+- Mots-clés : token, prompt, Bedrock, run
 - Définition : Coût = tokens d'entrée × prix d'entrée + tokens de sortie × prix de sortie, estimé sur le vrai volume quotidien avant de lancer.
 - Contexte : Le fournisseur facture séparément entrée et sortie, et renvoie les deux comptes dans la réponse (`usage` chez Bedrock). La sortie coûte en général plusieurs fois plus cher par token, mais l'entrée se répète à chaque appel : consignes et exemples sont payés sur chaque annonce. Les prix changent : on les garde en configuration et on mesure les tokens sur un échantillon réel.
 - Usage : ✅ chiffrer un run avant de le lancer, comparer deux prompts ou deux modèles · ❌ extrapoler depuis une annonce courte de fixture : mesurer sur une vraie journée.
@@ -245,6 +251,7 @@ c_out > c_in     # → True  (4× moins de tokens)
 - Type : choisir
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : LLM, regex
 - Définition : On traite par règles (regex, champs structurés) tout ce qui est sûr, et on n'envoie au LLM que le reste.
 - Contexte : Une regex coûte zéro, répond en microsecondes et donne toujours le même résultat ; un appel LLM coûte, prend des secondes et varie. Le LLM sert de repli pour la longue traîne des formats imprévus. On trace la voie utilisée (`regle` ou `llm`) par enregistrement : on mesure ainsi la part de chaque voie et on repère les règles à ajouter.
 - Usage : ✅ champ au format régulier (SIREN, date, code postal), LLM pour le texte ambigu · ❌ envoyer tout au LLM « pour simplifier » ; empiler des regex fragiles sur du texte vraiment libre.
@@ -292,6 +299,7 @@ extraire("SIREN illisible")[1]  # → "llm"
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : llm-profil-inference-prefixe
+- Mots-clés : profil d'inférence, prompt, RGPD, SCP
 - Définition : Bedrock n'utilise pas les prompts pour entraîner les modèles ; la région de traitement dépend de l'ID ou du profil appelé.
 - Contexte : Un ID de base reste dans la région de l'appel ; un profil géographique (`eu.`) reste dans sa zone ; `global.` peut aller dans toute région commerciale. La liste des destinations peut dépendre de la région source : la doc AWS demande de la vérifier avec `GetInferenceProfile` plutôt que de se fier au préfixe. Pour des données BODACC nominatives (dirigeants, RGPD), on choisit `eu.` au minimum.
 - Usage : ✅ choisir le profil d'après la contrainte de résidence, vérifier ses destinations depuis chaque région source · ❌ `global.` pour des données personnelles soumises à une contrainte UE.
@@ -337,6 +345,7 @@ aws bedrock get-inference-profile \
 - Profils : data, ops
 - Prérequis : llm-converse-lire-reponse
 - Voir aussi : AWS/lambda-timeout-15-minutes
+- Mots-clés : Lambda, boto3, retry, Step Functions
 - Définition : Une Lambda qui appelle un LLM attend souvent plusieurs secondes : son `timeout` doit couvrir l'appel, ses retries et la marge.
 - Contexte : Le timeout se règle par fonction, de 1 s à 900 s. Un appel LLM dure de une à plusieurs dizaines de secondes selon la longueur de sortie. Le client boto3 a aussi son propre `read_timeout` (60 s par défaut) : s'il dépasse le timeout Lambda, c'est la Lambda qui coupe, sans exception attrapable. On aligne donc les deux, et on facture la durée réelle.
 - Usage : ✅ timeout ≥ durée d'appel × tentatives, mesuré sur de vraies annonces · ❌ appels longs en chaîne dans une seule Lambda : Step Functions ou inférence par lot.
@@ -378,6 +387,7 @@ budget <= 60       # → True
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : Data engineering/ingestion-retry-backoff-exponentiel
+- Mots-clés : Bedrock, quota, backoff exponentiel, jitter
 - Définition : Bedrock limite requêtes et tokens par minute ; au-delà, `ThrottlingException`, à retenter avec un délai croissant et aléatoire (backoff exponentiel avec jitter).
 - Contexte : Les quotas sont par compte, région et modèle (RPM, TPM ; RPM seul pour les modèles d'embedding). On ne retente que le transitoire : `ThrottlingException`, `ServiceUnavailableException`, `InternalServerException`, `ModelTimeoutException`. Une `ValidationException` ou `AccessDeniedException` échouera pareil : la retenter ne fait que consommer du quota. boto3 sait retenter seul via `Config(retries={"mode": "adaptive"})`.
 - Usage : ✅ appels à la demande en parallèle (fan-out Lambda, SQS) · ❌ gros volume sans besoin de temps réel : inférence par lot, hors quotas à la demande.
@@ -425,6 +435,7 @@ retenter("ValidationException")  # → False
 - Niveau : 2
 - Profils : web, ops
 - Voir aussi : extraction-injection-de-prompt
+- Mots-clés : Bedrock, Converse, donnée personnelle, injection de prompt
 - Définition : Un guardrail Bedrock filtre sujets interdits, contenus et données personnelles, sur le prompt comme sur la réponse du modèle.
 - Contexte : On crée le guardrail (politiques, version) puis on le référence dans l'appel `Converse` via `guardrailConfig`. S'il bloque, la réponse arrive quand même, avec `stopReason: "guardrail_intervened"` et le message configuré : pas d'exception. `ApplyGuardrail` évalue un texte sans appeler de modèle. Il s'ajoute à l'appel : coût et latence en plus, facturés à part.
 - Usage : ✅ application exposée à des utilisateurs, masquage de PII en sortie · ❌ seule protection des données : minimiser en amont ; seule défense contre l'injection : valider la sortie.
@@ -464,6 +475,7 @@ utile(resp)    # → False
 - Niveau : 2
 - Profils : data
 - Voir aussi : llm-prompt-caching-prefixe-stable
+- Mots-clés : LLM, SHA-256, backfill, rejeu
 - Définition : La clé de cache est un hash de toutes les entrées de l'appel LLM ; un rejeu relit le résultat au lieu de repayer.
 - Contexte : Un pipeline data se rejoue souvent : correction d'un bug en aval, backfill, reprise après échec. Sans cache, chaque rejeu repaie tous les appels et peut donner des réponses différentes. La clé (SHA-256 du modèle, de la version du prompt, des paramètres et du texte) pointe vers la réponse stockée, par exemple dans S3 sous `cache/<clé>.json`.
 - Usage : ✅ backfills, rejeux, mise au point en aval sans repayer l'amont · ❌ clé partielle (texte seul) : un changement de prompt servirait d'anciennes réponses.
@@ -499,6 +511,7 @@ k1 == cle("m1", "v2", "SAS ALPHA")
 - Profils : data, expert
 - Prérequis : llm-cout-estimer-un-run
 - Voir aussi : llm-cache-par-empreinte
+- Mots-clés : token, prompt, inférence par lot, TTL
 - Définition : Un `cachePoint` marque la fin d'un préfixe à mettre en cache ; les appels qui partagent ce préfixe le relisent moins cher et plus vite.
 - Contexte : Le cache porte sur un préfixe identique, traité dans l'ordre `tools` → `system` → `messages` : tout ce qui varie va après le `cachePoint`. Durée de vie de 5 minutes (1 h sur certains modèles), prolongée à chaque lecture. L'écriture en cache peut coûter plus qu'une entrée normale, la lecture beaucoup moins. Avec cache, `inputTokens` ne compte que la part non cachée. Non supporté en inférence par lot.
 - Usage : ✅ mêmes longues règles d'extraction envoyées à chaque annonce, à la demande · ❌ préfixe qui change à chaque appel, appels espacés de plus que le TTL.
@@ -539,6 +552,7 @@ total          # → 2150
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : llm-cout-estimer-un-run
+- Mots-clés : JSON Lines, rôle de service, sortie structurée, prompt caching
 - Définition : L'inférence par lot lit un JSONL de requêtes dans S3 et écrit les réponses dans S3, en asynchrone, à prix réduit.
 - Contexte : La page de prix Bedrock annonce l'inférence par lot 50 % moins chère que la demande, pour les modèles éligibles. Chaque ligne porte un `recordId` et un `modelInput` ; le job tourne sous un rôle de service qui lit et écrit les préfixes S3. Résultat en minutes ou heures, pas en secondes. Avec le format Converse, pas d'appel d'outil (`toolConfig` → erreur 400) ; la sortie structurée, elle, est supportée.
 - Usage : ✅ classer chaque nuit les ~32 000 annonces de la veille, réindexer un corpus · ❌ réponse attendue par un utilisateur ou une API : appel à la demande.

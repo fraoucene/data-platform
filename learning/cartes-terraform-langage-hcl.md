@@ -18,6 +18,7 @@ Terraform · Langage HCL : blocs, boucles, chaînes, data, expressions, provider
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : langage-hcl-type-ressource-nom-api, state-backend-contenu-etat
+- Mots-clés : provider, état, dépendance implicite, data source
 - Définition : Un bloc `resource` décrit un objet réel à créer ; son adresse `type.nom` l'identifie dans le state et dans les références.
 - Contexte : Le premier label est le type fourni par le provider (`aws_s3_bucket`), le second un nom local libre, jamais envoyé à AWS : le vrai nom du bucket est l'argument `bucket`. Lire `aws_s3_bucket.raw.id` ailleurs crée une dépendance implicite : Terraform crée le bucket d'abord. Le state associe l'adresse à l'ID réel de l'objet ; l'adresse est donc son identité.
 - Usage : ✅ tout objet que Terraform crée et gère (bucket, rôle, Lambda) · ❌ objet créé ailleurs qu'on veut seulement lire : bloc `data`.
@@ -56,6 +57,7 @@ resource "aws_s3_bucket_versioning" "raw" {
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : variables-declarer-valider
+- Mots-clés : variable Terraform, module Terraform
 - Définition : `locals` nomme des valeurs calculées une fois et réutilisées dans le module (≈ des `const` du fichier), lues via `local.x`.
 - Contexte : Un local évite de répéter un préfixe ou des tags dans chaque ressource. Ce n'est pas une entrée : l'appelant ne peut pas le changer, contrairement à une `variable`. Un local peut lire des variables, d'autres locals et des attributs de ressources. Plusieurs blocs `locals` peuvent coexister, mais chaque nom reste unique dans le module.
 - Usage : ✅ préfixe de nommage, tags communs, expression répétée · ❌ valeur que l'appelant doit pouvoir changer : `variable`.
@@ -100,6 +102,7 @@ resource "aws_s3_bucket" "logs" {
 - Profils : débutant, ops
 - Prérequis : langage-hcl-locals-nommer-calcul
 - Voir aussi : state-backend-nom-sans-environnement
+- Mots-clés : locals, tfvars, compte AWS, rôle IAM, import
 - Définition : Tous les noms passent par `local.prefix` (`revision-pwa-<env>`), pour faire cohabiter dev et prod dans le même compte sans collision.
 - Contexte : Un `locals` est une constante calculée du module (≈ `const` en tête de fichier) : on change l'environnement à un seul endroit, la variable `environment` du `.tfvars`. Le compte AWS est partagé avec d'autres projets : le préfixe évite aussi les conflits de noms avec eux. Mais préfixer les noms ne sépare pas les déclencheurs : les deux environnements écoutent le même dépôt.
 - Usage : ✅ tout nom de ressource (rôle, projet, groupe de logs, bucket) · ❌ valeur qui change par env sans être un nom (taille, rétention) : variable dédiée dans le `.tfvars`.
@@ -134,6 +137,7 @@ name = "/aws/codebuild/${local.prefix}-deploy"
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : root module, module Terraform, état, Secrets Manager, CI
 - Définition : `output` expose une valeur du module à l'appelant ou au terminal ; `sensitive = true` la masque à l'affichage.
 - Contexte : Dans le module racine, les outputs s'affichent après `apply` et se relisent avec `terraform output`, pratique pour passer un nom de bucket à un script ou à la CI (`output -raw`). Dans un module enfant, ils sont la seule chose que l'appelant voit. `sensitive` n'est qu'un masque d'affichage : la valeur reste en clair dans le state, d'où un bucket d'état chiffré et à accès restreint.
 - Usage : ✅ nom ou ARN de bucket à transmettre à la CI ou au module appelant · ❌ protéger un secret : le state le contient quand même, le garder dans Secrets Manager.
@@ -173,6 +177,7 @@ output "token" {
 - Profils : débutant, ops
 - Prérequis : langage-hcl-resource-adresse
 - Voir aussi : langage-hcl-s3-object-data-ou-resource, state-backend-import-existant
+- Mots-clés : CodeCommit, ARN, plan
 - Définition : Un bloc `data` lit une ressource existante sans la gérer : ici le dépôt CodeCommit, créé à la main, dont on lit l'ARN et l'URL.
 - Contexte : Terraform interroge AWS à chaque `plan` et expose les attributs, mais ne crée, ne modifie ni ne détruit jamais l'objet : `terraform destroy` laisse le dépôt et son code intacts. C'est voulu pour le code source, qui doit survivre à l'infra. Contrepartie : la ressource doit exister avant le premier `plan`, sinon erreur.
 - Usage : ✅ ressource créée ailleurs (dépôt, zone DNS, VPC partagé), politiques gérées AWS · ❌ ressource propre au projet : `resource`, pour que Terraform la crée et la suive.
@@ -211,6 +216,7 @@ aws codecommit get-repository \
 - Profils : ops, data
 - Prérequis : langage-hcl-data-lire-sans-gerer
 - Voir aussi : langage-hcl-s3-object-body-content-type
+- Mots-clés : data source, boto3, dérive, état
 - Source : data-platform · S1-07
 - Définition : `resource "aws_s3_object"` écrit un objet et le gère ; `data "aws_s3_object"` lit un objet déposé par un autre outil, sans jamais le modifier.
 - Contexte : Même type, deux rôles. Le pointeur `current.json` est écrit par `make lambdas-publish` (Python, boto3) : Terraform ne fait que le lire, à chaque plan. Le data source expose `body`, `etag`, `version_id`, `content_type`, `metadata`, `last_modified`. Un objet lu n'est pas dans les ressources de l'état : `make down` ne le supprime pas.
@@ -240,6 +246,7 @@ data "aws_s3_object" "lambda_pointer" {
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : provider, API, registre Terraform
 - Source : data-platform · S1-08
 - Définition : Le type d'une ressource AWS reprend l'objet de l'API en snake_case, préfixé du service : `PutFunctionEventInvokeConfig` → `aws_lambda_function_event_invoke_config`.
 - Contexte : On ne mémorise pas ces noms : on part du besoin (« retries d'une Lambda asynchrone »), la doc AWS donne la commande (`aws lambda put-function-event-invoke-config`), le registre ou le schéma local donne la ressource. Les attributs suivent la même règle (`MaximumRetryAttempts` → `maximum_retry_attempts`). Exceptions fréquentes : un objet de l'API éclaté en plusieurs ressources (bucket S3 : `aws_s3_bucket_versioning`, `…_lifecycle_configuration`).
@@ -268,6 +275,7 @@ data "aws_s3_object" "lambda_pointer" {
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : plan, for_each
 - Définition : Une `list` est une suite ordonnée de valeurs d'un même type, lue par index à partir de 0 (≈ `string[]` en TS).
 - Contexte : Un index hors bornes ne renvoie pas `undefined` : `plan` échoue avec `Invalid index`. Il n'y a pas d'index négatif : le dernier élément se lit `l[length(l) - 1]`. `slice(l, début, fin)` donne une tranche (fin exclue), `contains(l, v)` teste la présence, `length(l)` la taille.
 - Usage : ✅ suite ordonnée (jours d'export, sous-réseaux) · ❌ éléments uniques à passer à `for_each` : `set` ; accès par nom : `map`.
@@ -309,6 +317,7 @@ locals {
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : plan
 - Définition : Une `map` associe des clés chaîne à des valeurs d'un même type, lues par `m["clé"]` (≈ `Record<string, T>`).
 - Contexte : Une clé absente ne renvoie pas `undefined` : `plan` échoue avec `Invalid index`. Pour une clé facultative, `lookup(m, k, défaut)` ou `try(m[k], défaut)`. Les clés sont toujours des chaînes, même écrites `"75"` pour un département. Toutes les valeurs ont un même type ; des attributs de types différents relèvent d'un `object`.
 - Usage : ✅ table de correspondance (département → tribunal, env → rétention) · ❌ attributs de types différents : `object` ; liste de noms sans valeur : `set`.
@@ -349,6 +358,7 @@ locals {
 - Niveau : 1
 - Profils : débutant, ops, data
 - Voir aussi : langage-hcl-jsonencode-echappement, langage-hcl-for-jsondecode-une-fois
+- Mots-clés : HCL, JSON, manifest
 - Source : data-platform · S1-07
 - Définition : `jsondecode(chaîne)` transforme un texte JSON en valeur HCL (objet, tuple, nombre, booléen), dont on lit ensuite les champs avec `.` (≈ `JSON.parse`).
 - Contexte : L'inverse de `jsonencode`. Les types JSON sont conservés : un nombre reste un nombre, `true` un booléen. Un champ absent lève `Unsupported attribute` au plan, comme une propriété manquante en TS strict ; `lookup(obj, "champ", défaut)` ou `try(obj.champ, défaut)` donnent une valeur de repli. Une chaîne vide n'est pas du JSON : `Call to function "jsondecode" failed: EOF`.
@@ -379,6 +389,7 @@ jsondecode("")
 - Profils : débutant, ops
 - Prérequis : langage-hcl-list-index
 - Voir aussi : langage-hcl-for-map
+- Mots-clés : for_each, locals
 - Définition : `[for x in coll : expr]` transforme une collection en liste (≈ `.map()` en TS), avec un `if` final optionnel pour filtrer.
 - Contexte : L'expression ne modifie rien : elle produit une nouvelle valeur, souvent rangée dans un local. Le `if` final joue le rôle de `.filter()`. Sur une map ou un objet, deux variables `for k, v in m` donnent la clé et la valeur. Le résultat est une liste : pour l'utiliser dans `for_each`, le passer à `toset()`.
 - Usage : ✅ dériver des noms, filtrer une entrée · ❌ créer plusieurs ressources : `for_each` sur la ressource ; logique longue : la découper en plusieurs locals.
@@ -418,6 +429,7 @@ locals {
 - Profils : débutant, ops
 - Prérequis : langage-hcl-list-index
 - Voir aussi : langage-hcl-for-each-cle, variables-set-sans-ordre
+- Mots-clés : for_each
 - Définition : `toset` convertit une liste en ensemble sans doublon ni ordre propre, la forme attendue par `for_each` pour une liste de chaînes.
 - Contexte : Un set n'a pas d'index : il se parcourt avec `for` ou se reconvertit avec `tolist`. Terraform l'affiche trié, mais le code ne doit pas compter sur un ordre. Comme une liste, un set n'a qu'un seul type d'élément : à la conversion, Terraform choisit un type commun pour tous les éléments.
 - Usage : ✅ passer une liste de noms à `for_each`, dédoublonner une entrée · ❌ ordre significatif ou accès par position : garder la `list`.
@@ -458,6 +470,7 @@ resource "aws_s3_object" "export" {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : langage-hcl-condition-type-commun, variables-number-zero-tete
+- Mots-clés : interpolation
 - Définition : Terraform convertit automatiquement entre chaîne, nombre et booléen selon le type attendu (`"5"` accepté pour un argument `number`).
 - Contexte : Un nombre interpolé dans `"${…}"` devient une chaîne ; `"true"` passé à un `bool` devient booléen. `tonumber`, `tostring` et `tobool` forcent la conversion et échouent si elle est impossible, au plan. Ces conversions servent les arguments et les gabarits ; les opérateurs, eux, ne suivent pas forcément la même règle.
 - Usage : ✅ composer un nom à partir de valeurs typées, lire un nombre venu d'une chaîne avec `tonumber` · ❌ comparer des valeurs de types différents sans conversion explicite.
@@ -495,6 +508,7 @@ locals {
 - Profils : ops
 - Prérequis : langage-hcl-conversion-types
 - Voir aussi : variables-ternaire-type-commun
+- Mots-clés : count
 - Définition : `cond ? a : b` choisit une valeur (≈ ternaire TS) ; Terraform convertit les deux branches vers un type commun, ou échoue.
 - Contexte : Terraform type l'expression avant de connaître la condition : si aucune conversion ne réunit les deux branches, le plan échoue, même pour la branche jamais choisie. Deux usages courants : une valeur qui dépend de l'env, et `count = var.x ? 1 : 0` pour une ressource facultative. Une expression longue se coupe à l'intérieur de parenthèses.
 - Usage : ✅ valeur par env (rétention, taille), ressource facultative · ❌ plus de deux cas : une `map` indexée par env (`local.retention[var.env]`).
@@ -533,6 +547,7 @@ resource "aws_s3_bucket" "logs" {
 - Profils : ops
 - Prérequis : langage-hcl-map-cle
 - Voir aussi : langage-hcl-default-tags
+- Mots-clés : default_tags, provider, tag AWS
 - Définition : `merge` fusionne plusieurs maps ou objets en un seul (≈ `{ ...a, ...b }`), pratique pour compléter des tags communs.
 - Contexte : Les arguments sont lus de gauche à droite : en cas de clé commune, le plus à droite écrase. Un argument `null` est ignoré. Pour des tags identiques sur toutes les ressources, le provider AWS offre `default_tags` dans son bloc `provider`, ce qui évite de répéter `merge` partout.
 - Usage : ✅ ajouter des tags propres à une ressource, surcharger des valeurs par défaut · ❌ mêmes tags partout : `default_tags` du provider.
@@ -563,6 +578,7 @@ locals {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : variables-regex-ancree, langage-hcl-try-data-source
+- Mots-clés : validation, regex
 - Définition : `can(expr)` renvoie `true` si l'expression s'évalue sans erreur, sinon `false` : la forme idéale d'une condition de `validation`.
 - Contexte : Beaucoup de fonctions échouent au lieu de renvoyer `false` : `regex` sans correspondance, `tonumber("abc")`, un index absent. `can` capture l'erreur et renvoie un booléen ; `try(expr, repli)` renvoie la première expression qui réussit. Ils servent à tester des valeurs, pas à masquer un code mal écrit.
 - Usage : ✅ condition de `validation` sur un format (`regex`), lecture tolérante d'une donnée facultative avec `try` · ❌ masquer une erreur de logique : corriger l'expression.
@@ -602,6 +618,7 @@ variable "account_id" {
 - Niveau : 2
 - Profils : ops
 - Prérequis : langage-hcl-for-liste, langage-hcl-map-cle
+- Mots-clés : for_each
 - Définition : `{for x in coll : clé => valeur}` construit une map à partir d'une collection (≈ `Object.fromEntries`).
 - Contexte : Les accolades et `=>` donnent une map au lieu d'une liste. C'est la forme typique pour préparer un `for_each` à partir d'une liste d'objets, indexée par un champ stable (le nom du bucket), plutôt que par une position. Un `if` final filtre comme dans la version liste.
 - Usage : ✅ indexer une liste d'objets par un champ unique, préparer un `for_each` · ❌ simple transformation de valeurs : `[for …]`.
@@ -646,6 +663,7 @@ locals {
 - Profils : ops
 - Prérequis : langage-hcl-resource-adresse
 - Voir aussi : langage-hcl-for-each-cle
+- Mots-clés : état, splat, for_each
 - Définition : `count = n` crée n instances d'une ressource, adressées `res[0]`, `res[1]`… et distinguées par `count.index`.
 - Contexte : Chaque instance est identifiée par sa **position** dans le state, pas par sa valeur. C'est parfait pour « 0 ou 1 instance » (`count = var.x ? 1 : 0`) ou N copies identiques. Le splat `res[*].attr` lit l'attribut de toutes les instances d'un coup.
 - Usage : ✅ ressource facultative, N copies identiques · ❌ une instance par élément d'une liste qui évolue : `for_each`.
@@ -687,6 +705,7 @@ resource "aws_s3_object" "export" {
 - Profils : ops
 - Prérequis : langage-hcl-resource-adresse, langage-hcl-map-cle
 - Voir aussi : langage-hcl-count-index, state-backend-for-each-cycles-de-vie
+- Mots-clés : état, moved, known after apply
 - Définition : `for_each` crée une instance par clé d'une map ou d'un set, adressée `res["clé"]` : retirer un élément ne touche que lui.
 - Contexte : `each.key` donne la clé, `each.value` la valeur (égale à la clé pour un set). Les clés doivent être connues au plan : pas d'ID généré à l'apply, sinon `Invalid for_each argument`. Passer de `count` à `for_each` change les adresses : prévoir des blocs `moved` pour ne rien recréer.
 - Usage : ✅ une ressource par élément nommé (buckets, objets par jour, rôles) · ❌ clés calculées à l'apply ; simple « 0 ou 1 » : `count`.
@@ -742,6 +761,7 @@ resource "aws_s3_bucket_versioning" "this" {
 - Profils : ops
 - Prérequis : langage-hcl-for-each-cle, langage-hcl-data-lire-sans-gerer
 - Voir aussi : langage-hcl-for-jsondecode-une-fois
+- Mots-clés : data source, splat
 - Source : data-platform · S1-07
 - Définition : Un data source en `for_each` se lit par clé (`data.aws_s3_object.lambda_pointer["ingest-bodacc"]`) ; sans clé, `Missing resource instance key`.
 - Contexte : Le bloc devient une map d'instances : `data.aws_s3_object.lambda_pointer` seul est cette map, pas un objet. Dans un autre bloc en `for_each` sur la même map, `[each.key]` relie les instances deux à deux. Pour toutes les valeurs : `values(...)` donne une liste, sur laquelle le splat `[*]` marche. L'erreur sans clé tombe dès `terraform validate`.
@@ -772,6 +792,7 @@ output "o" {
 - Profils : ops
 - Prérequis : langage-hcl-for-each-cle
 - Voir aussi : langage-hcl-for-map
+- Mots-clés : locals, module Terraform, Lambda
 - Source : data-platform · S1-08
 - Définition : Boucler sur une map dédiée (`local.schedules`) plutôt que sur la map complète (`local.lambdas`) ne crée des ressources que pour les clés choisies.
 - Contexte : Les deux maps partagent leurs clés : dans la boucle, `module.lambda[each.key]` relie la planification à sa fonction. Ajouter une Lambda sans l'ajouter à `local.schedules` ne lui donne ni rôle ni planification. Une clé de `local.schedules` absente de `local.lambdas` échoue au plan avec `Invalid index` : la faute de frappe est vue avant tout déploiement.
@@ -807,6 +828,7 @@ output "noms" {
 - Niveau : 2
 - Profils : ops, data
 - Prérequis : langage-hcl-for-map, langage-hcl-jsondecode
+- Mots-clés : data source, locals, pointeur
 - Source : data-platform · S1-07
 - Définition : `{ for k, o in data.aws_s3_object.lambda_pointer : k => jsondecode(o.body) }` décode chaque pointeur une fois, dans un `local` réutilisable.
 - Contexte : `lambdas.tf` appelle `jsondecode(...body)` deux fois par fonction (`key`, `base64sha256`) : correct, mais répétitif. Un `local` construit une map nom → pointeur décodé (`local.pointers[each.key].key`), lisible dans `terraform console`. Les clés de la map viennent du `for_each` du data source, donc de `local.lambdas` : les deux restent alignées.
@@ -845,6 +867,7 @@ locals {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : langage-hcl-merge-tags, modules-providers-herites
+- Mots-clés : provider, tag AWS
 - Définition : `default_tags` dans le provider pose des tags sur toutes les ressources taggables, sans les répéter dans chaque `resource`.
 - Contexte : Le provider fusionne `default_tags` et les `tags` de la ressource dans l'attribut calculé `tags_all`, celui qui part réellement sur AWS. Les ressources de réglage (`aws_s3_bucket_versioning`…) n'ont pas de tags : seul le bucket les porte. Dans data-platform, `make plan` vérifie ensuite que chaque ressource taggable a bien ses tags (`check_tags.py`).
 - Usage : ✅ tags communs d'un root (`project`, `component`, `managed_by`) · ❌ tag propre à une seule ressource (`Name`) : dans son bloc `tags`.
@@ -891,6 +914,7 @@ resource "aws_s3_bucket" "this" {
 - Type : recette
 - Niveau : 2
 - Profils : ops
+- Mots-clés : provider, profil AWS, STS, compte AWS
 - Définition : `allowed_account_ids` dans le provider fait échouer Terraform si les credentials pointent sur un compte absent de la liste.
 - Contexte : Avec plusieurs profils AWS (perso, dev, prod), un mauvais `AWS_PROFILE` suffit à créer des ressources sur le mauvais compte. Le provider lit le compte des credentials (appel STS) dès sa configuration et s'arrête avant toute ressource. L'account id vient d'une variable validée par une regex à 12 chiffres, rangée dans `local.auto.tfvars` gitignoré. `forbidden_account_ids` fait l'inverse.
 - Usage : ✅ tout root qui écrit sur un compte précis (bootstrap, `infra/`) · ❌ dans un module réutilisable : le garde-fou va dans le root.
@@ -932,6 +956,7 @@ variable "account_id" {
 - Profils : ops
 - Prérequis : langage-hcl-output-exposer
 - Voir aussi : cli-output-json-jq, DevOps/jq-r-chaine-brute
+- Mots-clés : output, bootstrap, backend, Makefile
 - Définition : `terraform output -raw nom` affiche la valeur d'une sortie sans guillemets, prête pour une variable shell ou un Makefile.
 - Contexte : Les sorties sont le contrat du bootstrap : le root principal ne lit pas son état, on reporte `state_bucket` et `region` dans `backend.hcl`. `-raw` ne marche que pour une chaîne, un nombre ou un booléen : une liste ou un objet donne `Unsupported value for raw output`, il faut `-json` et `jq`. Les Makefiles s'en servent avec `$(shell …)` pour ne jamais taper un nom de bucket.
 - Usage : ✅ alimenter un script, un `aws s3 sync`, une variable Makefile (`SITE_BUCKET`) · ❌ sortie liste ou map : `-json`.
@@ -966,6 +991,7 @@ SITE_BUCKET ?= $(shell $(TF) output -raw site_bucket)
 - Niveau : 2
 - Profils : ops
 - Voir aussi : cli-required-version-fonctionnalite
+- Mots-clés : contrainte de version, verrou d'état, required_providers, init
 - Source : data-platform · S1-01
 - Définition : `required_version` dans le bloc `terraform {}` refuse toute CLI Terraform hors de la contrainte, dès `init`, avant de toucher l'état.
 - Contexte : Le code s'appuie sur des fonctionnalités récentes (validations croisées de variables en 1.9, verrou S3 natif `use_lockfile` en 1.10) : une CLI trop vieille échouerait plus loin, au pire moment. `>= 1.10` fixe un plancher, `~> 1.10` autorise tout 1.x depuis 1.10, `~> 1.10.0` bloque à 1.10.x. À ne pas confondre avec `required_providers`, qui contraint les providers.
@@ -1004,6 +1030,7 @@ terraform init
 - Niveau : 2
 - Profils : ops, data
 - Voir aussi : AWS/lambda-source-code-hash, DevOps/ci-cd-cle-hash-hexadecimal
+- Mots-clés : base64, sha256, hexadécimal, source_code_hash
 - Source : data-platform · S1-07
 - Définition : `filebase64sha256("x.zip")` rend le sha256 d'un fichier en base64, le format qu'attend `source_code_hash` ; `filesha256` le rend en hexadécimal.
 - Contexte : `base64sha256(file("x.zip"))` paraît équivalent, mais `file()` exige de l'UTF-8 : sur un zip, erreur `contents of "f.zip" are not valid UTF-8` (mesuré). Les fonctions `file…` hachent les octets bruts. La valeur est calculée au `plan`, sur le fichier présent à ce moment : construire le zip avant (`make lambdas-build`, puis `make plan`).
@@ -1042,6 +1069,7 @@ base64.b64encode(d).decode()
 - Profils : ops
 - Prérequis : langage-hcl-data-lire-sans-gerer
 - Voir aussi : langage-hcl-data-source-relu-chaque-plan, modules-depends-on-module
+- Mots-clés : data source, plan, pointeur, apply
 - Source : data-platform · S1-07
 - Définition : Un data source dont tous les arguments sont connus est lu pendant le `plan` : un objet absent fait échouer le plan, avant toute création.
 - Contexte : D'où l'ordre `bootstrap → lambdas-publish → plan → up`, réuni dans `make deploy`. Au tout premier déploiement d'une Lambda, son pointeur doit déjà exister. La lecture n'est reportée à l'`apply` que si un argument est inconnu au plan (référence à une ressource pas encore créée) ou si le data source dépend d'une ressource qui change.
@@ -1079,6 +1107,7 @@ terraform plan   # pointeur jamais publié
 - Profils : ops, data
 - Prérequis : langage-hcl-data-source-lu-au-plan
 - Voir aussi : AWS/lambda-source-code-hash
+- Mots-clés : data source, pointeur, source_code_hash, Lambda
 - Source : data-platform · S1-07
 - Définition : Terraform relit chaque data source à chaque `plan` : un pointeur republié change `s3_key` et `source_code_hash`, donc la fonction, sans toucher au code.
 - Contexte : Le code Terraform ne contient aucune version : il dit « déploie ce que désigne le pointeur ». Le plan affiche alors `~ update in-place` sur `aws_lambda_function`, ancienne et nouvelle clé côte à côte. Conséquence : deux `plan` du même commit peuvent différer si quelqu'un a publié entre-temps ; le dépôt seul ne dit plus ce qui sera déployé.
@@ -1110,6 +1139,7 @@ make plan
 - Profils : ops, data
 - Prérequis : langage-hcl-s3-object-data-ou-resource
 - Voir aussi : AWS/s3-contenttype-non-devine
+- Mots-clés : data source, Content-Type, état
 - Source : data-platform · S1-07
 - Définition : Le data source `aws_s3_object` ne remplit `body` que pour un `Content-Type` lisible : `text/*`, `application/json`, YAML, XML ; sinon `body` reste vide.
 - Contexte : Le provider refuse de charger du binaire dans l'état. Le test porte sur l'en-tête `Content-Type` de l'objet, jamais sur son extension : un `current.json` envoyé sans type reçoit `binary/octet-stream` de S3, et `body` est vide. D'où `ContentType="application/json"` dans le `put_object` du script de publication. Pour un zip, on lit `etag` ou des métadonnées, jamais `body`.
@@ -1147,6 +1177,7 @@ h["ContentType"]  # → 'binary/octet-stream'
 - Niveau : 2
 - Profils : ops
 - Voir aussi : langage-hcl-interpolation-non-echappee, langage-hcl-dollar-seul
+- Mots-clés : interpolation, politique IAM, Cognito
 - Source : data-platform · pwa-sync
 - Définition : Dans une chaîne HCL, `$${` produit le texte littéral `${` : Terraform n'interpole pas, la séquence passe intacte à AWS.
 - Contexte : `"${…}"` est l'interpolation de Terraform (≈ `${}` des template literals TS). Une politique IAM a sa propre syntaxe `${cognito-identity.amazonaws.com:sub}`, que seul IAM doit remplacer, à chaque requête. Doubler le `$` dit à Terraform « ce n'est pas pour moi ». Mesuré dans `terraform console` : `"$${cognito-identity.amazonaws.com:sub}"` vaut `"${cognito-identity.amazonaws.com:sub}"`.
@@ -1184,6 +1215,7 @@ condition {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : langage-hcl-dollar-echapper-interpolation
+- Mots-clés : interpolation, politique IAM
 - Source : data-platform · pwa-sync
 - Définition : Sans `$$`, Terraform lit `${cognito-identity.amazonaws.com:sub}` comme une expression et échoue au `validate` : le `:` n'est pas attendu.
 - Contexte : Mesuré : « Extra characters after interpolation expression … Template interpolation doesn't expect a colon at this location », avec la suggestion d'écrire `$${`. Sans `:` (ex. `"${username}"`), l'erreur devient « Invalid reference » : Terraform cherche une ressource ou une variable. Dans les deux cas, le plan ne passe pas : rien n'est envoyé à AWS.
@@ -1213,6 +1245,7 @@ h = "${cognito-identity.amazonaws.com:sub}"
 - Niveau : 2
 - Profils : ops
 - Prérequis : langage-hcl-dollar-echapper-interpolation
+- Mots-clés : interpolation, regex, validation
 - Source : data-platform · pwa-sync
 - Définition : Seule la séquence `${` déclenche l'interpolation : un `$` suivi d'autre chose reste tel quel, et `$$` sans `{` reste `$$`.
 - Contexte : Mesuré : `"prix $5 et $$5"` vaut `"prix $5 et $$5"`, `"$$"` vaut `"$$"`. L'échappement n'existe que devant `{`. Piège venu du shell ou de Make (où `$$` donne `$`) : en HCL, `$$` hors de `$${` ne se réduit pas. Même logique pour `%` : seule `%{` est spéciale.
@@ -1242,6 +1275,7 @@ h = "${cognito-identity.amazonaws.com:sub}"
 - Niveau : 2
 - Profils : ops
 - Prérequis : langage-hcl-dollar-echapper-interpolation
+- Mots-clés : interpolation, heredoc
 - Source : data-platform · pwa-sync
 - Définition : `%{ if … }…%{ endif }` et `%{ for … }` sont des directives de gabarit dans les chaînes HCL ; `%%{` écrit `%{` littéral.
 - Contexte : Mesuré : `"%{ if true }oui%{ endif }"` vaut `"oui"`, `"%%{if x}"` vaut `"%{if x}"`. Même règle que `$${` : la séquence spéciale est `%{`, on la neutralise en doublant le `%`. Utile surtout dans les heredocs et `templatefile` (scripts, configs générées).
@@ -1270,6 +1304,7 @@ h = "${cognito-identity.amazonaws.com:sub}"
 - Profils : ops
 - Prérequis : langage-hcl-dollar-echapper-interpolation
 - Voir aussi : DevOps/shell-heredoc-fige
+- Mots-clés : heredoc, interpolation, politique IAM
 - Source : data-platform · pwa-sync
 - Définition : Un heredoc (`<<-EOT … EOT`) est une chaîne comme une autre : `${…}` y est interpolé, `$${…}` y écrit `${…}` littéral.
 - Contexte : Piège courant : coller une politique JSON ou un script shell dans un heredoc en pensant au texte brut, comme en bash avec `<<'EOF'`. Terraform n'a pas d'équivalent « sans interpolation » : chaque `${` du texte collé doit devenir `$${`. Mesuré : `home/$${aws:username}/*` dans un heredoc donne `home/${aws:username}/*`. `<<-` retire l'indentation commune.
@@ -1299,6 +1334,7 @@ locals {
 - Niveau : 2
 - Profils : ops
 - Prérequis : langage-hcl-dollar-echapper-interpolation
+- Mots-clés : interpolation, politique IAM
 - Source : data-platform · pwa-sync
 - Définition : `templatefile(chemin, vars)` interpole un fichier avec les mêmes règles que les chaînes : `${pk}` remplacé, `$${…}` laissé littéral ; `file()` ne touche à rien.
 - Contexte : Mesuré : un gabarit `pk=${pk} brut=$${aws:username}` avec `{pk = "u1"}` donne `pk=u1 brut=${aws:username}`. Le même texte sans `$$` fait échouer `templatefile` (« colon at this location »), alors que `file()` le renvoie tel quel. Choisir `file()` quand le fichier n'a rien à recevoir de Terraform.
@@ -1329,6 +1365,7 @@ brut=${aws:username}
 - Profils : ops, expert
 - Prérequis : langage-hcl-resource-adresse
 - Voir aussi : AWS/iam-politique-inline
+- Mots-clés : graphe de dépendances, CloudFront, politique de bucket, depends_on, ARN
 - Définition : Terraform refuse deux ressources qui se référencent mutuellement (`Error: Cycle`) ; on casse la boucle en sortant l'attribut fautif dans une ressource à part.
 - Contexte : La distribution lit le domaine du bucket ; la politique du bucket cite l'ARN de la distribution (`AWS:SourceArn`). Écrite dans `aws_s3_bucket` (`policy = …`), elle crée un cycle (mesuré, provider AWS 6.70). En `aws_s3_bucket_policy`, l'ordre devient bucket → distribution → politique. `depends_on` ne sert ensuite qu'aux liens invisibles : le blocage d'accès public avant la politique.
 - Usage : ✅ attribut qui dépend d'une ressource qui dépend de vous : ressource dédiée · ❌ `depends_on` pour « forcer l'ordre » d'un cycle : il ajoute une arête, il n'en retire aucune.
@@ -1377,6 +1414,7 @@ resource "terraform_data" "cdn" {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : langage-hcl-for-each-cle, langage-hcl-condition-type-commun
+- Mots-clés : for_each, count, règle de cycle de vie
 - Source : data-platform · S1-04
 - Définition : `dynamic` avec un `for_each` qui vaut `[]` ou `[valeur]` produit zéro ou un bloc imbriqué : le bloc conditionnel de HCL (≈ `{cond && <Rule/>}`).
 - Contexte : Un bloc imbriqué (`rule`, `expiration`) n'accepte ni `count` ni condition : seul `dynamic` le rend facultatif. La liste vide ne génère rien, une liste d'un élément génère un bloc, et dans `content` l'itérateur prend le nom du bloc (`rule.value`). Dans data-platform, `raw` (90 j) et `logs` (30 j) reçoivent une règle d'expiration, les trois autres buckets non.
@@ -1422,6 +1460,7 @@ dynamic "rule" {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : langage-hcl-can-erreur-booleen, langage-hcl-data-source-lu-au-plan
+- Mots-clés : data source, provider, for_each
 - Source : data-platform · S1-07
 - Définition : `try()` rattrape une erreur d'expression (champ absent, JSON invalide), jamais l'échec de lecture d'un data source : un pointeur absent fait toujours échouer le plan.
 - Contexte : L'erreur de lecture vient du provider, pendant la lecture du data source, avant toute évaluation d'expression : ni `try`, ni `can`, ni `lookup` ne la voient. Pour qu'une Lambda soit facultative, il faut qu'aucune instance de son data source n'existe, en agissant sur la map du `for_each`. `try` sert pour ce qui suit la lecture : `body` vide, champ manquant.
@@ -1452,6 +1491,7 @@ try(jsondecode("").key, "absent")
 - Profils : ops, expert
 - Prérequis : langage-hcl-data-lire-sans-gerer, state-backend-contenu-etat
 - Voir aussi : variables-sensitive-contagieux
+- Mots-clés : data source, état, Secrets Manager, pointeur
 - Source : data-platform · S1-07
 - Définition : Les attributs lus par un data source sont écrits dans l'état : le `body` du pointeur figure en clair dans `terraform.tfstate`.
 - Contexte : Terraform garde la dernière lecture pour calculer et afficher le plan. Sans danger pour un pointeur (clé, hash, commit), dangereux pour un secret : le lire par `aws_s3_object` ou `aws_secretsmanager_secret_version` le recopie dans l'état. Depuis Terraform 1.10, une ressource `ephemeral` lit une valeur sans l'écrire dans l'état, mais seulement pour des arguments eux aussi éphémères.
@@ -1481,6 +1521,7 @@ terraform -chdir=infra state show \
 - Profils : ops, expert
 - Prérequis : langage-hcl-dollar-echapper-interpolation
 - Voir aussi : AWS/iam-variable-de-politique
+- Mots-clés : interpolation, politique IAM, JSON
 - Source : data-platform · pwa-sync
 - Définition : Dans `jsonencode({…})`, une valeur `"$${aws:username}"` devient `"${aws:username}"` dans le JSON : l'échappement est résolu avant l'encodage.
 - Contexte : Terraform évalue d'abord la chaîne HCL (`$${` → `${`), puis sérialise. Mesuré : `jsonencode({ v = "$${aws:username}" })` vaut `{"v":"${aws:username}"}`. Ainsi `jsonencode`, `aws_iam_policy_document` et un heredoc donnent le même JSON final si l'on échappe pareil. Le JSON ne contient aucun `$$` : c'est un artefact de la source HCL.

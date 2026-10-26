@@ -17,6 +17,7 @@ AWS · Lambda : limites, choisir, invocation, déploiement, sécurité, logs (fo
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : invocation asynchrone, Step Functions, Fargate
 - Définition : `timeout` fixe la durée maximale d'une invocation Lambda, de 1 à 900 secondes ; au-delà, l'exécution est tuée.
 - Contexte : La valeur par défaut est 3 s, souvent trop courte pour un appel d'API paginée. Un timeout est une erreur comme une autre : en asynchrone, Lambda réessaie, et le travail déjà fait est refait. La mémoire (`memory_size`, jusqu'à 10 240 Mo) fixe aussi la part de CPU : plus de mémoire peut raccourcir la durée et coûter moins cher.
 - Usage : ✅ traitement d'un jour BODACC (moins d'une minute), réaction à un événement · ❌ traitement de plus de 15 min : découper (Step Functions `Map`) ou passer sur Fargate / EMR.
@@ -60,6 +61,7 @@ handler({}, Ctx())  # → "stop"
 - Niveau : 1
 - Profils : débutant, data, web
 - Voir aussi : lambda-timeout-15-minutes, couts-cout-au-repos
+- Mots-clés : couche Lambda, image Docker, Fargate, EMR
 - Définition : Lambda est le choix par défaut pour un traitement court sur événement : 15 min au plus, 10 Go de mémoire, payé à la ms.
 - Contexte : Pas de serveur ni de coût au repos, mise à l'échelle automatique (1 000 exécutions simultanées par compte et région par défaut). Le code part en archive zip (250 Mo décompressé, couches comprises) ou en image conteneur (jusqu'à 10 Go). Le plafond de 15 min est dur : un traitement plus long se découpe ou change de service.
 - Usage : ✅ normaliser le fichier BODACC du jour, réagir à un dépôt S3, petite API · ❌ traitement de plus de 15 min, flux permanent : Fargate ; Spark sur des To : Glue ou EMR.
@@ -98,6 +100,7 @@ round(memoire_go * duree_s * go_s, 4)
 - Niveau : 1
 - Profils : débutant, data, web
 - Voir aussi : lambda-aws-request-id
+- Mots-clés : API Gateway, SQS, invocation synchrone
 - Définition : Le handler est la fonction que Lambda appelle à chaque invocation, avec l'événement (JSON désérialisé) et un objet `context` ; `handler = "fichier.fonction"`.
 - Contexte : `handler = "ingest.handler"` désigne la fonction `handler` du module `ingest.py` à la racine du zip ; en Node, `index.handler` est l'export `handler` de `index.mjs`. La forme de l'événement dépend de la source (S3, SQS, API Gateway). La valeur renvoyée est sérialisée en JSON et n'est vue que par un appelant synchrone. `context` donne l'ID de requête et le temps restant.
 - Usage : ✅ handler mince qui extrait les champs de l'événement puis appelle une fonction testable seule · ❌ toute la logique dans le handler : impossible à tester sans fabriquer un événement complet.
@@ -141,6 +144,7 @@ handler({"annonces": [{"type": "procol"},
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data, ops
+- Mots-clés : event source mapping, SNS, Kinesis
 - Définition : Lambda s'invoque en synchrone (l'appelant attend la réponse), en asynchrone (file interne, réponse `202`) ou par un mapping qui lit une file ou un flux.
 - Contexte : API Gateway et `aws lambda invoke` sont synchrones : l'erreur revient à l'appelant, qui décide seul de réessayer. S3, SNS et EventBridge sont asynchrones : Lambda réessaie elle-même. SQS, Kinesis et DynamoDB Streams passent par un event source mapping : Lambda interroge la source, et les retries suivent les règles de la source. Le mode décide qui voit l'erreur et qui réessaie.
 - Usage : ✅ identifier le mode d'appel avant de concevoir retries et alertes · ❌ supposer les 2 retries automatiques partout : en synchrone, il n'y en a aucun.
@@ -180,6 +184,7 @@ aws lambda invoke \
 - Type : piège
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : Secrets Manager, Parameter Store
 - Définition : `environment.variables` passe une configuration (bucket, réglage) au code, qui la lit dans `os.environ` ; toutes les valeurs sont des chaînes.
 - Contexte : La même archive sert en dev et en prod : seul le bucket change, injecté par Terraform. Terraform convertit `50` en `"50"` et `false` en `"false"` (vu dans le plan) : le code doit convertir lui-même. `os.environ["X"]` lève `KeyError` si la variable manque, `os.environ.get("X")` renvoie `None`. Les valeurs sont lisibles en clair par qui a `lambda:GetFunctionConfiguration`.
 - Usage : ✅ noms de bucket, préfixes, réglages non sensibles · ❌ secret (jeton, mot de passe) : Secrets Manager ou Parameter Store, lus au démarrage.
@@ -217,6 +222,7 @@ os.environ.get("RAW_BUCKET_X")  # → None
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : iam-role-confiance-permissions
+- Mots-clés : politique de confiance, SDK AWS, ARN, préfixe S3
 - Définition : Le rôle d'exécution est le rôle IAM que la fonction endosse : il fixe ce que son code peut faire (lire S3, écrire ses logs).
 - Contexte : Sa trust policy doit accepter `lambda.amazonaws.com`. Le SDK reçoit des identifiants temporaires de ce rôle, sans clé à gérer. Un droit manquant ne bloque pas le déploiement : `AccessDenied` arrive à l'exécution, à la première action refusée. `catalog-build` ne peut que lister et lire `sources/*`, écrire `content/catalog.json` et ses propres logs.
 - Usage : ✅ un rôle par fonction, actions et ressources nommées (ARN, préfixe) · ❌ rôle partagé entre fonctions, `AmazonS3FullAccess` : une faille dans l'une ouvre tout.
@@ -258,6 +264,7 @@ statement {
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : lambda-variables-env-chaines
+- Mots-clés : os.environ, boto3
 - Source : data-platform · S1-07
 - Définition : `os.environ["RAW_BUCKET"]` lève `KeyError` si la variable manque ; `.get("RAW_BUCKET")` renvoie `None` sans rien dire.
 - Contexte : Une variable obligatoire absente (bucket, table) signale une configuration Terraform fausse : mieux vaut une invocation en échec avec `KeyError: 'RAW_BUCKET'` dans CloudWatch qu'un `None` qui voyage jusqu'à boto3 et casse loin de la cause, ou un défaut silencieux qui écrit dans le mauvais bucket. ≈ `process.env.X!` en TS, sauf qu'ici la vérification a vraiment lieu.
@@ -298,6 +305,7 @@ msg  # → "'RAW_BUCKET'"
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : flux de logs, ligne REPORT, Logs Insights, idempotent
 - Source : data-platform · S1-07
 - Définition : `context.aws_request_id` est l'identifiant unique de l'invocation, le même que celui des lignes `START`, `END` et `REPORT` de CloudWatch.
 - Contexte : Un flux de logs enchaîne les appels successifs d'un environnement chaud : mettre `request_id` dans la ligne JSON du handler relie ses champs (date, count) à la ligne `REPORT` (durée, mémoire) du même appel. En test, `context` vaut souvent `None` : `getattr(context, "aws_request_id", None)` évite l'`AttributeError`. Un faux `context` se fabrique avec `SimpleNamespace`.
@@ -334,6 +342,7 @@ handler({}, None)  # ❌ AttributeError
 - Type : piège
 - Niveau : 1
 - Profils : débutant, data, web
+- Mots-clés : runtime, sérialisation, Step Functions
 - Source : data-platform · S1-07
 - Définition : Le runtime sérialise en JSON ce que renvoie le handler ; un objet non sérialisable (`date`, `set`) fait échouer l'invocation.
 - Contexte : En Node, `JSON.stringify` change une `Date` en chaîne sans broncher ; en Python, `json.dumps(date(…))` lève `TypeError`, et Lambda répond `Runtime.MarshalError` (doc AWS) alors que le travail, l'écriture S3, est déjà fait. D'où `day.isoformat()` dans le résultat de `ingest_day`. Le dict renvoyé devient la sortie de l'état Step Functions.
@@ -371,6 +380,7 @@ json.dumps({"keys": sorted(cles)})
 - Type : piège
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : sys.path, src layout, uv
 - Source : data-platform · S1-07
 - Définition : `handler = "ingest_bodacc.handler.lambda_handler"` désigne `module.fonction` : le paquet `ingest_bodacc/` doit être à la racine du zip.
 - Contexte : Lambda décompresse le zip dans `/var/task`, en tête de `sys.path`, puis importe le module du handler. Un zip qui garde `src/ingest_bodacc/` ou `build/package/…` dans ses noms donne `Runtime.ImportModuleError: No module named 'ingest_bodacc'`. Le src layout ne concerne que le dépôt : `uv pip install --target` met le paquet à plat. On vérifie avec `unzip -l`.
@@ -411,6 +421,7 @@ importlib.import_module("demo_ingest")  # ❌ ModuleNotFoundError
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : lambda-zip-couche-ou-image
+- Mots-clés : ECR, CI, terraform apply
 - Source : data-platform · S1-07
 - Définition : `aws_lambda_function` prend son code d'une seule source : `filename` (zip local), `s3_bucket` + `s3_key` (zip sur S3) ou `image_uri` (image ECR).
 - Contexte : Avec S3, Terraform ne lit jamais le zip : il transmet bucket et clé à l'API `CreateFunction`, et Lambda copie l'objet. `filename` impose le zip sur le poste qui lance `apply`, donc un build juste avant, dans le même job. S3 découple le build du déploiement : un job construit et publie, un autre déploie, sur n'importe quel environnement.
@@ -454,6 +465,7 @@ resource "aws_lambda_function" "f" {
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : lambda-depends-on-droits
+- Mots-clés : groupe de logs, rétention, état Terraform
 - Source : data-platform · S1-07
 - Définition : Terraform crée `/aws/lambda/<nom>` avant la fonction ; sinon Lambda le crée à la première invocation, hors de l'état Terraform.
 - Contexte : Un groupe créé par Lambda n'a pas de rétention (logs gardés et facturés sans fin) et survit à `make down`, puisque Terraform ne le connaît pas. Déclaré dans le module, il a sa rétention (14 jours) et disparaît avec l'environnement. La référence `log_group = aws_cloudwatch_log_group.this.name` dans `logging_config` suffit à ordonner la création : groupe d'abord, fonction ensuite.
@@ -488,6 +500,7 @@ resource "aws_lambda_function" "this" {
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : lambda-role-execution
+- Mots-clés : rôle d'exécution, moindre privilège, module Terraform
 - Source : data-platform · S1-07
 - Définition : Chaque Lambda reçoit son propre rôle d'exécution, créé par le module avec elle : ses droits sont déclarés à côté de sa configuration.
 - Contexte : Un rôle partagé additionne les besoins de toutes les fonctions : chacune hérite des droits des autres, et retirer un droit devient risqué faute de savoir qui l'utilise. Un rôle par fonction ne coûte rien (IAM est gratuit) et se détruit avec elle. Le rôle générique `lambda` de S1-04 (lire `raw`, écrire `processed`) aurait donné à l'ingestion l'inverse de ce dont elle a besoin.
@@ -522,6 +535,7 @@ locals {
 - Niveau : 1
 - Profils : débutant, ops
 - Prérequis : lambda-trois-modes-invocation
+- Mots-clés : CLI AWS, base64, payload
 - Source : data-platform · S1-07
 - Définition : En CLI v2, `--payload` est lu comme du base64 ; `--cli-binary-format raw-in-base64-out` le fait lire comme du JSON brut.
 - Contexte : Sans l'option, la CLI décode `{"date":…}` comme du base64, envoie des octets illisibles, et Lambda répond `InvalidRequestContentException … Invalid UTF-8 start byte`. Le message accuse le JSON, pas l'option : piège classique en passant de la v1 à la v2. Se règle une fois pour toutes dans `~/.aws/config` : `cli_binary_format = raw-in-base64-out`.
@@ -558,6 +572,7 @@ cli_binary_format = raw-in-base64-out
 - Type : concept
 - Niveau : 2
 - Profils : data
+- Mots-clés : environnement d'exécution, démarrage à froid
 - Définition : `/tmp` est le disque local de Lambda (512 Mo par défaut, jusqu'à 10 Go via `ephemeral_storage`), lié à l'environnement d'exécution.
 - Contexte : Un environnement chaud est réutilisé pour les invocations suivantes : `/tmp` et les variables de niveau module survivent d'un appel à l'autre. C'est utile pour un cache (client boto3, fichier de référence), dangereux pour des fichiers de travail : un reste de la veille peut être relu. Rien n'est garanti : un démarrage à froid repart d'un `/tmp` vide.
 - Usage : ✅ fichier temporaire volumineux (décompression d'un `.gz`), cache explicite · ❌ état entre invocations : S3 ou DynamoDB ; fichiers de travail sans nom unique ni nettoyage.
@@ -599,6 +614,7 @@ handler({"jour": "2026-10-24"}, None)  # → 2
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : lambda-trois-modes-invocation
+- Mots-clés : invocation asynchrone, destination d'échec, idempotent
 - Définition : S3, SNS et EventBridge invoquent Lambda en asynchrone : sur erreur, Lambda réessaie jusqu'à 2 fois, puis abandonne l'événement.
 - Contexte : L'événement passe par une file interne : l'appelant reçoit un `202` immédiat et ne voit jamais l'erreur. Les retries ont lieu après environ 1 puis 2 minutes ; `maximum_event_age_in_seconds` (60 à 21 600) borne l'attente. Sans destination d'échec, l'événement abandonné n'existe plus que dans les logs : impossible à rejouer.
 - Usage : ✅ toujours une destination `on_failure` (SQS, SNS, EventBridge) sur une Lambda asynchrone du pipeline · ❌ `maximum_retry_attempts = 0` sur un traitement non idempotent sans alerte.
@@ -631,6 +647,7 @@ resource "aws_lambda_function_event_invoke_config" "i" {
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : lambda-timeout-15-minutes
+- Mots-clés : conteneur, ECS, Step Functions, vCPU
 - Définition : Fargate exécute un conteneur sans gérer de serveur ni de limite de durée : la solution pour un batch long ou une dépendance lourde.
 - Contexte : On paie le vCPU et la mémoire réservés, à la seconde (minimum une minute), du démarrage à l'arrêt de la tâche. Lancée par Step Functions (`ecs:runTask.sync`), une tâche se comporte comme une étape du pipeline. En service ECS, elle tourne en continu, donc facture en continu. Le démarrage prend de l'ordre de la minute, contre quelques centaines de ms pour Lambda.
 - Usage : ✅ reprise d'historique de plusieurs heures, outil natif lourd, processus permanent · ❌ traitement court déclenché par événement : Lambda, moins cher et plus réactif.
@@ -660,6 +677,7 @@ Pourquoi: pas de plafond de 15 min,
 - Type : recette
 - Niveau : 2
 - Profils : web
+- Mots-clés : esbuild, bundle, runtime, SDK AWS
 - Source : revision-pwa · pwa-revision
 - Définition : `esbuild --bundle` réunit le handler TypeScript et ses imports en un seul `.mjs` ; `--external:@aws-sdk/*` laisse le SDK au runtime Lambda.
 - Contexte : Lambda Node n'exécute pas de TypeScript et ne voit que le zip : sans `--bundle`, `index.mjs` garde ses `import './catalog.ts'`, absents de l'archive. Le runtime `nodejs22.x` fournit le SDK v3 : l'exclure fait passer le bundle de 1,4 Mo à 9 ko (mesuré). `archive_file` zippe le résultat, `source_code_hash` ne redéploie que si le code change.
@@ -690,6 +708,7 @@ esbuild lambda/handler.ts --bundle \
 - Type : concept
 - Niveau : 2
 - Profils : data, web
+- Mots-clés : environnement d'exécution, SDK AWS
 - Définition : Un démarrage à froid crée un environnement neuf et exécute le code de niveau module (imports, clients) avant le premier appel, puis le réutilise.
 - Contexte : Mesuré sur `catalog-build` : `Init Duration` d'environ 300 ms, puis 1,4 à 1,9 s par appel. Créer le client S3 au niveau module le paie une fois par environnement, pas à chaque appel. L'init est facturée : `Billed Duration` 1 913 ms pour 1 617 ms d'appel et 296 ms d'init (mesuré). Un import lourd (pandas) allonge chaque démarrage à froid.
 - Usage : ✅ clients SDK, configuration, connexions créés au niveau module · ❌ client créé dans le handler : refait à chaque appel ; état métier en module (voir `/tmp`).
@@ -734,6 +753,7 @@ inits  # → 1
 - Niveau : 2
 - Profils : ops
 - Prérequis : iam-politique-de-ressource
+- Mots-clés : politique de ressource, rôle d'exécution, ARN, condition IAM
 - Définition : `aws_lambda_permission` ajoute une ligne à la politique de ressource de la fonction : elle autorise un service (S3, EventBridge) à l'invoquer.
 - Contexte : Deux politiques distinctes : le rôle d'exécution dit ce que la fonction peut faire, la politique de ressource dit qui peut l'appeler. `source_arn` et `source_account` bornent l'appel à ce bucket de ce compte : sans eux, n'importe quel bucket S3 configuré vers la fonction pourrait la déclencher. Lu sur le compte : conditions `AWS:SourceArn` et `AWS:SourceAccount`.
 - Usage : ✅ une permission par source, bornée par `source_arn` · ❌ croire que le rôle d'exécution suffit : il ne donne à aucun service le droit d'appeler la fonction.
@@ -774,6 +794,7 @@ aws lambda get-policy --function-name \
 - Profils : ops
 - Prérequis : lambda-cold-start-init
 - Voir aussi : lambda-aws-request-id
+- Mots-clés : CloudWatch Logs, groupe de logs, flux de logs, environnement d'exécution
 - Définition : Lambda envoie `print` et les lignes du runtime dans CloudWatch Logs, groupe `/aws/lambda/<nom>` par défaut, un flux par environnement d'exécution.
 - Contexte : Chaque appel écrit `START`, les sorties du code, `END` et `REPORT` (durée, mémoire max). `logging_config` choisit le groupe et le format, `Text` ou `JSON` (champs filtrables). Créé par Terraform, le groupe a une rétention bornée (14 jours ici) ; créé par Lambda, il n'expire jamais. Les appels d'un même environnement se suivent dans un flux : retrouver un appel précis passe par son `RequestId`.
 - Usage : ✅ groupe Terraform à rétention bornée, `aws logs tail` pour suivre · ❌ ouvrir les flux un par un : `filter-log-events` sur un motif (`REPORT`, `RequestId`).
@@ -810,6 +831,7 @@ aws logs filter-log-events \
 - Type : choisir
 - Niveau : 2
 - Profils : data, ops
+- Mots-clés : wheel
 - Définition : `architectures = ["arm64"]` exécute la fonction sur processeur Graviton, environ 20 % moins cher à la milliseconde que `x86_64`.
 - Contexte : Le JavaScript et le Python pur tournent tel quel : `catalog-build` est en arm64 (lu sur le compte). Les dépendances natives (pydantic-core, numpy, lxml) sont des binaires compilés pour un système et un processeur : il faut empaqueter les roues Linux aarch64, pas celles de la machine de build. Le défaut, sans l'attribut, reste `x86_64`.
 - Usage : ✅ arm64 par défaut pour toute nouvelle fonction · ❌ dépendance native sans roue aarch64 publiée : rester en `x86_64`.
@@ -844,6 +866,7 @@ uv pip install pydantic \
 - Niveau : 2
 - Profils : data
 - Prérequis : lambda-trois-modes-invocation
+- Mots-clés : SQS, Kinesis, visibility timeout, rôle d'exécution
 - Définition : Un event source mapping est un lecteur géré par Lambda qui interroge SQS, Kinesis ou DynamoDB Streams et invoque la fonction par lots.
 - Contexte : C'est Lambda qui lit la file, avec le rôle d'exécution : il lui faut `sqs:ReceiveMessage`, `DeleteMessage` et `GetQueueAttributes`, et aucune `aws_lambda_permission`. L'appel est synchrone : `maximum_retry_attempts` de l'asynchrone ne joue pas ; pour SQS, le visibility timeout et `maxReceiveCount` de la file décident des retries. `enabled = false` met la lecture en pause sans perdre de message.
 - Usage : ✅ consommer une file de jours à rejouer, un flux Kinesis · ❌ régler les retries dans `aws_lambda_function_event_invoke_config` : réglage de la file à la place.
@@ -880,6 +903,7 @@ statement {
 - Type : concept
 - Niveau : 2
 - Profils : data, ops
+- Mots-clés : sys.path, ARN, image Docker
 - Définition : Une couche (layer) est un zip monté dans `/opt` de l'environnement : dépendances partagées entre fonctions, versionnées à part du code.
 - Contexte : Au plus 5 couches par fonction, 250 Mo décompressés au total avec le code. Pour Python, le contenu doit être sous `python/` dans le zip : il arrive dans `/opt/python`, déjà dans `sys.path`. Chaque publication crée une version immuable (`:3`) ; la fonction référence un ARN versionné. Une image conteneur n'accepte pas de couche : tout va dans l'image.
 - Usage : ✅ dépendance lourde commune à plusieurs fonctions (pydantic, httpx) · ❌ une seule fonction : tout dans le zip, plus simple ; Node bundlé par esbuild : rien à partager.
@@ -918,6 +942,7 @@ layer.zip
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : s3-notification-boucle
+- Mots-clés : notification S3, préfixe S3, SQS, SNS
 - Définition : Une fonction qui écrit dans la ressource qui la déclenche (bucket, file) se relance elle-même : boucle infinie, facturée à chaque tour.
 - Contexte : `catalog-build` est déclenchée par `sources/*.md` et n'écrit que `content/catalog.json` : entrée et sortie séparées par préfixe, filtre sur la notification. Lambda détecte les boucles qui passent par SQS, SNS, S3 et les bus EventBridge personnalisés, et coupe après environ 16 tours d'une même chaîne. Une boucle via DynamoDB n'est pas détectée (doc AWS).
 - Usage : ✅ préfixes d'entrée et de sortie distincts, `filter_prefix` sur la notification · ❌ compter sur la détection : elle arrive après une quinzaine d'appels facturés.
@@ -946,6 +971,7 @@ lambda_function {
 - Type : choisir
 - Niveau : 2
 - Profils : data, ops
+- Mots-clés : boto3, botocore, sys.path, couche Lambda
 - Source : data-platform · S1-07
 - Définition : Le runtime Python de Lambda fournit `boto3`, dans une version choisie et mise à jour par AWS ; l'embarquer dans le zip la fige.
 - Contexte : `sys.path` lit `/var/task` (le zip), puis `/opt/python` (couches), puis `/var/runtime` (le SDK d'AWS) : le premier `boto3` trouvé gagne. Sans SDK embarqué, le code tourne avec la version du runtime, souvent plus ancienne que celle des tests, et AWS peut la changer sans redéploiement. AWS recommande d'embarquer le SDK en production. Coût : ~28 Mo décompressés (`botocore` surtout).
@@ -974,6 +1000,7 @@ print(boto3.__version__)
 - Profils : data
 - Prérequis : lambda-async-deux-retries
 - Voir aussi : cloudwatch-errors-vs-throttles
+- Mots-clés : Step Functions, invocation asynchrone, SQS, partition
 - Source : data-platform · S1-07
 - Définition : Une exception non attrapée met l'invocation en échec (`errorType`, `errorMessage`) ; c'est ce statut que lit l'appelant pour décider de rejouer.
 - Contexte : Step Functions, l'invocation asynchrone et les mappings SQS ne rejouent que ce qui a échoué. Attraper l'erreur pour renvoyer `{"ok": False}` change une panne en succès : personne ne rejoue, la journée manque dans la table. Journaliser est permis, à condition de relancer (`raise`). Ici rien n'est publié avant la fin de la lecture : laisser remonter est sans risque.
@@ -1021,6 +1048,7 @@ cat out.json
 - Profils : data
 - Prérequis : lambda-cold-start-init
 - Voir aussi : lambda-region-absente
+- Mots-clés : décorateur, fixture, moto, environnement d'exécution
 - Source : data-platform · S1-07
 - Définition : `@functools.cache` sur une fonction sans argument crée le client au premier appel, puis rend le même objet aux invocations suivantes du conteneur.
 - Contexte : Même réutilisation qu'un client de niveau module (créé une fois par environnement), mais la création attend le premier appel : région, profil et identifiants sont lus à ce moment, pas à l'import. En test, les fixtures ont alors posé leur environnement ; `s3_client.cache_clear()` donne un client neuf par test. Un client de module est créé dès l'import du fichier de test, avant toute fixture.
@@ -1068,6 +1096,7 @@ s3_client().meta.region_name
 - Niveau : 2
 - Profils : data
 - Voir aussi : lambda-client-boto3-cache
+- Mots-clés : région AWS, fixture, moto, CI
 - Source : data-platform · S1-07
 - Définition : Sans région (variable, profil ou argument), `boto3.client("s3")` prend `us-east-1` sans prévenir, alors que `boto3.client("sqs")` lève `NoRegionError`.
 - Contexte : Mesuré. S3 a un point d'accès global, d'où ce défaut silencieux : en local ou en CI, un client créé avant que la fixture pose `AWS_DEFAULT_REGION` vise `us-east-1`, et le bucket moto créé en `eu-west-3` ne correspond plus. Dans Lambda, le runtime fournit `AWS_REGION` : le problème n'apparaît qu'en dehors. `region_name=` explicite supprime l'ambiguïté.
@@ -1100,6 +1129,7 @@ del os.environ["AWS_CONFIG_FILE"]
 - Type : piège
 - Niveau : 2
 - Profils : data, web
+- Mots-clés : coroutine, asyncio, runtime
 - Source : data-platform · S1-07
 - Définition : Le runtime Python appelle le handler de façon synchrone : un `async def handler` renvoie une coroutine que personne n'exécute.
 - Contexte : En Node, `export const handler = async (event) => …` est la norme ; en Python, le runtime fait `resultat = handler(event, context)` puis sérialise `resultat`. Une coroutine n'est pas du JSON : l'invocation échoue, et le corps n'a jamais tourné (doc AWS : handler synchrone). Pour du code async (`httpx.AsyncClient`), le handler reste un `def` qui appelle `asyncio.run(…)`.
@@ -1142,6 +1172,7 @@ handler({"date": "2026-10-20"}, None)
 - Niveau : 2
 - Profils : data
 - Prérequis : lambda-environ-echouer-tot, lambda-cold-start-init
+- Mots-clés : monkeypatch, pytest
 - Source : data-platform · S1-07
 - Définition : Lire `os.environ["RAW_BUCKET"]` dans le handler, et non au niveau module, donne une erreur claire par invocation et laisse chaque test poser sa valeur.
 - Contexte : Une lecture de module s'exécute à l'import : en test, avant `monkeypatch.setenv`, donc la valeur est figée (ou l'import casse) ; dans Lambda, pendant l'init, qui échoue alors pour chaque appel. Dans le handler, le coût est nul (un accès dict). Le client S3, coûteux, reste en cache ; la configuration bon marché se relit.
@@ -1186,6 +1217,7 @@ handler({}, None)  # ❌ KeyError
 - Niveau : 2
 - Profils : data
 - Prérequis : lambda-tmp-ephemere
+- Mots-clés : environnement d'exécution, context manager
 - Source : data-platform · S1-07
 - Définition : Un fichier de travail laissé dans `/tmp` s'ajoute à ceux des invocations précédentes du conteneur, jusqu'à `OSError: [Errno 28] No space left on device`.
 - Contexte : `/tmp` vit aussi longtemps que l'environnement chaud (des heures) et fait 512 Mo par défaut. Un nom par date ou un nom aléatoire sans suppression accumule ; l'erreur n'arrive qu'après N appels, jamais en test. `with tempfile.TemporaryDirectory()` supprime tout à la sortie, même sur exception ; `dir=` reste injectable pour vérifier le nettoyage en test.
@@ -1232,6 +1264,7 @@ list(tmp.iterdir())  # → []
 - Niveau : 2
 - Profils : ops
 - Prérequis : lambda-une-source-de-code
+- Mots-clés : couche Lambda
 - Source : data-platform · S1-07
 - Définition : Un zip envoyé directement (`filename`) fait au plus 50 Mo ; au-delà, on le dépose sur S3 (`s3_bucket`, `s3_key`), toujours sous 250 Mo décompressé.
 - Contexte : Deux limites distinctes : la taille du `.zip` transmis à l'API (`CreateFunction`, `UpdateFunctionCode`) et sa taille décompressée, couches comprises. Le zip BODACC : 20,2 Mo zippé, 32,4 Mo décompressé, `boto3` compris. Passer par S3 lève la première limite, jamais la seconde. Le script de build affiche la taille du zip à chaque build.
@@ -1269,6 +1302,7 @@ resource "aws_lambda_function" "ingest" {
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : lambda-zip-50-mo, lambda-couches-opt
+- Mots-clés : couche Lambda, ECR, Docker, PySpark
 - Source : data-platform · S1-07
 - Définition : Zip seul sous les limites ; couche pour partager des dépendances entre fonctions ; image au-delà de 250 Mo ou pour un système sur mesure.
 - Contexte : Couche : socle versionné à part, mais compatibilité de runtime et d'architecture à suivre, et le total reste sous 250 Mo. Image (ECR, jusqu'à 10 Go) : Docker au build, image plus lourde à démarrer, et c'est à nous de la reconstruire pour les correctifs du runtime. Pour `ingest_bodacc` : une seule fonction, 20 Mo, donc zip.
@@ -1295,6 +1329,7 @@ ocr-pdf        tesseract, 1 Go   → image
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : umask, runtime
 - Source : data-platform · S1-07
 - Définition : Lambda exécute le code sous un utilisateur sans privilèges : chaque fichier du zip doit être lisible par tous (644), chaque dossier traversable (755).
 - Contexte : Un zip aux droits `600` (défaut de `zipfile.writestr`, ou `umask 077` sur la machine de build) se déploie sans erreur ; c'est l'import qui échoue (`Permission denied`). Le script de build fixe `external_attr = 0o644 << 16` sur chaque entrée ; un exécutable (`bootstrap` d'un runtime custom) demande 755.
@@ -1322,6 +1357,7 @@ unzip -Z build/ingest-bodacc.zip | sed -n 3,4p
 - Niveau : 2
 - Profils : ops
 - Prérequis : lambda-une-source-de-code
+- Mots-clés : terraform plan, hachage
 - Source : data-platform · S1-07
 - Définition : `source_code_hash = filebase64sha256("x.zip")` donne à Terraform l'empreinte du zip : un changement d'octets déclenche la mise à jour du code.
 - Contexte : Terraform ne lit pas le contenu de `filename`. Avec `source_code_hash`, chaque octet compte : un zip non reproductible (dates des fichiers, ordre des entrées) change l'empreinte à chaque build, et le `plan` affiche `~ source_code_hash` sans aucun changement de code. D'où le zip à date fixe : `No changes` tant que le code ne bouge pas.
@@ -1357,6 +1393,7 @@ resource "aws_lambda_function" "ingest" {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : lambda-source-code-hash
+- Mots-clés : bytecode, démarrage à froid, runtime
 - Source : data-platform · S1-07
 - Définition : Le zip n'embarque pas les `.pyc` du poste : ils ne valent que pour une version de Python, et `/var/task` est en lecture seule.
 - Contexte : Un `.pyc` porte la version dans son nom (`handler.cpython-312.pyc`) : compilé par un Python 3.13 local, il est ignoré par le runtime 3.12. Lambda ne peut pas non plus en écrire dans `/var/task` : chaque démarrage à froid recompile en mémoire, quelques millisecondes pour un petit paquet. Les `__pycache__` du dossier viennent d'un test ou d'un import lancé dedans.
@@ -1383,6 +1420,7 @@ sys.implementation.cache_tag  # → 'cpython-312'
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : shebang, uv, artefact
 - Source : data-platform · S1-07
 - Définition : `uv pip install --target` crée un `bin/` (CLI `httpx`, `jp.py`) dont le shebang vise le Python du poste : inutile en Lambda, exclu du zip.
 - Contexte : Les commandes déclarées par les dépendances deviennent des exécutables qui commencent par `#!/Users/…/.venv/bin/python3`. Lambda n'appelle que le handler, jamais ces commandes, et ce chemin n'existe pas dans le runtime. Les garder ajoute du poids et un chemin absolu du poste dans l'artefact, qui change d'un clone à l'autre.
@@ -1411,6 +1449,7 @@ head -1 package/bin/httpx
 - Profils : ops
 - Prérequis : lambda-role-execution
 - Voir aussi : lambda-log-group-avant-fonction, codebuild-depends-on-politique
+- Mots-clés : depends_on, politique inline, rôle d'exécution, groupe de logs
 - Source : data-platform · S1-07
 - Définition : `depends_on = [aws_iam_role_policy.logs, aws_iam_role_policy.app]` fait créer les politiques du rôle avant la fonction, que rien d'autre ne relie.
 - Contexte : La fonction ne référence que `aws_iam_role.this.arn` : pour Terraform, les politiques inline et la fonction sont indépendantes et se créent en parallèle. Une invocation juste après l'`apply` pourrait tourner avec un rôle encore vide : premiers logs perdus, `AccessDenied` sur S3. `depends_on` ajoute l'arête que le graphe ne voit pas. À la destruction, l'ordre s'inverse : fonction d'abord, politiques ensuite.
@@ -1442,6 +1481,7 @@ resource "aws_lambda_function" "this" {
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : lambda-ligne-report, lambda-arm64-graviton
+- Mots-clés : vCPU, ligne REPORT
 - Source : data-platform · S1-07
 - Définition : `memory_size` (128 à 10 240 Mo) fixe aussi le CPU, environ 1 vCPU à 1 769 Mo ; on paie mémoire × durée.
 - Contexte : Pas de réglage CPU séparé : une fonction lente sur du calcul (gzip, JSON, pydantic) va plus vite avec plus de mémoire, même si elle n'en consomme pas. Le prix est en Go-secondes : doubler la mémoire et diviser la durée par deux coûte pareil. Ici 1024 Mo : la compression d'une journée BODACC va deux fois plus vite qu'à 512 Mo. Mesurer avec la ligne `REPORT` (`Duration`, `Max Memory Used`).
@@ -1471,6 +1511,7 @@ go_s(1024, 6.0)  # → 6.0 : gain partiel
 - Niveau : 2
 - Profils : ops
 - Voir aussi : Terraform/modules-for-each-instances, cloudwatch-alarme-par-lambda
+- Mots-clés : module Terraform, for_each, uv
 - Source : data-platform · S1-07
 - Définition : `module "lambda"` en `for_each` sur `local.lambdas` crée rôle, log group et fonction par entrée : ajouter une Lambda, c'est ajouter une entrée.
 - Contexte : La clé `ingest-bodacc` sert trois fois : adresse (`module.lambda["ingest-bodacc"]`), nom AWS (`data-platform-dev-ingest-bodacc`) et chemin du pointeur (`lambdas/ingest-bodacc/current.json`). C'est aussi le `name` du membre uv : une seule convention du build au déploiement. Changer une valeur de l'entrée (timeout, mémoire) modifie la fonction sur place.
@@ -1504,6 +1545,7 @@ module "lambda" {
 - Niveau : 2
 - Profils : ops
 - Prérequis : lambda-zip-50-mo
+- Mots-clés : versioning, artefact, URL présignée
 - Source : data-platform · S1-07
 - Définition : Au déploiement, Lambda copie le zip depuis S3 dans son propre stockage : l'objet n'est plus relu ensuite, même au démarrage à froid.
 - Contexte : Supprimer l'objet après coup ne casse pas la fonction en service, mais casse tout ce qui le relit : recréation après `make down`, retour arrière, déploiement d'un autre environnement. D'où un bucket d'artefacts versionné, sans expiration des objets courants. Le code se télécharge depuis la console ou par `get-function` (URL présignée de la copie de Lambda), pas depuis le bucket.
@@ -1534,6 +1576,7 @@ aws lambda get-function \
 - Niveau : 2
 - Profils : ops
 - Prérequis : lambda-log-group-avant-fonction, lambda-role-execution
+- Mots-clés : groupe de logs, rétention, politique managée
 - Source : data-platform · S1-07
 - Définition : Sans `logs:CreateLogGroup` dans le rôle, la fonction n'écrit que dans le groupe créé par Terraform : jamais de groupe fantôme à rétention infinie.
 - Contexte : `AWSLambdaBasicExecutionRole` donne `CreateLogGroup`, `CreateLogStream` et `PutLogEvents` sur `*` : si le groupe manque (supprimé à la main, nom changé), Lambda le recrée en silence, hors état, sans rétention, et peut écrire dans les groupes des autres fonctions. Le module écrit sa propre politique `logs` : deux actions, sur son groupe seul.
@@ -1567,6 +1610,7 @@ data "aws_iam_policy_document" "logs" {
 - Niveau : 2
 - Profils : ops
 - Voir aussi : cloudwatch-duration-sans-init, lambda-memoire-achete-cpu
+- Mots-clés : démarrage à froid, timeout
 - Source : data-platform · S1-07
 - Définition : La ligne `REPORT` de chaque invocation donne `Duration`, `Billed Duration`, `Memory Size`, `Max Memory Used` et, au démarrage à froid, `Init Duration`.
 - Contexte : C'est la mesure à lire avant de régler `memory_size` ou `timeout`. Ici : 4,6 s, 121 Mo utilisés sur 1 024. 121 Mo ne veut pas dire « descendre à 128 » : la mémoire achète aussi le CPU, et gzip va deux fois plus vite à 1 024. `Init Duration` présente = nouveau conteneur ; absente = conteneur réutilisé.
@@ -1599,6 +1643,7 @@ aws logs tail \
 - Profils : ops
 - Prérequis : lambda-cli-binary-format
 - Voir aussi : lambda-ligne-report
+- Mots-clés : invocation synchrone, base64
 - Source : data-platform · S1-07
 - Définition : `aws lambda invoke --log-type Tail` renvoie dans `LogResult` les 4 derniers Ko du log de l'invocation, encodés en base64.
 - Contexte : Évite d'aller chercher le flux dans CloudWatch juste après un appel manuel. Ne marche qu'en synchrone (`RequestResponse`). Seule la fin du log revient : pour une invocation bavarde, le début (et souvent la vraie erreur) est coupé ; `aws logs tail` reste la référence. Le base64 se décode avec `base64 -d` (macOS : `base64 -D` sur les vieilles versions).
@@ -1628,6 +1673,7 @@ aws lambda invoke --function-name "$F" \
 - Niveau : 2
 - Profils : ops
 - Prérequis : lambda-permission-invoquer, lambda-role-execution
+- Mots-clés : EventBridge Scheduler, Step Functions, politique de ressource, rôle IAM
 - Source : data-platform · S1-08
 - Définition : Un service qui invoque en endossant un rôle (Scheduler, Step Functions) n'a besoin d'aucun `aws_lambda_permission` ; un service qui appelle en son nom, si.
 - Contexte : Dans un même compte, un `Allow` côté identité **ou** côté ressource suffit. C'est l'appelant qui impose le côté : Scheduler, Step Functions, CodeBuild endossent un rôle (droit dans ce rôle) ; S3, SNS, API Gateway, règle EventBridge appellent en leur nom (`aws_lambda_permission`) ; SQS, Kinesis : c'est la Lambda qui lit, avec son propre rôle. Entre deux comptes, il faut les deux.
@@ -1656,6 +1702,7 @@ aws lambda get-policy \
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : lambda-async-deux-retries
+- Mots-clés : invocation asynchrone, EventBridge Scheduler, event source mapping, invocation synchrone
 - Source : data-platform · S1-08
 - Définition : `aws_lambda_function_event_invoke_config` fixe, pour une fonction, les retries et l'âge maximal des invocations asynchrones (défaut : 2 tentatives, 6 h).
 - Contexte : Ne touche que l'asynchrone : Scheduler, S3, SNS, `--invocation-type Event`. Un appel synchrone (`aws lambda invoke`, un script de rejeu) n'est jamais réessayé par Lambda, et un mapping SQS suit les règles de la file. Écrire la ressource même avec les valeurs par défaut rend le comportement visible dans le code au lieu de dépendre d'un réglage implicite.
@@ -1694,6 +1741,7 @@ aws lambda get-function-event-invoke-config \
 - Niveau : 2
 - Profils : data
 - Prérequis : lambda-trois-modes-invocation
+- Mots-clés : boto3, ClientError, payload, throttling
 - Source : data-platform · S1-08
 - Définition : En Python, `client.invoke(...)` ne lève rien quand le handler échoue : la réponse porte `FunctionError`, et le détail est dans `Payload`.
 - Contexte : `StatusCode` 200 dit seulement que Lambda a exécuté l'appel. Un `try/except ClientError` n'attrape que les erreurs du service (droits, fonction absente, throttling), jamais une exception du handler. Le code appelant doit donc tester `"FunctionError" in response`, lire `errorType` et `errorMessage`, et en faire sa propre exception.
@@ -1730,6 +1778,7 @@ json.loads(resp["Payload"].read())["errorType"]
 - Profils : data
 - Prérequis : lambda-boto3-invoke-function-error
 - Voir aussi : s3-body-lu-une-fois
+- Mots-clés : payload, StreamingBody, boto3
 - Source : data-platform · S1-08
 - Définition : Le `Payload` d'une réponse `invoke` est un `StreamingBody` : `.read()` rend les octets une fois, puis `b""` (≈ `response.body` d'un `fetch`).
 - Contexte : Lire le flux pour journaliser, puis le relire pour décoder, donne une chaîne vide et un `json.loads` qui échoue (`JSONDecodeError`). Lire une fois dans une variable, puis travailler sur la variable. Même règle pour `get_object()["Body"]` de S3.
@@ -1761,6 +1810,7 @@ p.read()         # → b''
 - Profils : data, expert
 - Prérequis : lambda-trois-modes-invocation
 - Voir aussi : lambda-concurrence-provisionnee
+- Mots-clés : concurrence, notification S3, livraison au moins une fois
 - Source : revision-pwa · pwa-revision
 - Définition : `reserved_concurrent_executions = 1` limite la fonction à une exécution simultanée : les invocations suivantes attendent au lieu de tourner en parallèle.
 - Contexte : `catalog-build` relit toutes les sources et réécrit tout `catalog.json` : l'événement S3 n'est qu'un signal, son ordre et ses doublons (livraison « au moins une fois ») ne comptent pas. Deux exécutions parallèles, si : la plus lente, qui a listé avant le dernier dépôt, écraserait un catalogue complet. La réserve est prise sur les 1 000 du compte (999 non réservées, mesuré).
@@ -1798,6 +1848,7 @@ aws lambda get-function-concurrency \
 - Niveau : 3
 - Profils : ops, expert
 - Voir aussi : iam-arn-lambda-qualifie
+- Mots-clés : ARN, rollback, concurrence provisionnée
 - Définition : `publish = true` crée une version immuable à chaque changement ; un alias (`live`) pointe vers une version et donne aux appelants un ARN stable.
 - Contexte : `$LATEST` est la seule version modifiable : c'est elle qu'appelle l'ARN nu, et la seule de `catalog-build` (lu sur le compte). Une version fige le code et la configuration (variables, mémoire, timeout). Revenir en arrière revient à repointer l'alias ; `routing_config` peut aussi répartir le trafic entre deux versions pour un déploiement progressif.
 - Usage : ✅ prod derrière un alias : rollback immédiat, concurrence provisionnée · ❌ dev redéployé souvent : `$LATEST` suffit, les versions publiées s'accumulent.
@@ -1829,6 +1880,7 @@ resource "aws_lambda_alias" "live" {
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : lambda-cold-start-init, lambda-versions-alias
+- Mots-clés : démarrage à froid, concurrence réservée, alias de Lambda, version de Lambda
 - Définition : La concurrence provisionnée garde N environnements initialisés en permanence sur une version ou un alias : aucun démarrage à froid jusqu'à N appels simultanés.
 - Contexte : Contrairement à la concurrence réservée (un plafond, gratuit), elle se paie à l'heure, même sans trafic. L'init tourne à l'allocation, pas au premier appel. Au-delà de N, les appels passent sur des environnements à la demande, avec démarrage à froid. Elle exige une version publiée ou un alias.
 - Usage : ✅ API synchrone sensible à la latence, pic prévisible (programmable) · ❌ pipeline asynchrone : 300 ms d'init n'y comptent pas, payer 24 h/24 si.
@@ -1858,6 +1910,7 @@ resource "aws_lambda_provisioned_concurrency_config" "p" {
 - Profils : data, expert
 - Prérequis : lambda-async-deux-retries
 - Voir aussi : sqs-eventbridge-dlq-max-receive
+- Mots-clés : invocation asynchrone, DLQ, SQS, bus EventBridge
 - Définition : En asynchrone, une destination `on_failure` reçoit l'événement et l'erreur ; la DLQ de la fonction (`dead_letter_config`) ne reçoit que l'événement d'origine.
 - Contexte : L'enregistrement de destination porte `requestContext` (tentatives, condition), `requestPayload` et `responsePayload` (type et message d'erreur) : on sait pourquoi l'événement a échoué. La DLQ, plus ancienne, se limite à SQS ou SNS et à l'événement brut. `on_success` chaîne vers une autre cible sans code. Rien de cela ne joue en synchrone.
 - Usage : ✅ `on_failure` vers SQS ou un bus EventBridge pour toute fonction asynchrone · ❌ DLQ de fonction quand l'erreur compte pour rejouer : elle ne la garde pas.
@@ -1902,6 +1955,7 @@ resource "aws_lambda_function_event_invoke_config" "c" {
 - Niveau : 3
 - Profils : expert
 - Prérequis : lambda-cold-start-init
+- Mots-clés : démarrage à froid, timeout, wheel
 - Source : data-platform · S1-07
 - Définition : L'init (imports, code de module) dure 10 s au plus ; trop longue ou en échec, elle est retentée à l'appel, dans le timeout.
 - Contexte : Doc AWS, non reproductible en local. Un import qui plante (`Runtime.ImportModuleError`, roue macOS dans le zip) fait échouer chaque invocation, puisque l'init est retentée à chaque fois. Un gros chargement au niveau module (référentiel, modèle) peut dépasser les 10 s ; derrière `@cache`, il est payé au premier appel, dans le budget de l'invocation, puis réutilisé.
@@ -1942,6 +1996,7 @@ handler({"code": "7501"}, None)  # → "Paris"
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : lambda-timeout-15-minutes
+- Mots-clés : timeout, handler
 - Source : data-platform · S1-07
 - Définition : `context.get_remaining_time_in_millis()` donne les millisecondes restantes avant le timeout ; on s'en sert pour s'arrêter proprement avant d'être coupé.
 - Contexte : Au timeout, Lambda arrête l'exécution : pas d'exception Python, ni `except`, ni `finally`, ni sortie de `with` ; l'invocation finit en `Task timed out` (doc AWS). Un traitement par lots peut vérifier le temps restant entre deux lots et lever une erreur explicite tant qu'il reste une marge pour journaliser.
@@ -1978,6 +2033,7 @@ handler({}, Ctx(900))  # ❌ TimeoutError
 - Type : piège
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : CPython, wheel, runtime
 - Source : data-platform · S1-07
 - Définition : `_pydantic_core.cpython-312-aarch64-linux-gnu.so` ne se charge que sous CPython 3.12 Linux aarch64 : changer de runtime impose de reconstruire le zip.
 - Contexte : L'importeur ne cherche que les suffixes de son interpréteur (`importlib.machinery.EXTENSION_SUFFIXES`) : sous `python3.13`, ce fichier est invisible et l'import échoue en `No module named 'pydantic_core._pydantic_core'`. D'où `--python-version` aligné sur `runtime` : les deux montent ensemble, puis on reconstruit.
@@ -2016,6 +2072,7 @@ importlib.import_module("demo_core")  # ❌ ModuleNotFoundError
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : lambda-so-version-python
+- Mots-clés : glibc, wheel, Amazon Linux, uv
 - Source : data-platform · S1-07
 - Définition : `manylinux2014` (alias `manylinux_2_17`) garantit un binaire qui tourne sur tout Linux avec glibc 2.17 ou plus : un minimum, pas le système cible.
 - Contexte : `manylinux_X_Y` signifie glibc ≥ X.Y. Le runtime `python3.12` tourne sur Amazon Linux 2023 (glibc 2.34) : une roue `manylinux_2_28` y convient aussi. Mais `--python-platform aarch64-manylinux2014` n'accepte que les roues jusqu'à 2.17 : un paquet publié seulement en `manylinux_2_28` n'est pas trouvé, et `aarch64-manylinux_2_28` le débloque. `musllinux` (Alpine) ne tourne pas sur Lambda.
@@ -2046,6 +2103,7 @@ sorted(t.platform for t in tags)
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : lambda-arm64-graviton, lambda-manylinux-glibc
+- Mots-clés : wheel, runtime
 - Source : data-platform · S1-07
 - Définition : Roues du zip et `architectures` de la fonction doivent correspondre : un zip `aarch64` sur une fonction `x86_64` échoue à l'import du code natif.
 - Contexte : Le déploiement passe : Lambda ne lit pas le zip. L'erreur arrive à l'invocation, `No module named 'pydantic_core._pydantic_core'`, car le runtime x86_64 cherche `.cpython-312-x86_64-linux-gnu.so`. Une seule source de vérité : `PLATFORM` du script de build et `architectures` du Terraform changent ensemble. Vérifier le tag des binaires fait partie du build.
@@ -2074,6 +2132,7 @@ unzip -l $Z | grep -c macosx
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : lambda-source-code-hash
+- Mots-clés : SHA-256, base64, hexadécimal
 - Source : data-platform · S1-07
 - Définition : `CodeSha256` de la fonction est le sha256 du zip encodé en base64 : le comparer au `base64sha256` du pointeur prouve quel build tourne.
 - Contexte : C'est la valeur que Terraform compare à `source_code_hash`. Le script de publication calcule la même empreinte ; l'étape 8 a retrouvé `SIF3hiDV…` à trois endroits : build, pointeur, fonction. Attention au format : `sha256sum` et la clé S3 donnent l'hexadécimal (64 caractères), Lambda et Terraform le base64 des 32 octets bruts (44 caractères).
@@ -2114,6 +2173,7 @@ aws lambda get-function-configuration \
 - Profils : ops, expert
 - Prérequis : lambda-zip-s3-copie
 - Voir aussi : s3-version-id
+- Mots-clés : versioning, idempotent, adressage par contenu
 - Source : data-platform · S1-07
 - Définition : Avec un bucket versionné, `s3_object_version` désigne une version précise d'une clé fixe : une nouvelle version redéploie, sans hash dans la clé.
 - Contexte : Alternative à l'adressage par contenu : `lambdas/ingest-bodacc.zip` réécrit à chaque build, et son `version_id` passé à Terraform. Plus simple à publier, mais l'identifiant est opaque (il ne dit rien du contenu) et dépend du bucket : impossible de retrouver la même version dans un autre compte. La clé par hash reste lisible, idempotente et vérifiable contre `CodeSha256`.
@@ -2145,6 +2205,7 @@ resource "aws_lambda_function" "this" {
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : lambda-permission-invoquer, lambda-module-for-each
+- Mots-clés : module Terraform, Access Analyzer, SCP
 - Source : data-platform · S1-08
 - Définition : En entreprise, le module Lambda reçoit une map `allowed_triggers` et génère un `aws_lambda_permission` par entrée, `source_arn` obligatoire.
 - Contexte : Avec des dizaines de fonctions, une permission écrite à la main finit par oublier `source_arn` : n'importe quelle ressource du service (un autre bucket, une autre règle) peut alors invoquer. Une `validation` de variable refuse l'entrée dès le plan. Le contrôle global reste à IAM Access Analyzer et aux SCP ; le module garantit la forme de chaque permission.
@@ -2183,6 +2244,7 @@ variable "allowed_triggers" {
 - Profils : data, expert
 - Prérequis : lambda-async-deux-retries
 - Voir aussi : Data engineering/ingestion-retry-ou-rejeu
+- Mots-clés : EventBridge Scheduler, invocation asynchrone, throttling
 - Source : data-platform · S1-08
 - Définition : Scheduler réessaie la livraison, Lambda réessaie le handler : les deux couches ne se multiplient pas, car un appel livré ne revient jamais à Scheduler.
 - Contexte : Scheduler appelle en asynchrone : dès le `202`, l'appel est livré et Scheduler a fini, même si le handler échoue ensuite. Ses tentatives ne servent qu'aux échecs de dépôt (droits, limitation). Un handler qui échoue toujours tourne donc 1 + `maximum_retry_attempts` fois, quel que soit `retry_policy`. Compter ainsi avant de choisir les chiffres, et parce que chaque exécution réappelle l'API source.
@@ -2214,6 +2276,7 @@ aws logs tail /aws/lambda/"$F" \
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : lambda-event-invoke-config
+- Mots-clés : invocation asynchrone, throttling, concurrence
 - Source : data-platform · S1-08
 - Définition : Lambda abandonne un événement asynchrone dès que l'une des deux limites est atteinte : nombre de tentatives ou âge maximal de l'événement.
 - Contexte : Les retries partent environ 1 minute puis 2 minutes après l'échec, mais l'événement peut aussi attendre dans la file interne (fonction limitée en concurrence, throttling) : son âge court pendant ce temps. Un âge maximal trop court fait sauter des retries sans le dire. Bornes de Lambda : 0 à 2 tentatives, 60 à 21 600 secondes.
@@ -2242,6 +2305,7 @@ maximum_event_age_in_seconds = 3600
 - Profils : data, expert
 - Prérequis : lambda-boto3-invoke-function-error, lambda-timeout-15-minutes
 - Voir aussi : dynamodb-reessais-botocore
+- Mots-clés : botocore, invocation synchrone, timeout
 - Source : data-platform · S1-08
 - Définition : `botocore.config.Config(read_timeout=…, retries=…)` règle combien de temps le client attend la réponse et combien de fois il renvoie l'appel.
 - Contexte : Par défaut, le client attend 60 s (mesuré) ; une Lambda de 300 s fait expirer la lecture alors que l'invocation continue côté AWS. En mode `legacy`, botocore fait jusqu'à 5 tentatives (`_retry.json`) : il relance l'invocation, qui s'exécute alors deux fois. Pour un invoke synchrone long : `read_timeout` au-delà du timeout de la fonction, `total_max_attempts: 1`.

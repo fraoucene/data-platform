@@ -19,6 +19,7 @@ Python · Fichiers temporaires (module tempfile) : dossiers, fichiers, emplaceme
 - Profils : débutant, data, ops
 - Prérequis : context-managers-with-open-ferme
 - Voir aussi : fichiers-temporaires-chemin-mort
+- Mots-clés : context manager, Lambda, fixture pytest, Parquet
 - Définition : `with tempfile.TemporaryDirectory() as d:` crée un dossier temporaire et le supprime avec tout son contenu à la sortie du bloc.
 - Contexte : Pratique pour un traitement qui écrit des fichiers intermédiaires (télécharger, décompresser, convertir en Parquet, puis envoyer sur S3) sans rien laisser derrière, même sur erreur. Dans une Lambda, seul `/tmp` est accessible en écriture et il est conservé entre invocations du même conteneur : le nettoyer compte. Le `as` reçoit un `str`, pas un `Path`.
 - Usage : ✅ fichiers de travail d'un script ou d'une Lambda · ❌ dans pytest : la fixture `tmp_path` (un `Path`, nettoyé par pytest) ; fichier à garder : un vrai chemin.
@@ -58,6 +59,7 @@ noms     # → ["dt=2026-10-23"]
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : fichiers-temporaires-temporarydirectory-jetable
+- Mots-clés : atomique, droits Unix, Lambda
 - Source : data-platform · S1-07
 - Définition : `tempfile.mkdtemp()` crée un dossier au nom unique et renvoie son chemin (`str`) ; c'est à l'appelant de le supprimer.
 - Contexte : Le nom est tiré au hasard et la création est atomique : deux processus n'obtiennent jamais le même dossier. Les droits sont `700` (lisible par son seul propriétaire). Rien ne le nettoie : ni la sortie d'une fonction, ni la fin du processus. Pour un dossier de travail jetable, `TemporaryDirectory()` fait la même création et la suppression.
@@ -87,6 +89,7 @@ os.rmdir(d)  # à faire soi-même
 - Type : concept
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : variable d'environnement, Lambda, conteneur
 - Source : data-platform · S1-07
 - Définition : `tempfile.gettempdir()` renvoie le dossier temporaire par défaut : `TMPDIR` s'il est posé et accessible en écriture, sinon `/tmp` (ou équivalent).
 - Contexte : Ordre de recherche : `TMPDIR`, `TEMP`, `TMP`, puis `/tmp`, `/var/tmp`, `/usr/tmp`, enfin le dossier courant ; le premier où l'on peut écrire gagne. Sur macOS, `TMPDIR` vise un dossier par utilisateur sous `/var/folders/…` ; dans une Lambda, c'est `/tmp`, seul disque inscriptible. Tous les `mkdtemp`, `TemporaryDirectory` et `NamedTemporaryFile` sans `dir=` y écrivent.
@@ -115,6 +118,7 @@ os.rmdir(d)
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : clé S3, Content-Type
 - Source : data-platform · S1-07
 - Définition : `prefix=` et `suffix=` encadrent la partie aléatoire du nom : `prefix="bodacc-"`, `suffix=".jsonl.gz"` donne `bodacc-k3j9x2a1.jsonl.gz`.
 - Contexte : Toutes les fonctions de `tempfile` les acceptent. Le préfixe aide à repérer qui laisse traîner des fichiers dans `/tmp` ; le suffixe donne une extension aux outils qui la regardent (`gzip`, un `ContentType` deviné). Aucun séparateur n'est ajouté : il faut mettre soi-même le tiret ou le point. La partie aléatoire reste au milieu, le nom n'est donc jamais stable.
@@ -143,6 +147,7 @@ nom.endswith("-2026")  # → True
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : fichiers-temporaires-namedtemporaryfile-nom-aleatoire
+- Mots-clés : bytes, seek, encodage
 - Source : data-platform · S1-07
 - Définition : `NamedTemporaryFile()` et `TemporaryFile()` s'ouvrent par défaut en `"w+b"` : écriture et lecture d'octets ; écrire une `str` lève `TypeError`.
 - Contexte : À l'inverse d'`open(p, "w")`, texte par défaut. `mode="w+"` (avec `encoding="utf-8"`) donne un fichier texte. Le `+` permet de relire ce qu'on vient d'écrire, après un `seek(0)` : la position est en fin de fichier après l'écriture. `t.mode` affiche `"rb+"`, autre écriture du même mode.
@@ -172,6 +177,7 @@ with tempfile.NamedTemporaryFile() as t:
 - Type : concept
 - Niveau : 2
 - Profils : data, ops
+- Mots-clés : context manager, partition, en-tête gzip, Lambda
 - Source : data-platform · S1-07
 - Définition : `tempfile.NamedTemporaryFile()` crée un fichier au nom aléatoire (`tmpk3j9x…`) et le supprime à la sortie du `with`, sauf `delete=False`.
 - Contexte : Utile en Lambda pour écrire une partition dans `/tmp` avant l'envoi S3. Deux pièges : le nom change à chaque invocation (il finit dans l'en-tête gzip si l'on oublie `filename=""`), et le fichier disparaît à la sortie du bloc, donc l'envoi doit se faire dedans ou avec `delete=False`. `suffix=".jsonl.gz"` donne une extension lisible.
@@ -215,6 +221,7 @@ p.unlink()
 - Profils : data, ops
 - Prérequis : fichiers-temporaires-gettempdir-emplacement
 - Voir aussi : context-managers-ecriture-atomique
+- Mots-clés : injection de dépendance, fixture pytest, atomique
 - Source : data-platform · S1-07
 - Définition : `dir=` place le fichier ou le dossier temporaire dans le dossier donné au lieu de `gettempdir()` ; `None` garde le défaut.
 - Contexte : Dans `ingest_day(…, tmp_dir=None)`, le paramètre est passé tel quel à `TemporaryDirectory(dir=tmp_dir)` : la Lambda écrit dans `/tmp`, le test passe `tmp_path` et vérifie que le dossier est vide après une erreur. Utile aussi pour écrire sur le même disque que la destination, condition d'un `os.replace` atomique. Le dossier parent doit exister.
@@ -247,6 +254,7 @@ list(parent.iterdir())  # → []
 - Type : concept
 - Niveau : 2
 - Profils : data
+- Mots-clés : descripteur de fichier, objet fichier, boto3
 - Source : data-platform · S1-07
 - Définition : `tempfile.TemporaryFile()` donne un fichier sans nom visible : sous Linux et macOS, il est retiré du dossier dès sa création et disparaît à la fermeture.
 - Contexte : Comme le fichier n'a pas de chemin, `t.name` est un simple numéro de descripteur (`int`) : aucun autre programme ne peut l'ouvrir. Parfait pour un tampon qu'on écrit et relit soi-même (`seek(0)`) ; inutilisable si une API demande un chemin, comme `s3.upload_file(chemin, …)`. Dans ce cas : `NamedTemporaryFile`, ou passer l'objet fichier à `upload_fileobj`.
@@ -275,6 +283,7 @@ with tempfile.TemporaryFile() as t:
 - Niveau : 2
 - Profils : ops
 - Voir aussi : fichiers-temporaires-mktemp-obsolete
+- Mots-clés : descripteur de fichier, atomique, conteneur chaud
 - Source : data-platform · S1-07
 - Définition : `tempfile.mkstemp()` crée un fichier au nom unique et renvoie `(fd, chemin)` : un descripteur bas niveau ouvert, que l'appelant doit fermer et supprimer.
 - Contexte : C'est la brique sûre sous `NamedTemporaryFile` : création atomique, droits `600`. Mais `fd` est un entier, pas un objet fichier : l'oublier laisse un descripteur ouvert (une Lambda chaude en a un nombre limité) ; le fichier, lui, reste sur le disque. `os.fdopen(fd, "wb")` l'enveloppe dans un objet fichier qui le fermera.
@@ -305,6 +314,7 @@ os.unlink(p)  # suppression manuelle
 - Niveau : 2
 - Profils : ops
 - Voir aussi : fichiers-temporaires-mkstemp-descripteur
+- Mots-clés : TOCTOU
 - Source : data-platform · S1-07
 - Définition : `tempfile.mktemp()` renvoie seulement un nom libre au moment de l'appel, sans rien créer : obsolète, car un autre processus peut créer ce fichier avant vous.
 - Contexte : Entre l'obtention du nom et l'`open`, la place est libre : course classique (TOCTOU), exploitable sur un `/tmp` partagé. La doc le marque obsolète depuis longtemps, mais l'appel ne lève aucun avertissement (mesuré en 3.12) : il passe en revue de code. Les fonctions sûres créent le fichier en même temps qu'elles choisissent le nom : `mkstemp`, `NamedTemporaryFile`, `mkdtemp`.
@@ -339,6 +349,7 @@ with tempfile.TemporaryDirectory() as d:
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : fichiers-temporaires-temporarydirectory-jetable
+- Mots-clés : context manager, sha256
 - Source : data-platform · S1-07
 - Définition : Un chemin pris dans un `TemporaryDirectory` ne vaut que dans le `with` : renvoyé par la fonction, il pointe vers un fichier déjà supprimé.
 - Contexte : Le `return` dans le `with` déclenche d'abord la sortie du bloc, donc la suppression du dossier, puis rend la valeur. L'appelant reçoit un chemin mort et l'erreur sort plus loin (`FileNotFoundError` à l'upload). D'où, dans `ingest_day`, l'écriture **et** la publication S3 dans le même bloc, et un résultat fait de valeurs (`count`, `sha256`), pas de chemins.
@@ -370,6 +381,7 @@ open(p, "rb")  # ❌ FileNotFoundError
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : fichiers-temporaires-namedtemporaryfile-nom-aleatoire
+- Mots-clés : context manager, tampon, boto3
 - Source : data-platform · S1-07
 - Définition : Depuis 3.12, `NamedTemporaryFile(delete_on_close=False)` garde le fichier après `close()` et ne le supprime qu'à la sortie du `with`.
 - Contexte : Par défaut, fermer le fichier le supprime : impossible d'écrire, fermer pour vider les tampons, puis passer le chemin à une API qui le rouvre (`upload_file`, un outil externe, Windows qui refuse une double ouverture). `delete=False` réglait ça en laissant le fichier pour toujours ; `delete_on_close=False` ferme sans supprimer et garde le nettoyage du `with`.
@@ -399,6 +411,7 @@ os.path.exists(t.name)  # → False
 - Niveau : 3
 - Profils : expert
 - Prérequis : fichiers-temporaires-temporarydirectory-jetable
+- Mots-clés : fixture pytest, ramasse-miettes, CPython
 - Source : data-platform · S1-07
 - Définition : `td = TemporaryDirectory()` crée le dossier tout de suite ; `td.name` donne son chemin et `td.cleanup()` le supprime, appel répétable sans erreur.
 - Contexte : Utile quand la durée de vie ne suit pas un bloc : une fixture qui crée en `setup` et nettoie en `teardown`, un objet qui garde son dossier. Oublié, le dossier est supprimé quand l'objet est détruit par le ramasse-miettes, avec un `ResourceWarning` « Implicitly cleaning up » : sur CPython, souvent tôt, mais rien n'est garanti. `with` reste la forme sûre.
@@ -428,6 +441,7 @@ td.cleanup()  # 2e appel : sans erreur
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : fichiers-temporaires-temporaryfile-sans-nom
+- Mots-clés : BytesIO, descripteur de fichier, Lambda
 - Source : data-platform · S1-07
 - Définition : `SpooledTemporaryFile(max_size=n)` garde les données en mémoire (`BytesIO`) jusqu'à `n` octets, puis bascule seul vers un vrai fichier temporaire.
 - Contexte : Compromis pour une taille inconnue : un petit lot reste en RAM, une grosse journée passe sur disque sans saturer la mémoire de la Lambda. `t._rolled` dit si la bascule a eu lieu ; `t.rollover()` la force. Avant la bascule, il n'y a ni nom ni descripteur. L'interface fichier (`write`, `seek`, `read`) reste la même des deux côtés.
@@ -458,6 +472,7 @@ with tempfile.SpooledTemporaryFile(
 - Profils : expert
 - Prérequis : fichiers-temporaires-gettempdir-emplacement
 - Voir aussi : tests-monkeypatch
+- Mots-clés : variable d'environnement, monkeypatch
 - Source : data-platform · S1-07
 - Définition : Le premier `gettempdir()` calcule le dossier et le range dans `tempfile.tempdir` ; un `TMPDIR` changé ensuite est ignoré par tout le module.
 - Contexte : Comme un client figé au premier appel : un test qui pose `TMPDIR` avec `monkeypatch.setenv` après qu'une autre partie du code a utilisé `tempfile` ne change rien. Remettre `tempfile.tempdir = None` force un nouveau calcul ; affecter `tempfile.tempdir` directement fixe le dossier pour tout le processus. Plus simple et local : passer `dir=`.

@@ -18,6 +18,7 @@ Data engineering · API de données : requêtes, pagination, erreurs, cache, con
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : ingestion-mesurer-vraie-source
+- Mots-clés : OpenDataSoft, streaming, HyperLogLog
 - Source : data-platform · S1-05
 - Définition : Avant d'écrire l'ingestion, on mesure la source : lignes par jour (`total_count`), répartition (`group_by`), poids moyen d'une ligne.
 - Contexte : `limit=0` renvoie le total exact sans aucune donnée : une requête, quelques octets. Un `group_by` donne la répartition par famille. Ces chiffres décident de tout : 32 373 lignes par jour excluent l'offset (plafond 10 000), 59 Mo imposent le streaming, un tiers utile justifie un filtre. Mesurer sur une journée complète, jamais sur une fixture de 25 lignes.
@@ -69,6 +70,7 @@ lignes > 10_000  # → True  (offset exclu)
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : ODSQL, dataset, lakehouse, BODACC
 - Source : data-platform · S1-05
 - Définition : Filtrer dans la requête (`where`, `select`) fait trier la source avant l'envoi : on ne télécharge que les lignes et colonnes utiles.
 - Contexte : Sur BODACC, une journée compte 32 373 annonces dont 15 310 dépôts de comptes (`dpc`, 47 %) inutiles au projet. `familleavis in (…)` dans `where` divise le téléchargement par 3, `select` retire les colonnes. Le langage de filtre d'une API (ODSQL ici) est typé et limité : un seul dataset, pas de jointure, champs imbriqués vus comme du texte. Le reste se fait ensuite, dans le lakehouse.
@@ -115,6 +117,7 @@ round(total / gardees, 1)  # → 3.0
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : ingestion-evolution-de-schema
+- Mots-clés : OpenDataSoft, dataset, ODSQL
 - Définition : L'endpoint de métadonnées d'un dataset décrit ses champs, leurs types et sa date de mise à jour, sans renvoyer une seule ligne.
 - Contexte : Sur OpenDataSoft, `GET <base>` (sans `/records`) renvoie `fields` (nom, type) et `metas.default` (`records_count`, `data_processed`). C'est la première lecture d'une source : les types disent comment filtrer (`date'…'` pour un champ `date`), la mise à jour dit quand planifier. Le type déclaré ne dit pas tout : sur BODACC, 11 champs `text` contiennent du JSON sérialisé.
 - Usage : ✅ découvrir une source, détecter un changement de schéma à chaque run, planifier d'après `data_processed` · ❌ deviner les types depuis trois lignes d'exemple.
@@ -153,6 +156,7 @@ curl -s --compressed "$BODACC" \
 - Niveau : 1
 - Profils : débutant, data, web
 - Voir aussi : ingestion-retry-backoff-exponentiel, api-de-donnees-retry-after-deux-formes
+- Mots-clés : retry, quota
 - Définition : Seuls les échecs transitoires se retentent (429, 502, 503, 504, coupure réseau) ; les autres 4xx signalent une requête fausse, à corriger.
 - Contexte : Un 400, 401, 403 ou 404 renverra la même réponse : réessayer brûle du quota et retarde l'alerte. 429 et 503 disent « plus tard », 502 et 504 viennent d'une passerelle. Le 500 est ambigu (bug durable ou incident passager) : le client BODACC ne le retente pas (`RETRYABLE_STATUS = {429, 502, 503, 504}`). Un timeout ou une connexion refusée se retente aussi.
 - Usage : ✅ une liste explicite des statuts à retenter, dans une constante testée · ❌ `if statut >= 400: retry` : un 404 boucle jusqu'à épuiser les essais.
@@ -195,6 +199,7 @@ r.raise_for_status()  # ❌ HTTPStatusError
 - Niveau : 1
 - Profils : débutant, data, web
 - Voir aussi : ingestion-idempotence-ecraser
+- Mots-clés : retry, UUID
 - Définition : Une méthode idempotente (GET, PUT, DELETE) se rejoue sans changer le résultat ; un POST rejoué peut créer deux fois la même chose.
 - Contexte : Une API de données se lit en GET : après un timeout, on ignore si le serveur a répondu, mais réessayer ne crée rien. Un POST (création, envoi) dont la réponse se perd a peut-être réussi : le rejouer duplique. Les API sérieuses acceptent une clé d'idempotence (`Idempotency-Key`, chez Stripe) : même clé, même effet. urllib3, sous `requests`, ne retente par défaut que les méthodes idempotentes.
 - Usage : ✅ retries automatiques sur GET ; POST avec une `Idempotency-Key` générée une fois par opération · ❌ retenter un POST sans clé : commandes, messages ou lignes en double.
@@ -244,6 +249,7 @@ len(serveur)  # → 1
 - Niveau : 2
 - Profils : data
 - Voir aussi : api-de-donnees-keyset-derniere-cle, api-de-donnees-export-en-flux
+- Mots-clés : OpenDataSoft, keyset, streaming
 - Source : data-platform · S1-05
 - Définition : L'offset (« saute N, donne 100 ») est plafonné par l'API : `offset + limit ≤ 10 000` et `limit ≤ 100`, sinon HTTP 400.
 - Contexte : Pour servir `offset=9000`, le serveur trie puis saute 9 000 lignes à chaque appel : le coût croît avec la page, d'où le plafond (10 000 chez OpenDataSoft comme chez Elasticsearch). Mesuré sur BODACC : `offset=9999&limit=1` → 200, `offset=10000` → 400. Une journée de 32 373 lignes ne se lit donc qu'au premier tiers. L'offset glisse aussi quand des lignes arrivent pendant la lecture.
@@ -290,6 +296,7 @@ statut(0, 101)      # → 400
 - Profils : data
 - Prérequis : api-de-donnees-offset-fenetre-plafonnee
 - Voir aussi : api-de-donnees-curseur-jeton-opaque
+- Mots-clés : ODSQL, BODACC
 - Source : data-platform · S1-05
 - Définition : La pagination keyset demande les N lignes après la dernière clé reçue (`where cle > dernière`, `order_by cle`) : coût constant, sans plafond (≈ `?after=<cursor>`).
 - Contexte : Il faut une clé unique, triée et que l'API sait comparer. Sur BODACC, `id` est un `text` : ODSQL refuse `>` dessus (400), et un texte de longueur variable ne suit pas l'ordre numérique. `numeroannonce` entier convient, mais il repart à 1 dans chaque bulletin : un curseur par bulletin A, B, C, soit 325 appels par journée. Chaque page est une requête indépendante, réessayable sans doublon. Arrêt sur une page incomplète.
@@ -356,6 +363,7 @@ max(cles)  # → "A202602019"
 - Niveau : 2
 - Profils : data, web
 - Voir aussi : api-de-donnees-keyset-derniere-cle, Python/generateurs-pagination-api
+- Mots-clés : générateur, S3
 - Définition : Avec un curseur opaque, chaque page renvoie un jeton (`next`) à repasser tel quel pour la page suivante ; plus de jeton, plus de page.
 - Contexte : Le serveur encode lui-même sa position (souvent la dernière clé, en base64) : le client n'a ni tri ni offset à gérer. C'est le modèle des API AWS (`NextToken`, `ContinuationToken` de S3) et de beaucoup d'API REST (`next` en lien). Règles : ne jamais décoder ni fabriquer le jeton, s'arrêter sur son absence et non sur une page vide ou courte, savoir qu'il expire souvent.
 - Usage : ✅ API qui le propose (AWS, GitHub, Stripe) : boucle `while token` dans un générateur · ❌ réutiliser un vieux jeton le lendemain pour reprendre : il a souvent expiré.
@@ -404,6 +412,7 @@ vus  # → ["A1"]   (A9 jamais lu)
 - Niveau : 2
 - Profils : data
 - Voir aussi : ingestion-generateurs-pipeline-en-flux
+- Mots-clés : keyset, streaming, JSON Lines, idempotent
 - Source : data-platform · S1-05
 - Définition : L'endpoint d'export renvoie tout le résultat filtré en une requête, une ligne JSON par enregistrement, sans plafond : on le lit en streaming.
 - Contexte : Une journée BODACC : 1 appel, 32 373 lignes, 59 Mo en 5 s, contre 325 pages en keyset. Contreparties : une connexion longue (timeout de lecture de 60 s, le défaut httpx est 5 s), une lecture ligne par ligne (`iter_lines`) pour ne jamais tenir 59 Mo en mémoire, et un en-tête qui ment : `content-type: application/json` pour du JSONL, donc pas de `r.json()`.
@@ -450,6 +459,7 @@ def annonces(flux):
 - Profils : data
 - Prérequis : api-de-donnees-offset-fenetre-plafonnee, api-de-donnees-keyset-derniere-cle, api-de-donnees-curseur-jeton-opaque
 - Voir aussi : api-de-donnees-export-en-flux
+- Mots-clés : BODACC
 - Définition : Quatre façons de lire un gros résultat : offset (sauter N lignes), keyset (après la dernière clé), curseur (jeton du serveur), export (un flux).
 - Contexte : Le choix suit le volume et ce que l'API offre. Offset : simple, mais plafonné et instable si les données bougent. Keyset : coût constant, il faut une clé unique et triable. Curseur : le serveur garde la position, on renvoie son jeton. Export : un seul appel, mais une coupure fait tout relancer. Sur BODACC, 32 373 lignes par jour excluent l'offset : export, keyset en plan B.
 - Usage : ✅ mesurer le volume (`total_count`) puis choisir : export s'il existe, sinon curseur ou keyset · ❌ offset au-delà de quelques milliers de lignes.
@@ -482,6 +492,7 @@ choisir(800, False, False)    # → "offset"
 - Niveau : 2
 - Profils : data, web
 - Prérequis : api-de-donnees-codes-http-retenter-ou-lever
+- Mots-clés : HTTP 429
 - Source : data-platform · S1-05
 - Définition : On teste le statut HTTP et on lit le corps d'erreur (`error_code`) avant d'accéder aux données : une erreur arrive souvent en JSON valide.
 - Contexte : Une API de données répond 400 avec `{"error_code", "message"}` : du JSON parfaitement valide, mais sans `results`. Parser sans tester le statut donne `KeyError: 'results'`, loin de la cause. Réflexe d'exploration : afficher la réponse brute (`python3 -m json.tool`). Dans le client : lever sur le statut, décider sur `error_code` (stable), jamais sur le texte de `message`, qui peut changer.
@@ -530,6 +541,7 @@ results(400, '{"error_code": "X"}')  # ❌ ApiError
 - Niveau : 2
 - Profils : data, web
 - Voir aussi : formats-gzip-compresser-le-brut
+- Mots-clés : httpx, gzip, Lambda
 - Définition : Un client HTTP annonce `Accept-Encoding: gzip` et décompresse la réponse : avec httpx, `r.content` et `iter_lines()` rendent déjà le texte décodé.
 - Contexte : L'export BODACC arrive en gzip : 59 Mo de JSON, quelques Mo sur le réseau. httpx envoie l'en-tête par défaut et décode à la lecture ; seul `iter_raw()` rend les octets compressés. curl, lui, ne décompresse qu'avec `--compressed`. Piège de mesure : `Content-Length` donne la taille compressée, pas celle du texte ; pour dimensionner mémoire et stockage, compter les octets décodés.
 - Usage : ✅ laisser httpx gérer, mesurer le volume décodé · ❌ comparer `Content-Length` à la taille écrite dans S3, ou dimensionner la mémoire d'une Lambda sur la taille compressée.
@@ -570,6 +582,7 @@ len(gz) < len(brut) // 50  # → True
 - Niveau : 2
 - Profils : data
 - Voir aussi : api-de-donnees-limiter-son-debit
+- Mots-clés : BODACC, backoff exponentiel, UTC
 - Source : data-platform · S1-05
 - Définition : Une API annonce son quota dans les en-têtes `X-RateLimit-Limit`, `-Remaining` et `-Reset` ; au-delà, elle répond HTTP 429.
 - Contexte : BODACC : 5 000 000 d'appels par jour pour toute l'instance, remis à zéro à minuit UTC. `remaining` a perdu 2 523 en 69 s sans aucun appel de notre part : le quota est partagé, un autre client peut l'épuiser avant notre passage. Une journée nous coûte 1 appel : inutile de sur-concevoir, mais le 429 reste possible. Sur 429 : backoff court, puis échec propre et relance après le reset.
@@ -616,6 +629,7 @@ attente > timedelta(minutes=15)
 - Profils : data, web
 - Prérequis : api-de-donnees-codes-http-retenter-ou-lever
 - Voir aussi : ingestion-retry-backoff-exponentiel
+- Mots-clés : HTTP 429, backoff exponentiel, Lambda
 - Définition : L'en-tête `Retry-After` d'un 429 ou 503 dit quand réessayer : un nombre de secondes (`120`) ou une date HTTP (`Sat, 24 Oct 2026 14:05:00 GMT`).
 - Contexte : Le serveur sait mieux que le client quand son quota se libère : sa valeur prime sur le backoff. La RFC 9110 autorise les deux formes ; beaucoup de clients ne lisent que les secondes (`fetch_day` retombe sinon sur son backoff). Une date se convertit en attente avec `parsedate_to_datetime`, moins l'heure courante. Toujours plafonner : 9 heures d'attente dans une Lambda de 15 minutes, c'est échouer et relancer plus tard.
 - Usage : ✅ lire les deux formes, plafonner, retomber sur le backoff si la valeur est illisible · ❌ dormir la valeur reçue sans plafond : `Retry-After: 36000` bloque le run ou dépasse le timeout.
@@ -714,6 +728,7 @@ run(200, "v2", '"c3d4"')["etag"]
 - Niveau : 2
 - Profils : data, web
 - Voir aussi : api-de-donnees-etag-if-none-match
+- Mots-clés : ETag, HTTP 304, UTC
 - Définition : `Last-Modified` donne la date de dernière modification d'une ressource ; renvoyée dans `If-Modified-Since`, elle obtient un 304 si rien n'a bougé depuis.
 - Contexte : Même principe que l'ETag, sur une date, à la seconde près au mieux : deux modifications dans la même seconde passent inaperçues. Si le serveur fournit les deux, `If-None-Match` prime (RFC 9110). La date est au format HTTP, toujours en GMT ; `format_datetime(d, usegmt=True)` la produit. Renvoyer la valeur reçue telle quelle plutôt que sa propre horloge, qui peut dériver.
 - Usage : ✅ fichiers statiques, objets S3, sources sans ETag · ❌ envoyer l'heure du client à la place de la valeur reçue : décalage d'horloge, faux 304.
@@ -798,6 +813,7 @@ rupture("v2.1", "v3.0")  # → True
 - Profils : data, expert
 - Prérequis : api-de-donnees-offset-fenetre-plafonnee
 - Voir aussi : api-de-donnees-keyset-derniere-cle
+- Mots-clés : keyset
 - Définition : Si des lignes s'insèrent ou disparaissent pendant une lecture par offset, les pages se décalent : lignes lues deux fois, ou jamais.
 - Contexte : L'offset désigne une position, pas une ligne. Une insertion en tête pendant la lecture pousse tout d'un cran : la première ligne de la page suivante a déjà été lue. Une suppression fait l'inverse : une ligne passe la frontière sans être lue. Le keyset n'a pas ce défaut (il repart d'une clé). Sur une journée de parution close, le risque est faible ; sur un jeu vivant, il est certain.
 - Usage : ✅ offset sur des données figées (journée close, snapshot), triées sur une clé unique · ❌ offset sur une table qui reçoit des lignes pendant la lecture : keyset ou export.
@@ -834,6 +850,7 @@ lus  # → ["A1", "A2", "A4"]  (A3 sautée)
 - Niveau : 3
 - Profils : data, expert
 - Voir aussi : api-de-donnees-etag-if-none-match, AWS/cloudfront-cache-control-ttl
+- Mots-clés : CDN, RFC
 - Définition : `Cache-Control: max-age=60` autorise caches et CDN à resservir la même réponse pendant 60 s : ce qu'on lit peut dater d'une minute.
 - Contexte : BODACC répond `cache-control: public, max-age=60` : un proxy entre nous et la source peut rendre une version vieille de 60 s, et l'en-tête `Age` (RFC 9111) dit depuis combien de temps elle est en cache. Pour une ingestion quotidienne, sans effet. Ça compte quand on enchaîne deux appels qui doivent être cohérents (`total_count` puis export) ou une relecture juste après une mise à jour de la source.
 - Usage : ✅ lire `Age` et `Cache-Control` pour expliquer un écart entre deux appels proches · ❌ conclure à une perte de données parce qu'un comptage relu tout de suite est ancien.
@@ -873,6 +890,7 @@ d  # → {"public": True, "max-age": "60"}
 - Profils : data, expert
 - Prérequis : api-de-donnees-quota-partage
 - Voir aussi : api-de-donnees-retry-after-deux-formes
+- Mots-clés : keyset, quota, HTTP 429, backfill
 - Définition : Un client limite lui-même son débit (N appels par seconde) pour rester sous le quota, au lieu d'attendre que le serveur réponde 429.
 - Contexte : Paralléliser 325 pages keyset sur 20 threads crée un pic que le serveur coupe en 429, puis tous les threads attendent ensemble. Un limiteur côté client (intervalle minimal entre deux appels, ou seau à jetons qui tolère une rafale puis impose un débit moyen) lisse la charge. Avec un quota partagé comme celui de BODACC, c'est aussi ne pas prendre la part des autres. Le serveur reste juge : le 429 doit toujours être géré.
 - Usage : ✅ pagination parallèle, backfill de centaines de jours, API à quota par seconde · ❌ `sleep` fixe après chaque appel quand l'appel est lent : on attend deux fois.
@@ -918,6 +936,7 @@ pages / debit           # → 65.0  (s)
 - Niveau : 3
 - Profils : data, ops
 - Prérequis : api-de-donnees-version-dans-url
+- Mots-clés : OpenDataSoft, RFC, httpx
 - Définition : Les en-têtes `Deprecation` et `Sunset` annoncent qu'un endpoint est déprécié et la date où il cessera de répondre.
 - Contexte : `Sunset` (RFC 8594) porte une date HTTP ; `Deprecation` (RFC 9745) une date `@<epoch>`. OpenDataSoft a le sien, `ODS-Explore-API-Deprecation`, listé dans `access-control-expose-headers`. Un client d'ingestion ne lit jamais les en-têtes : sans contrôle, on découvre la fin d'une version le jour où elle répond 410 Gone. Les journaliser en warning à chaque run, avec une alerte, laisse des semaines pour migrer.
 - Usage : ✅ un warning (et une alarme) dès qu'un de ces en-têtes apparaît · ❌ compter sur eux seuls : beaucoup d'API ne les envoient pas, suivre aussi le journal des changements.

@@ -19,6 +19,7 @@ DevOps · pre-commit : ci, config, exécution, installation, versions (format sp
 - Profils : débutant, ops
 - Prérequis : pre-commit-install-par-clone
 - Voir aussi : ruff-fix-sur-place
+- Mots-clés : hook, index git, ruff
 - Source : data-platform · S1-03
 - Définition : Un hook qui modifie un fichier se déclare `Failed` et annule le commit : la correction est sur le disque, à relire puis re-stager.
 - Contexte : C'est le contrat de pre-commit : rien ne part sans que tu aies vu la correction (`end-of-file-fixer`, `ruff-format`, `ruff-check --fix`). Le message dit `files were modified by this hook`. Le fichier apparaît `AM` : l'index a l'ancienne version, le disque la corrigée. `pre-commit run --files` ou `make fmt` avant le commit évite ce tour (≈ husky + lint-staged, sans `git add` automatique).
@@ -50,6 +51,7 @@ git commit -m "main: bodacc-client"
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : git-hook-commit-msg
+- Mots-clés : hook, clone, README
 - Source : data-platform · S1-03
 - Définition : `pre-commit install` écrit le hook dans `.git/hooks/pre-commit` ; ce dossier n'est jamais versionné, donc chaque clone doit le refaire.
 - Contexte : `.git/` reste local : un `git clone` récupère `.pre-commit-config.yaml`, pas le hook. Sans `install`, les commits passent sans aucun contrôle, en silence. D'où `uv run pre-commit install` dans les prérequis du README, juste après `uv sync` (≈ le script `prepare` de husky, qu'aucun gestionnaire de paquets ne lance ici).
@@ -78,6 +80,7 @@ uv run pre-commit install
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : pre-commit-all-files-suivis
+- Mots-clés : index git, hook
 - Définition : `pre-commit run` sans option passe les hooks sur les fichiers stagés, exactement comme le ferait `git commit`, sans créer de commit.
 - Contexte : C'est la répétition du commit : même liste de fichiers (l'index), même mise de côté des modifications non stagées (`Stashing unstaged files`), restaurées ensuite. Un fichier modifié mais non stagé n'est pas contrôlé. Pour tout le dépôt, `--all-files` ; pour une liste précise, `--files a.py b.py`.
 - Usage : ✅ vérifier ce qui partira avant `git commit` · ❌ `pre-commit run` pour valider un fichier qu'on n'a pas encore stagé : `--files`.
@@ -103,6 +106,7 @@ pre-commit run
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : hook, YAML, ruff
 - Définition : `pre-commit run ruff-check --all-files` ne lance que le hook dont l'`id` est donné, pour tester ou corriger une seule chose.
 - Contexte : L'`id` est celui de la ligne `- id:` du YAML, pas le `name` affiché ni le nom de l'outil : `ruff-check`, pas `ruff`. Un `id` inconnu échoue avec `No hook with id … in stage pre-commit` ; un hook déclaré pour `pre-push` seulement n'est trouvé qu'avec `--hook-stage pre-push`. Sans `id`, tous les hooks tournent.
 - Usage : ✅ relancer le hook qui vient d'échouer, mettre au point un nouveau hook · ❌ lancer l'outil directement (`ruff check .`) pour reproduire : autres arguments, autre version que celle du `rev`.
@@ -129,6 +133,7 @@ pre-commit run ruff-check --all-files
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : hook, CI, variable d'environnement
 - Définition : `SKIP=ruff-check git commit …` saute les hooks dont l'`id` est listé, les autres tournent ; `--no-verify` saute tout.
 - Contexte : La variable prend des `id` séparés par des virgules (espaces tolérés) et vaut aussi pour `pre-commit run`. Les hooks sautés s'affichent `Skipped`, le commit garde les autres contrôles : bien plus sûr que `--no-verify`, qui désactive aussi `end-of-file-fixer` ou `check-yaml`. La CI, elle, ne lit pas ton `SKIP` : le défaut y sera signalé.
 - Usage : ✅ commit de travail urgent alors qu'un seul hook bloque (`SKIP=uv-lock`) · ❌ `--no-verify` par réflexe : tous les garde-fous tombent.
@@ -156,6 +161,7 @@ SKIP="check-json, no-print" pre-commit run
 - Type : piège
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : hook, ruff, pyproject.toml
 - Définition : `args:` dans `.pre-commit-config.yaml` passe des options à l'outil du hook, avant la liste des fichiers : `args: [--fix]`, `args: [--maxkb=2000]`.
 - Contexte : Le dépôt du hook déclare ses propres `args` par défaut dans son `.pre-commit-hooks.yaml` ; les tiens les **remplacent**, ils ne s'y ajoutent pas. La commande lancée est `entry` + `args` + fichiers. data-platform s'en sert pour `ruff-check` (`--fix`) et pour `check-added-large-files` (`--maxkb=2000`, aperçus PNG des schémas).
 - Usage : ✅ options d'outil propres au dépôt (seuil, `--fix`) · ❌ y mettre la config de ruff (`--line-length`) : elle va dans `pyproject.toml`, lue aussi par `make lint` et l'éditeur.
@@ -190,6 +196,7 @@ pre-commit run show-args --files m.py
 - Niveau : 2
 - Profils : ops
 - Prérequis : pre-commit-run-index
+- Mots-clés : fichier suivi, hook, code de sortie
 - Source : data-platform · S1-03
 - Définition : `pre-commit run --all-files` passe les hooks sur tous les fichiers suivis par git (`git ls-files`), pas sur ceux du disque.
 - Contexte : Un fichier `??`, jamais ajouté, n'existe pas pour pre-commit : sur un scaffold neuf, les hooks affichent `(no files to check) Skipped` et le code retour vaut 0, un faux vert. Au `git commit`, seuls les fichiers stagés passent. Un `Skipped` attendu (aucun YAML dans le dépôt) est normal ; un `Skipped` sur `ruff-check` dans un dépôt Python est suspect.
@@ -224,6 +231,7 @@ pre-commit run --all-files
 - Niveau : 2
 - Profils : ops
 - Voir aussi : pre-commit-autoupdate-rev
+- Mots-clés : tag git, venv, lockfile
 - Source : data-platform · S1-03
 - Définition : Chaque dépôt de hooks est épinglé par `rev` (un tag git) et tourne dans son propre environnement, indépendant du `.venv` et de `uv.lock`.
 - Contexte : Le ruff du hook est celui de `rev: v0.17.1`, installé dans `~/.cache/pre-commit` au premier lancement (lent une fois). Si `uv.lock` passe à un autre ruff sans toucher `rev`, deux ruff cohabitent : `make lint` et le hook peuvent rendre des verdicts différents. Même risque avec `uv-lock` : un uv de hook plus récent réécrit `uv.lock`. Tags : `git ls-remote --tags --refs <repo>`.
@@ -266,6 +274,7 @@ grep -A1 ruff-pre-commit \
 - Niveau : 2
 - Profils : ops
 - Prérequis : pre-commit-rev-environnement
+- Mots-clés : tag git, hash de commit, lockfile
 - Définition : `pre-commit autoupdate` remplace chaque `rev` par le dernier tag du dépôt de hooks ; `--repo <url>` en limite la portée, `--freeze` écrit un SHA.
 - Contexte : C'est l'équivalent d'un `pnpm update` pour les hooks : il réécrit le YAML, à relire et commiter. Il suit les tags publiés, rien d'autre : ni `uv.lock`, ni une politique de version. `--freeze` met le SHA du commit avec le tag en commentaire (`# frozen: v6.0.0`), à l'abri d'un tag déplacé. Le nouvel environnement s'installe au lancement suivant.
 - Usage : ✅ montée de version planifiée, en commit dédié · ❌ `autoupdate` sans `--repo` dans data-platform : le ruff du hook dépasse celui de `uv.lock`.
@@ -293,6 +302,7 @@ pre-commit autoupdate --freeze
 - Niveau : 2
 - Profils : ops
 - Voir aussi : pre-commit-types-identify, ruff-force-exclude-pre-commit
+- Mots-clés : regex, glob, hook
 - Définition : `files:` et `exclude:` filtrent les fichiers d'un hook par **expression régulière** Python cherchée dans le chemin, pas par glob.
 - Contexte : `exclude: tests/` correspond partout où la chaîne apparaît : `integration_tests/t.py` aussi. Ancrer avec `^` (`^tests/`), échapper le point (`\.py$`). Un `exclude:` au niveau racine du fichier vaut pour tous les hooks. Le filtre s'ajoute à `types` : il faut passer les deux. `pre-commit run <id> --all-files --verbose` montre les fichiers retenus.
 - Usage : ✅ regex ancrées : `^docs/`, `^infra/.*\.tf$` · ❌ réflexe `.gitignore` ou eslint : `*.py`, `**/tests`.
@@ -319,6 +329,7 @@ pre-commit autoupdate --freeze
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : shebang, hook
 - Définition : `types: [python]` limite un hook aux fichiers que la bibliothèque identify classe comme tels ; `types_or` accepte l'un ou l'autre.
 - Contexte : identify reconnaît l'extension, et pour un fichier sans extension la ligne shebang (`#!/usr/bin/env python3`), à condition qu'il soit exécutable. Plusieurs valeurs dans `types` se combinent en ET : `types: [python, pyi]` ne vise rien, un fichier n'étant pas les deux. D'où `types_or: [python, pyi, jupyter]` dans les hooks ruff.
 - Usage : ✅ `types` plutôt qu'une regex d'extension : couvre aussi les scripts sans extension · ❌ `types: [python, pyi]` pour « l'un ou l'autre » : `types_or`.
@@ -349,6 +360,7 @@ pre-commit run --all-files --verbose
 - Niveau : 2
 - Profils : ops
 - Voir aussi : pre-commit-pass-filenames-false
+- Mots-clés : hook, venv, regex
 - Définition : `repo: local` déclare un hook sans dépôt externe : `id`, `name`, `entry` (la commande), `language` (`system`, `unsupported`, `pygrep`, `python`…).
 - Contexte : `language: unsupported` (ex-`system`, toujours accepté) lance la commande telle quelle, avec les outils du poste : `uv run pytest` passe par le `.venv` du projet. `pygrep` cherche une regex dans les fichiers : un hook `no-print` en trois lignes. `language: python` crée un environnement isolé, avec `additional_dependencies`. Les clés `id`, `name`, `entry` et `language` sont obligatoires.
 - Usage : ✅ commande du projet (`uv run pytest`, `terraform fmt`) ou interdit simple (`pygrep`) · ❌ recopier en local un hook qui existe en dépôt : perte du `rev` et des mises à jour.
@@ -378,6 +390,7 @@ pre-commit run --all-files --verbose
 - Niveau : 2
 - Profils : ops
 - Prérequis : pre-commit-install-par-clone
+- Mots-clés : hook, pytest
 - Définition : `stages: [pre-push]` réserve un hook au `git push` ; il faut aussi installer ce hook git : `pre-commit install --hook-type pre-push`.
 - Contexte : Les tests lents (`uv run pytest`) au push, le formatage au commit. `pre-commit install` seul n'écrit que `.git/hooks/pre-commit` ; `default_install_hook_types: [pre-commit, pre-push]` en tête du YAML fait tout installer d'un coup. Un hook sans `stages` tourne à toutes les étapes installées : au commit **et** au push. `default_stages: [pre-commit]` change ce défaut.
 - Usage : ✅ tests et contrôles longs en `pre-push` · ❌ `stages: [pre-push]` sans `install --hook-type pre-push` : le hook ne tourne jamais en local.
@@ -411,6 +424,7 @@ repos:
 - Profils : ops
 - Prérequis : pre-commit-hook-local
 - Voir aussi : pre-commit-always-run
+- Mots-clés : hook, pytest, lockfile
 - Définition : `pass_filenames: false` lance l'`entry` sans y ajouter la liste des fichiers retenus, pour une commande qui porte sur tout le dépôt.
 - Contexte : Par défaut, la commande lancée est `entry` + `args` + fichiers retenus. Pour un contrôle global (`uv run pytest`, `uv lock`, `terraform validate`), cette liste n'a pas de sens, et change même le résultat : pytest ne lancerait que les fichiers commités. Le hook `uv-lock` combine `pass_filenames: false` et `files: ^(uv\.lock|pyproject\.toml|uv\.toml)$` : il tourne quand ces fichiers changent, sans les recevoir.
 - Usage : ✅ toute commande globale du projet (tests, lock, validate) · ❌ un outil qui travaille fichier par fichier (ruff, check-yaml) : il relirait tout le dépôt à chaque commit.
@@ -439,6 +453,7 @@ repos:
 - Niveau : 2
 - Profils : ops
 - Prérequis : pre-commit-files-exclude-regex
+- Mots-clés : hook
 - Définition : `always_run: true` lance le hook même quand aucun fichier ne correspond à ses filtres (`files`, `types`), au lieu d'afficher `Skipped`.
 - Contexte : pre-commit filtre d'abord les fichiers changés : aucun fichier retenu (commit vide, push d'un commit qui ne touche que la doc), le hook est `Skipped`, même avec `pass_filenames: false`. `always_run: true` lève ce filtre. Combiné à `pass_filenames: false`, c'est la forme d'un contrôle global qui doit tourner à chaque fois.
 - Usage : ✅ tests au push qui doivent tourner quoi qu'il arrive · ❌ `always_run` sur un hook lent au commit : chaque commit le paie.
@@ -467,6 +482,7 @@ repos:
 - Type : concept
 - Niveau : 2
 - Profils : ops
+- Mots-clés : hook, YAML
 - Définition : `fail_fast: true` en tête du YAML arrête pre-commit au premier hook en échec ; par défaut, tous les hooks tournent et tous les échecs s'affichent.
 - Contexte : Par défaut, un commit raté montre d'un coup tout ce qui ne va pas : plus efficace à corriger. `fail_fast` vaut quand un hook coûteux n'a pas de sens si un précédent échoue (tests après un lint cassé). Il existe aussi par hook (`fail_fast: true` sur un hook) ; l'ordre d'exécution est celui du fichier.
 - Usage : ✅ hooks longs placés après des contrôles rapides qui les conditionnent · ❌ `fail_fast` global avec des hooks qui corrigent : une correction à la fois, un commit raté par défaut.
@@ -502,6 +518,7 @@ repos:
 - Type : piège
 - Niveau : 2
 - Profils : ops
+- Mots-clés : index git, hook, CI
 - Définition : pre-commit refuse de tourner au commit si `.pre-commit-config.yaml` a des modifications non stagées : `Your pre-commit configuration is unstaged`.
 - Contexte : Les hooks doivent correspondre à la configuration qui part avec le commit ; une config modifiée sur le disque seulement donnerait un contrôle différent de celui des collègues et de la CI. Le refus vaut au commit comme au push : il suffit de `git add .pre-commit-config.yaml`, ou de remettre le fichier. Un `pre-commit run` lancé à la main n'est pas concerné.
 - Usage : ✅ commiter la config dans un commit à part, `pre-commit run --all-files` avant · ❌ éditer la config en pleine série de commits sans la stager : chaque commit échoue.
@@ -530,6 +547,7 @@ git push origin HEAD
 - Niveau : 2
 - Profils : ops
 - Prérequis : pre-commit-all-files-suivis, pre-commit-hook-qui-corrige
+- Mots-clés : CI, runner, cache de CI, job
 - Définition : En CI, `pre-commit run --all-files --show-diff-on-failure` rejoue tous les hooks et affiche le diff qu'ils auraient appliqué.
 - Contexte : Le filet pour ceux qui n'ont pas fait `pre-commit install`. Un hook qui corrige fait échouer le job même s'il a « réparé » le fichier dans le runner : la correction n'est pas commitée. Le diff affiché dit quoi corriger sans relancer en local. Le cache des environnements se garde avec `PRE_COMMIT_HOME` dans le projet et une clé sur `.pre-commit-config.yaml` (syntaxe GitLab, d'après la doc).
 - Usage : ✅ un job `lint` de plus dans le pipeline, avec cache · ❌ `|| true` ou un second `pre-commit run` qui passe : le premier a déjà corrigé dans le runner, le défaut reste dans le dépôt.
@@ -569,6 +587,7 @@ pre-commit:
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : pre-commit-hook-qui-corrige, git-stash-mettre-de-cote
+- Mots-clés : stash, index git, hook
 - Définition : Un hook qui corrige un fichier ayant aussi des modifications non stagées voisines voit ses corrections annulées (`Rolling back fixes`).
 - Contexte : pre-commit met de côté le non stagé, lance les hooks sur l'index, puis réapplique le patch mis de côté. Si ce patch ne s'applique plus sur le fichier corrigé, pre-commit privilégie ton travail : la correction est jetée, le commit échoue, le fichier reste `MM` avec son défaut. Cas typique : `git add -p` d'une partie d'un fichier, ou un éditeur qui modifie pendant le commit.
 - Usage : ✅ stager tout le fichier, ou `git stash --keep-index` avant, puis recommit · ❌ relancer `git commit` en boucle : même conflit, même annulation.
@@ -597,6 +616,7 @@ git status --short   # MM m.py
 - Type : recette
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : hook, HEAD
 - Définition : `pre-commit try-repo <chemin|url> <id>` lance un hook d'un dépôt sans l'ajouter à `.pre-commit-config.yaml`, pour l'essayer ou le mettre au point.
 - Contexte : Utile avant d'adopter un dépôt de hooks, ou pour développer le sien (son `.pre-commit-hooks.yaml`). Il affiche la config à copier, puis le résultat. Sur un dépôt local, il prend `HEAD` ; si le dépôt a des modifications non commitées, il les inclut via un dépôt temporaire (`shadow-repo`). Les options de `run` s'appliquent (`--files`, `--all-files`).
 - Usage : ✅ développer un hook maison partagé entre dépôts, évaluer un dépôt tiers · ❌ s'en servir en CI à la place d'un `rev` épinglé.
@@ -629,6 +649,7 @@ pre-commit try-repo ../hookrepo show-args \
 - Profils : ops, expert
 - Prérequis : pre-commit-rev-environnement
 - Voir aussi : uv-cache-ci-prune
+- Mots-clés : hook, cache de CI, CI
 - Définition : pre-commit clone et installe chaque dépôt de hooks dans `~/.cache/pre-commit` (ou `PRE_COMMIT_HOME`) ; `gc` retire les inutilisés, `clean` vide tout.
 - Contexte : Un environnement par couple dépôt + `rev` + dépendances, réutilisé par tous tes projets : d'où un premier lancement lent (`Installing environment … This may take a few minutes`) puis instantané. Changer un `rev` en ajoute un sans retirer l'ancien : `pre-commit gc` nettoie ceux qu'aucune config connue n'utilise. `clean` force une réinstallation complète au prochain lancement (réseau requis).
 - Usage : ✅ `gc` de temps en temps, `PRE_COMMIT_HOME` dans le projet en CI pour le cache · ❌ `clean` pour « réparer » un hook qui échoue sur ton code : le hook n'est pas en cause.

@@ -17,6 +17,7 @@ Python · Validation : modèles, sérialisation, types, validateurs (format spec
 - Type : piège
 - Niveau : 1
 - Profils : débutant, web, data
+- Mots-clés : Pydantic, annotation de type, argument nommé
 - Définition : Une classe `BaseModel` déclare ses champs par annotations ; un champ sans valeur par défaut est requis, avec défaut il est facultatif.
 - Contexte : Les annotations ne sont pas décoratives comme en TS : pydantic les lit à la création de la classe et valide chaque instance à la construction. Le constructeur n'accepte que des arguments nommés. Le piège venant de TS : `str | None` dit seulement que `None` est une valeur permise ; c'est le `= None` qui rend le champ facultatif, pas le type (≈ `tribunal?: string`).
 - Usage : ✅ toute donnée qui entre de l'extérieur (annonce BODACC, payload d'API, config) · ❌ structure interne déjà typée et sûre : `@dataclass`, plus léger.
@@ -56,6 +57,7 @@ Annonce("A1")        # ❌ TypeError
 - Niveau : 1
 - Profils : débutant, web, data
 - Prérequis : validation-champ-requis-optionnel
+- Mots-clés : Pydantic, ValidationError, zod
 - Source : data-platform · S1-06
 - Définition : `Modele.model_validate(dict)` construit et valide un modèle depuis un dict (≈ `schema.parse` de zod) ; `extra` décide du sort des clés non déclarées.
 - Contexte : Par défaut (`extra="ignore"`), les clés inconnues disparaissent sans erreur : pratique pour un export qui renvoie 40 champs dont on garde 15, dangereux pour une faute de frappe dans une config. `extra="forbid"` les rejette en `ValidationError`, `extra="allow"` les garde dans `model_dump()`. Les types sont convertis (`"2026-10-20"` → `date`). `parse_obj` et `.dict()` sont l'API v1, dépréciée en v2.
@@ -102,6 +104,7 @@ Config.model_validate(
 - Profils : débutant, data
 - Prérequis : validation-champ-requis-optionnel
 - Voir aussi : validation-mode-strict
+- Mots-clés : Pydantic, coercition, query string
 - Définition : Par défaut (mode lax), pydantic convertit une entrée compatible vers le type annoté : `"10000"` devient `10000`, `"true"` devient `True`.
 - Contexte : La conversion n'accepte que ce qui est sans perte : `"1.0"` donne `1`, mais `1.5` est refusé (`int_from_float`) plutôt qu'arrondi. Pour `bool`, seules quelques chaînes anglaises passent (`true`, `yes`, `on`, `1` et leurs contraires). En v2, un nombre n'est plus converti en `str` : un SIREN `int` est rejeté. Différence avec TS : le type agit à l'exécution, il ne se contente pas de décrire.
 - Usage : ✅ entrées texte (CSV, query string, variables d'environnement) converties une fois pour toutes · ❌ compter sur une conversion « intelligente » (arrondi, français) : nettoyer avant, en `mode="before"`.
@@ -140,6 +143,7 @@ Societe(capital=1.5)  # ❌ ValidationError
 - Type : recette
 - Niveau : 1
 - Profils : débutant, web, data
+- Mots-clés : Pydantic, regex, ValidationError
 - Définition : `Field(...)` ajoute des contraintes à un champ (`pattern`, `ge`, `min_length`, `max_length`) vérifiées à la validation, sans écrire de validateur.
 - Contexte : Chaque contrainte a son type d'erreur (`string_pattern_mismatch`, `greater_than_equal`), lisible dans `errors()`. `pattern` est une regex cherchée avec `re.search` : sans `^…$`, une sous-chaîne suffit. Les contraintes s'appliquent après la conversion de type, donc sur l'`int`, pas sur la chaîne reçue. `Field` porte aussi `default`, `default_factory`, `alias` et `description` (reprise dans le JSON Schema).
 - Usage : ✅ règles simples et déclaratives (format SIREN, montant positif, longueur) · ❌ règle métier conditionnelle ou qui transforme la valeur : `@field_validator`.
@@ -180,6 +184,7 @@ Societe(capital=-1)  # ❌ ValidationError
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : validation-champ-requis-optionnel
+- Mots-clés : Pydantic, récursion
 - Définition : Un champ typé par un autre `BaseModel` (ou `list[Personne]`) convertit les dicts reçus en instances, validées récursivement.
 - Contexte : Une seule validation traite tout l'arbre : chaque dict imbriqué devient un objet, avec ses propres règles et défauts. On lit alors les champs par attribut (`p.siren`), jamais par clé. `model_dump()` refait le chemin inverse, récursivement, jusqu'aux dicts et listes. Les erreurs d'un sous-modèle portent le chemin complet (`personnes.1.siren`).
 - Usage : ✅ JSON structuré de l'API (annonce → personnes → adresse), un modèle par niveau · ❌ sous-structure variable, sans schéma connu : `dict[str, Any]`.
@@ -226,6 +231,7 @@ a.model_dump()
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : validation-extra-champs-en-trop
+- Mots-clés : Pydantic, sérialisation
 - Définition : `model_dump()` rend le modèle en dict ; `exclude_none`, `include` et `exclude` choisissent les champs qui sortent.
 - Contexte : Par défaut, tous les champs sortent, même `None` : un JSON écrit dans S3 traîne alors des dizaines de `null`. `exclude_none=True` les retire. `include` et `exclude` prennent un ensemble de noms (ou un dict pour descendre dans les sous-modèles). Les valeurs restent des objets Python (`date`) : `mode="json"` ou `model_dump_json()` pour des types JSON.
 - Usage : ✅ alléger une sortie (`exclude_none`), masquer un champ sensible (`exclude`) · ❌ construire le dict à la main champ par champ : on oublie le prochain champ ajouté.
@@ -271,6 +277,7 @@ p.model_dump(include={"siren"})
 - Profils : web, data
 - Prérequis : validation-field-contraintes, classes-classmethod-constructeur
 - Voir aussi : validation-mode-before-after
+- Mots-clés : Pydantic, décorateur, ValidationError
 - Définition : `@field_validator("champ")` + `@classmethod` vérifie ou transforme un champ à la création du modèle ; lever `ValueError` le rejette.
 - Contexte : Le validateur reçoit la valeur (déjà convertie au type annoté, en mode par défaut) et **renvoie la valeur à garder** : il peut donc normaliser (strip, majuscules) en plus de contrôler. Une `ValueError` levée dedans devient une `ValidationError` qui liste le champ fautif. `@classmethod` se place sous `@field_validator` : le validateur n'a pas d'instance, le modèle n'existe pas encore.
 - Usage : ✅ règle métier sur un champ (SIREN sur 9 chiffres, normaliser un code tribunal) · ❌ règle qui croise plusieurs champs : `@model_validator` ; simple contrainte de longueur : `Field(min_length=…)`.
@@ -321,6 +328,7 @@ Annonce(ville=" lyon ").ville
 - Niveau : 2
 - Profils : web, data
 - Prérequis : validation-field-validator
+- Mots-clés : Pydantic, ValidationError
 - Définition : `@model_validator(mode="after")` vérifie plusieurs champs ensemble, une fois le modèle construit, et doit renvoyer `self`.
 - Contexte : En mode `after`, c'est une méthode d'instance : tous les champs sont déjà validés et convertis (ici les chaînes en `date`), on compare donc des valeurs typées. Lever `ValueError` rejette tout le modèle. Le mode `before` reçoit au contraire le dict brut, avant tout champ : utile pour renommer ou réorganiser l'entrée.
 - Usage : ✅ cohérence entre champs (fin après début, montant et devise ensemble) · ❌ contrôle d'un seul champ : `@field_validator`, plus précis dans le message d'erreur.
@@ -376,6 +384,7 @@ p = Periode(debut="2026-09-01",
 - Niveau : 2
 - Profils : web, data
 - Prérequis : validation-champ-requis-optionnel
+- Mots-clés : Pydantic, zod
 - Définition : Une `ValidationError` regroupe toutes les erreurs du modèle, chacune avec son chemin (`loc`), son type et son message.
 - Contexte : Pydantic ne s'arrête pas à la première erreur : il valide tous les champs et rend la liste complète (`errors()`, `error_count()`), comme zod avec `issues`. `loc` est un tuple qui descend dans l'arbre : `("personnes", 0, "siren")`. Dans un validateur, seules `ValueError` et `AssertionError` sont converties en `ValidationError` ; une autre exception remonte telle quelle.
 - Usage : ✅ journaliser `errors()` dans les rejets (type et chemin), corriger le modèle sur une journée complète · ❌ parser le texte de `str(e)` : il change entre versions, `errors()` est stable.
@@ -412,6 +421,7 @@ locs  # → [("id",), ("personnes", 0, "siren")]
 - Niveau : 2
 - Profils : web, data
 - Prérequis : classes-property-getter, validation-model-dump-champs
+- Mots-clés : Pydantic, @property, sérialisation
 - Définition : `@computed_field` sur une `@property` ajoute la valeur calculée à la sortie du modèle (`model_dump`, JSON).
 - Contexte : Une propriété ordinaire se lit sur l'objet mais Pydantic l'ignore à la sérialisation : seuls les champs déclarés sortent. `@computed_field`, placé au-dessus de `@property`, l'inscrit dans le schéma de sortie. Le type de retour annoté (`-> int`) sert au schéma JSON. La valeur est recalculée à chaque dump, elle n'est pas acceptée en entrée.
 - Usage : ✅ champ dérivé à exposer dans une réponse API ou un fichier S3 (`nb_sirens`, `annee`) · ❌ valeur seulement utile en Python : `@property` simple suffit.
@@ -464,6 +474,7 @@ a.model_dump_json()
 - Profils : débutant, data
 - Prérequis : validation-champ-requis-optionnel
 - Voir aussi : dictionnaires-fromkeys-valeur-partagee
+- Mots-clés : Pydantic, valeur par défaut, référence
 - Source : data-platform · S1-06
 - Définition : Dans un `BaseModel`, `registre: list[str] = []` est sûr : Pydantic copie le défaut pour chaque instance, contrairement à un argument par défaut Python.
 - Contexte : En Python pur, un défaut mutable (`def __init__(self, r=[])`) est créé une seule fois, quand la fonction est définie : toutes les instances partagent la même liste, et un `append` sur l'une apparaît dans les autres. Pydantic copie le défaut à chaque création, comme `Field(default_factory=list)`. C'est l'inverse du réflexe TS, où un défaut est réévalué à chaque appel.
@@ -503,6 +514,7 @@ b.registre   # → ["483609327"]
 - Type : recette
 - Niveau : 2
 - Profils : web, data
+- Mots-clés : Pydantic, snake_case, camelCase
 - Définition : `Field(alias="dateParution")` lit la clé de l'API sous ce nom, tout en gardant un nom Python en snake_case (`date_parution`).
 - Contexte : Par défaut, l'alias sert en entrée seulement : le constructeur et `model_validate` attendent `dateParution`, et `model_dump()` rend le nom Python ; `by_alias=True` rend l'alias. Construire avec le nom Python demande `ConfigDict(validate_by_name=True)` (ou l’ancien `populate_by_name`). Pour toute une API en camelCase, `alias_generator=to_camel` évite d'écrire chaque alias.
 - Usage : ✅ API en camelCase ou clé non valide en Python (`"@id"`, `"class"`) · ❌ renommer pour le goût dans un modèle interne : garder le nom de la source, moins de surprises.
@@ -553,6 +565,7 @@ Annonce(date_parution="2026-10-20"
 - Profils : data, web
 - Prérequis : validation-extra-champs-en-trop
 - Voir aussi : json-pydantic-validate-json
+- Mots-clés : Pydantic, JSONL, ValidationError
 - Définition : `Modele.model_validate_json(texte)` parse et valide un JSON (`str` ou `bytes`) en une seule passe, sans `json.loads` préalable.
 - Contexte : Le parseur JSON de pydantic-core (en Rust) construit directement le modèle : plus rapide que `json.loads` puis `model_validate`, et une erreur de syntaxe devient une `ValidationError` (`json_invalid`) comme les autres. Pour une ligne d'export JSONL, c'est l'appel naturel. L'inverse, `model_dump_json()`, rend une chaîne JSON avec dates et `Decimal` déjà sérialisés.
 - Usage : ✅ corps de réponse HTTP, ligne JSONL, message SQS, objet S3 · ❌ donnée déjà décodée en dict : `model_validate`.
@@ -597,6 +610,7 @@ Annonce.model_validate_json(
 - Profils : data
 - Prérequis : validation-champ-requis-optionnel
 - Voir aussi : validation-frozen
+- Mots-clés : Pydantic, sérialisation
 - Définition : Après la création, `a.capital = "abc"` n'est pas validé par défaut ; `ConfigDict(validate_assignment=True)` valide (et convertit) chaque affectation.
 - Contexte : La validation a lieu à la construction. Une affectation ordinaire écrit la valeur telle quelle : le modèle porte alors une chaîne dans un champ `int`, et l'erreur n'apparaît que plus loin (avertissement à la sérialisation, plantage d'un calcul). `validate_assignment=True` repasse par le pipeline complet, conversion comprise, au prix d'un léger coût à chaque écriture.
 - Usage : ✅ modèle modifié après création (enrichissement, normalisation en plusieurs étapes) · ❌ modèle écrit une fois puis lu : `frozen=True`, plus sûr encore.
@@ -641,6 +655,7 @@ s.capital = "abc"  # ❌ ValidationError
 - Profils : data
 - Prérequis : validation-champ-requis-optionnel
 - Voir aussi : classes-dataclass-frozen
+- Mots-clés : Pydantic, hashable, immuable
 - Définition : `ConfigDict(frozen=True)` interdit toute affectation après création et rend le modèle hachable (clé de dict, élément de set).
 - Contexte : Affecter un champ lève `ValidationError` (`frozen_instance`). Le hash est calculé sur les valeurs des champs : deux annonces identiques font un seul élément de set, pratique pour dédoublonner. Le gel est superficiel, comme `Object.freeze` en JS : il bloque l'affectation, pas la modification d'une liste contenue. Un champ `list` rend d'ailleurs le hash impossible.
 - Usage : ✅ enregistrement validé qui ne doit plus bouger (annonce de `processed`), clé de cache · ❌ modèle enrichi par étapes : `validate_assignment=True`.
@@ -682,6 +697,7 @@ len(vues)  # → 1
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : validation-field-validator, validation-coercion-lax
+- Mots-clés : Pydantic, coercition
 - Définition : `mode="before"` reçoit la valeur brute avant conversion de type ; `mode="after"` (défaut) reçoit la valeur déjà convertie et validée.
 - Contexte : Pydantic valide en pipeline : validateurs `before`, puis conversion vers le type annoté (`"10000"` → `10000`), puis validateurs `after`. Si la donnée brute ne peut pas être convertie (capital BODACC écrit `"10 000"`), la conversion échoue avant tout validateur `after` : seul un `before` peut la nettoyer. En `before`, la valeur peut être de n'importe quel type, d'où le `isinstance`.
 - Usage : ✅ `before` pour nettoyer une donnée brute (espaces, `""` → `None`), `after` pour une règle métier sur une valeur typée · ❌ règle métier en `before` : la valeur n'est pas encore typée.
@@ -760,6 +776,7 @@ a.jugement  # → {"nature": "LJ"}
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : validation-coercion-lax
+- Mots-clés : Pydantic, coercition, ISO 8601
 - Définition : `ConfigDict(strict=True)` (ou `Field(strict=True)`, `StrictInt`) refuse toute conversion : la valeur doit déjà avoir le bon type.
 - Contexte : Le mode strict s'applique au modèle, à un champ, ou à un seul appel (`model_validate(d, strict=True)`). Il protège d'une conversion qui masquerait un bug amont : un `capital` arrivé en chaîne signale un parseur mal réglé. Exception logique en JSON : JSON n'a ni date ni UUID, donc `model_validate_json` accepte toujours une date en chaîne ISO, même en strict.
 - Usage : ✅ données internes déjà typées (sortie d'un autre modèle), détection d'un type faux en amont · ❌ entrée texte (CSV, query string, env) : le mode lax est fait pour ça.
@@ -802,6 +819,7 @@ Societe.model_validate(
 - Profils : data, expert
 - Prérequis : validation-field-validator
 - Voir aussi : texte-nombres-siren-chaine
+- Mots-clés : Pydantic, annotation de type, zod
 - Définition : `Siren = Annotated[str, AfterValidator(f)]` crée un type portant sa validation, réutilisable dans tous les modèles (≈ un schéma zod partagé).
 - Contexte : Un `@field_validator` est attaché à un modèle ; un type annoté voyage : `list[Siren]`, `Siren | None`, `TypeAdapter(Siren)`. `BeforeValidator` agit avant la conversion, `AfterValidator` après. Piège d'ordre : les `AfterValidator` s'appliquent de gauche à droite, mais les `BeforeValidator` de droite à gauche (chaque nouveau « before » enveloppe les précédents). La fonction lève `ValueError` comme dans un validateur classique.
 - Usage : ✅ règle partagée par plusieurs modèles (SIREN, code tribunal, montant) · ❌ règle propre à un seul champ d'un seul modèle : `@field_validator`, plus lisible sur place.
@@ -855,6 +873,7 @@ TypeAdapter(Siren).validate_python(
 - Type : recette
 - Niveau : 3
 - Profils : data, web, expert
+- Mots-clés : Pydantic, schéma JSON
 - Définition : `TypeAdapter(T)` applique la validation pydantic à n'importe quel type (`list[Annonce]`, `dict[str, int]`, `date`) sans écrire de `BaseModel`.
 - Contexte : Un `BaseModel` décrit un objet à champs nommés ; pour une liste de modèles au sommet d'un JSON, ou un simple type, il faudrait un modèle enveloppe artificiel. `TypeAdapter` offre les mêmes méthodes : `validate_python`, `validate_json`, `dump_python`, `json_schema`. Sa construction compile un schéma : la créer une fois au niveau du module, pas dans une boucle.
 - Usage : ✅ réponse JSON qui est une liste, paramètre typé isolé, type `Annotated` partagé · ❌ `TypeAdapter(...)` recréé à chaque ligne d'une journée de 32 000 annonces : le sortir de la boucle.
@@ -899,6 +918,7 @@ LISTE.dump_python(ps)[1]
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : validation-model-dump-champs
+- Mots-clés : Pydantic, PATCH, DynamoDB
 - Définition : `model_dump(exclude_unset=True)` ne rend que les champs fournis à la création, défauts exclus : la base d'une mise à jour partielle.
 - Contexte : Pour un PATCH, `nom` absent signifie « ne pas toucher », `nom: null` « effacer » : deux sens que `exclude_none` confond. Pydantic retient les champs reçus dans `model_fields_set`, valeur `None` comprise. `exclude_unset` s'appuie dessus : un champ fourni sort, même égal à son défaut ; un champ non fourni ne sort jamais (≈ `Partial<T>` où l'absence compte).
 - Usage : ✅ PATCH d'API, mise à jour partielle d'un enregistrement (DynamoDB `update_item`) · ❌ sortie complète d'un enregistrement : `model_dump()` simple, sinon les défauts disparaissent.
@@ -940,6 +960,7 @@ m.model_fields_set  # → {"ville"}
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : validation-affectation-non-validee
+- Mots-clés : Pydantic, copie superficielle
 - Définition : `a.model_copy(update={...})` crée une copie modifiée du modèle, sans aucune validation des valeurs de `update`.
 - Contexte : `model_copy` est rapide parce qu'il ne repasse pas par le pipeline : une valeur fausse dans `update` entre telle quelle, comme une affectation non validée. Pour une copie modifiée et vérifiée, on revalide : `Modele.model_validate(a.model_dump() | maj)`. La copie est superficielle par défaut (≈ spread `{...a}` en JS) : `deep=True` copie aussi les listes et dicts.
 - Usage : ✅ variante d'un modèle avec des valeurs déjà sûres (produites par le code) · ❌ appliquer une mise à jour venue de l'extérieur : `model_validate` sur le dict fusionné.

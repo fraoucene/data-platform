@@ -18,6 +18,7 @@ Data engineering · Évolution de schéma : changements compatibles ou cassants,
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : ingestion-evenement-cles-inconnues, qualite-contrat-de-donnees
+- Mots-clés : lecteur tolérant, changement parallèle
 - Source : revision-pwa · pwa-parcours
 - Définition : Un changement de format est compatible si les lecteurs existants lisent encore les données ; renommer, supprimer ou retyper un champ les casse.
 - Contexte : Ajouter un champ facultatif passe : un lecteur tolérant l'ignore. Renommer revient à supprimer puis ajouter : l'ancien lecteur ne trouve plus son champ. Rendre obligatoire un champ nouveau casse dans l'autre sens : les anciennes données deviennent invalides pour le nouveau lecteur. Avant de livrer, poser la question des deux côtés : l'ancien lecteur lit-il la nouvelle donnée, le nouveau lecteur lit-il l'ancienne ?
@@ -141,6 +142,7 @@ ids.index(reponse)   # → 2   (même carte)
 - Profils : data, ops
 - Prérequis : evolution-de-schema-changement-parallele
 - Voir aussi : evolution-de-schema-marqueur-de-version
+- Mots-clés : changement parallèle, Lambda
 - Source : revision-pwa · pwa-parcours
 - Définition : Un nouveau format se déploie lecteur d'abord, producteurs ensuite : l'ancien lecteur ne sait pas lire ce qu'il n'a jamais vu.
 - Contexte : Publier les fichiers v4 avant de déployer le parser v4 dans la Lambda : l'ancien parser rencontre `- Id :`, rejette chaque fichier, le catalogue se vide. Dans l'autre ordre, rien ne casse : le nouveau parser lit encore les fichiers v3. Même règle pour une API (le serveur accepte le champ avant que les clients l'envoient) ou une table (la colonne existe avant d'être écrite).
@@ -207,6 +209,7 @@ manquants({"chapitre": "B"}, {"Id": "x"})
 - Profils : data
 - Prérequis : evolution-de-schema-compatible-ou-cassant
 - Voir aussi : qualite-contrat-de-donnees
+- Mots-clés : lecteur tolérant, dataset, BODACC
 - Définition : Une source change de schéma avec le temps : un champ ajouté se tolère, un champ renommé ou retypé casse les consommateurs.
 - Contexte : Un lecteur tolérant ignore les champs inconnus et met une valeur par défaut aux absents : l'ajout passe sans incident. Un renommage, lui, ressemble à « un champ disparu, un nouveau apparu » : la colonne devient nulle en silence. On compare donc à chaque run les clés reçues aux clés attendues, et on alerte sur toute disparition. BODACC expose son schéma (32 champs typés) dans les métadonnées du dataset.
 - Usage : ✅ comparer reçu et attendu à chaque run, alerter sur un champ disparu, tolérer l'ajout · ❌ attendre un `KeyError` en production, ou `.get()` partout sans contrôle : le renommage passe inaperçu.
@@ -244,6 +247,7 @@ a.get("dateparution")  # → None
 - Niveau : 2
 - Profils : data, web
 - Prérequis : evolution-de-schema-id-stable
+- Mots-clés : DynamoDB
 - Source : revision-pwa · pwa-parcours
 - Définition : Un identifiant libéré par une suppression n'est jamais redonné à un autre élément : les données qui le citent désigneraient la nouvelle chose.
 - Contexte : Réponses, cartes vues et liens d'autres cartes gardent l'ancien id. Le réattribuer les fait pointer, sans erreur, vers un autre point. Une carte réécrite sur le même point garde son Id ; une carte supprimée laisse un id orphelin, que le lecteur ignore. Même règle qu'un numéro de facture ou une clé primaire : pas de recyclage.
@@ -305,6 +309,7 @@ ids[1]   # → 'Python/listes-lire'
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : evolution-de-schema-valider-sur-copie
+- Mots-clés : partition
 - Source : revision-pwa · pwa-parcours
 - Définition : Une migration de nombreux fichiers se découpe en lots disjoints traités en parallèle : aucun fichier n'appartient à deux lots.
 - Contexte : Deux agents (ou workers) qui écrivent le même fichier se marchent dessus : la dernière écriture gagne et efface l'autre, sans erreur. Avec des lots disjoints, chaque lot se lance, se relance et se vérifie seul. Chaque lot produit aussi sa part de la table de correspondance, fusionnée à la fin ; une clé présente dans deux parts trahit un découpage faux.
@@ -393,6 +398,7 @@ sorted(set(table.values()) - nouveaux)
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : evolution-de-schema-table-de-correspondance
+- Mots-clés : backfill, DynamoDB
 - Source : revision-pwa · pwa-parcours
 - Définition : Migrer des données existantes : soit les réécrire une fois (backfill), soit les laisser et les traduire à chaque lecture.
 - Contexte : Réécrire donne des données propres mais exige de toutes les atteindre : ici, des réponses sur plusieurs appareils, hors ligne, dans le localStorage et dans DynamoDB ; un appareil oublié resterait en v3. Traduire à la lecture ne touche à rien, marche partout et se teste seul ; le prix est une table à garder tant que d'anciennes données peuvent arriver. Pour une table centrale, le backfill est souvent plus simple.
@@ -424,6 +430,7 @@ lire("Python/Listes/12")
 - Niveau : 3
 - Profils : data, ops, expert
 - Prérequis : evolution-de-schema-changement-parallele
+- Mots-clés : changement parallèle
 - Source : revision-pwa · pwa-parcours
 - Définition : La phase contract (retirer l'ancien format) n'a lieu qu'après avoir mesuré qu'aucun producteur ni aucune donnée stockée ne l'utilise encore.
 - Contexte : Tant qu'un fichier v3 existe dans une source, retirer le support v3 l'écarte du catalogue. On compte d'abord (fichiers sans `chapitre:` dans toutes les sources : 0), puis on rend le marqueur obligatoire. Les données stockées comptent aussi : `ids-v3.json` reste tant que des réponses v3 peuvent arriver. Beaucoup de migrations restent bloquées en expand faute de cette mesure.

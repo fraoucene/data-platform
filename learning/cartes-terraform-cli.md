@@ -18,6 +18,7 @@ Terraform · CLI : apply, contrôle, exécution, init, plan, sorties (format spe
 - Niveau : 1
 - Profils : débutant, ops
 - Voir aussi : cli-lock-provider-commite, state-backend-configuration-partielle
+- Mots-clés : backend, provider, module Terraform, .terraform.lock.hcl, idempotent, root module
 - Définition : `terraform init` configure le backend, installe modules et providers dans `.terraform/` et écrit `.terraform.lock.hcl` : la première commande de tout root.
 - Contexte : Rien ne marche avant : `validate`, `plan` et `console` lisent ce que `init` a installé, pas le code directement. Il se relance sans risque (idempotent) et il le faut après tout changement de backend, de module ou de provider. `.terraform/` est local et gitignoré ; le lock, lui, se commite. `-input=false` évite toute question en CI.
 - Usage : ✅ après un clone, un `git pull` qui touche `versions.tf` ou un `module`, un changement d'environnement (`make tf-init ENV=…`) · ❌ supprimer `.terraform/` pour « nettoyer » : `init` suffit.
@@ -47,6 +48,7 @@ terraform -chdir=infra init -input=false \
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : tfvars, CI, hook
 - Définition : `terraform fmt` réécrit les fichiers au style canonique (indentation, `=` alignés) ; `-check` ne modifie rien et sort en erreur s'il y a à reformater.
 - Contexte : Comme Prettier, il supprime les débats de style et les diffs parasites. Sans `-recursive`, il ne traite que le dossier courant : `modules/` reste intact. `-check` liste les fichiers fautifs et sort avec le code 3, ce qui fait échouer un job de CI ; `-diff` montre la correction.
 - Usage : ✅ `fmt -recursive` avant chaque commit, `fmt -check -recursive` en CI ou en hook pre-commit · ❌ corriger l'indentation à la main : `fmt` le fait sans erreur.
@@ -84,6 +86,7 @@ terraform fmt -check -diff main.tf
 - Profils : débutant, ops
 - Prérequis : cli-init-preparer-dossier
 - Voir aussi : state-backend-init-sans-backend, cli-fmt-style-canonique
+- Mots-clés : variable Terraform, validation, état, CI
 - Définition : `terraform validate` vérifie la syntaxe, les types, les références et les arguments requis, sans état, sans AWS et sans valeurs de variables.
 - Contexte : Il répond « ce code peut-il fonctionner ? », pas « fonctionnera-t-il avec dev.tfvars ? ». Une référence à une ressource inexistante ou un argument manquant échouent ; une valeur de variable hors de ses `validation` passe, car `validate` n'accepte ni `-var` ni `-var-file`. C'est le contrôle rapide de CI, avant `plan` qui, lui, évalue les valeurs.
 - Usage : ✅ premier job de CI, après `fmt -check`, avec `init -backend=false` · ❌ s'en contenter : seul `plan` vérifie les valeurs, l'état et l'API AWS.
@@ -120,6 +123,7 @@ terraform validate -var-file=dev.tfvars
 - Profils : débutant, ops
 - Prérequis : cli-init-preparer-dossier, state-backend-contenu-etat
 - Voir aussi : cli-replace-forcer-recreation
+- Mots-clés : data source, apply, known after apply
 - Définition : Chaque ressource du plan porte un symbole : `+` créer, `~` modifier en place, `-` détruire, `-/+` remplacer, `<=` lire une data source.
 - Contexte : `-/+` est le symbole à guetter : l'objet est détruit puis recréé (un bucket renommé perd ses données). `+/-` fait l'inverse, avec `create_before_destroy`. Dans le détail, `# forces replacement` désigne l'argument responsable, et `(known after apply)` une valeur que seul l'apply connaîtra. La ligne `Plan:` résume en ajouts, modifications et destructions.
 - Usage : ✅ relire chaque `-/+` et chaque `-` avant l'apply, en MR · ❌ lire seulement la ligne `Plan:` : elle ne dit pas quoi est détruit.
@@ -150,6 +154,7 @@ terraform plan -var v=b
 - Profils : débutant, ops
 - Prérequis : cli-plan-symboles
 - Voir aussi : cli-plan-out-fichier
+- Mots-clés : plan, tfplan, état, CI
 - Définition : `terraform apply` recalcule le plan, l'affiche et n'exécute qu'après la saisie exacte de `yes` ; `-auto-approve` saute la question.
 - Contexte : Entre l'affichage et la réponse, rien n'est encore écrit. En CI, sans clavier, `apply` échoue (`error asking for approval: EOF`) : on y applique un fichier de plan déjà relu (`apply tfplan`, sans question), ou `-auto-approve`. Chaque apply écrit l'état, même partiellement si une ressource échoue au milieu.
 - Usage : ✅ `apply` interactif sur un poste, `apply tfplan` en CI · ❌ `-auto-approve` sur une prod sans plan relu juste avant.
@@ -184,6 +189,7 @@ terraform apply -input=false
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : Makefile, recette, tfvars
 - Définition : `terraform -chdir=infra plan` exécute la commande comme si on était dans `infra/` : option globale, placée avant la sous-commande.
 - Contexte : Les Makefiles de data-platform et revision-pwa s'en servent (`TF = terraform -chdir=infra`) pour tout lancer depuis la racine du dépôt, sans `cd` qui ne survivrait pas à la ligne. Placée après la sous-commande, elle est refusée (`flag provided but not defined: -chdir`). Tous les chemins relatifs de la commande (`-var-file`, `-out`, `-backend-config`) partent alors de `infra/`.
 - Usage : ✅ Makefile, CI, scripts lancés depuis la racine · ❌ `cd infra && terraform …` dans une recette Make multi-lignes : chaque ligne repart de la racine.
@@ -218,6 +224,7 @@ terraform plan -chdir=infra
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : HCL, locals, état, root module
 - Définition : `terraform console` évalue des expressions HCL avec les fonctions, variables, locals et l'état du root : le REPL de Terraform (≈ `node`).
 - Contexte : On y met au point un `for`, un `merge` ou une regex avant de l'écrire dans le code, et on y lit `local.prefix` ou un attribut de l'état. Il faut un root initialisé. En pipe (`echo 'expr' | terraform console`), il répond une fois et sort, pratique dans un script. Il ne modifie jamais l'infra.
 - Usage : ✅ mettre au point une expression, vérifier un `local` calculé, lire un attribut d'état · ❌ chercher la valeur d'un output appliqué : `terraform output`.
@@ -247,6 +254,7 @@ echo "$E" | terraform console
 - Profils : débutant, ops
 - Prérequis : langage-hcl-output-exposer
 - Voir aussi : DevOps/jq-lire-champ, langage-hcl-output-raw
+- Mots-clés : output, jq, JSON, sensitive
 - Définition : `terraform output -json` écrit les sorties en JSON, chacune enveloppée dans `{value, type, sensitive}` : le format pour `jq` et les scripts.
 - Contexte : `-raw` ne sait sortir qu'une chaîne, un nombre ou un booléen ; une map de buckets passe par `-json`. Avec un nom (`output -json bucket_names`), on obtient la valeur seule. Attention : `-json` et `output <nom>` affichent les valeurs `sensitive` en clair, alors que la liste simple les masque (`<sensitive>`).
 - Usage : ✅ boucle shell sur les buckets d'un module, script Python qui lit les sorties · ❌ une seule chaîne pour une variable shell : `-raw`, sans `jq`.
@@ -276,6 +284,7 @@ terraform output -json | jq -c .token
 - Profils : ops
 - Prérequis : cli-plan-symboles, cli-apply-confirmation-yes
 - Voir aussi : cli-show-plan-json
+- Mots-clés : apply, MR, CI, artefact
 - Source : data-platform · S1-04
 - Définition : `plan -out=tfplan` enregistre le plan dans un fichier ; `apply tfplan` exécute exactement ces actions, sans recalculer ni redemander.
 - Contexte : `apply` seul recalcule un plan et attend `yes` : entre la relecture et la confirmation, le code ou l'infra ont pu bouger. Le fichier fige les actions avec la configuration du moment : c'est ce qu'on relit en MR et ce que la CI rejoue (`plan` en artefact, `apply tfplan` ensuite). Si l'état a changé depuis (autre apply), Terraform refuse : `Saved plan is stale`.
@@ -316,6 +325,7 @@ make plan   # data-platform
 - Profils : ops
 - Prérequis : cli-plan-symboles, state-backend-contenu-etat
 - Voir aussi : state-backend-import-existant
+- Mots-clés : dérive, état, IAM, SCP, import
 - Source : data-platform · S1-04
 - Définition : Une modification faite hors Terraform (console, CLI) est une dérive : `plan` la détecte en relisant AWS, `apply` remet la valeur du code.
 - Contexte : Avant de planifier, Terraform rafraîchit l'état : il relit chaque ressource qu'il connaît et compare au code. Un attribut écrit dans le code et changé à la main revient à sa valeur au prochain `apply`. Un tag `managed_by = terraform` n'empêche rien : c'est une étiquette ; le vrai verrou est un `Deny` IAM ou une SCP. `plan -refresh-only` montre la dérive seule.
@@ -356,6 +366,7 @@ terraform -chdir=infra plan -refresh-only \
 - Profils : ops
 - Prérequis : state-backend-contenu-etat
 - Voir aussi : state-backend-destroy-etats-separes, state-backend-prevent-destroy-portee
+- Mots-clés : état, graphe de dépendances, data source, bootstrap, prevent_destroy
 - Source : data-platform · S1-04
 - Définition : `terraform destroy` supprime toutes les ressources de l'état, dans l'ordre inverse des dépendances, puis réécrit l'état vide.
 - Contexte : Le graphe est parcouru à l'envers : politiques avant rôles, logging avant buckets. L'état n'est pas une ressource : il reste, avec `resources: []`, la même `lineage` et un `serial` plus grand ; le bucket d'état, géré par le bootstrap, est hors périmètre. Les data sources ne sont ni créées ni détruites, mais `state list` les compte.
@@ -395,6 +406,7 @@ terraform -chdir=infra state list | wc -l
 - Niveau : 2
 - Profils : ops
 - Prérequis : cli-init-preparer-dossier, cli-lock-provider-commite
+- Mots-clés : provider, contrainte de version, .terraform.lock.hcl, MR
 - Définition : `terraform init -upgrade` choisit la plus récente version de chaque provider et module qui respecte les contraintes, puis réécrit le lock.
 - Contexte : Sans `-upgrade`, `init` réutilise la version du lock (« Reusing previous version… from the dependency lock file »), même si une version plus récente est permise. Élargir une contrainte ne suffit donc pas : il faut `-upgrade`. La montée se fait en MR : lock modifié, plan relu, `No changes.` attendu.
 - Usage : ✅ montée volontaire de provider ou de module, en MR avec le lock · ❌ `-upgrade` dans chaque job de CI : chaque pipeline peut prendre une version différente.
@@ -425,6 +437,7 @@ grep version .terraform.lock.hcl
 - Profils : ops
 - Prérequis : cli-init-preparer-dossier
 - Voir aussi : modules-versions-non-verrouillees, cli-providers-lock-plateformes, DevOps/uv-lock-universel
+- Mots-clés : provider, contrainte de version, lockfile, MR
 - Définition : `.terraform.lock.hcl` fige la version exacte et les hashes de chaque provider : commité, il garantit le même provider sur chaque poste et en CI.
 - Contexte : La contrainte (`~> 6.0`) dit ce qui est permis, le lock ce qui est choisi (`6.69.1`) ; c'est le `package-lock.json` de Terraform. Il ne couvre que les providers, pas les modules. Si une contrainte resserrée exclut la version verrouillée, `init` refuse au lieu de descendre en silence. Le fichier est généré : on ne l'édite pas, `init` et `providers lock` l'écrivent.
 - Usage : ✅ commiter le lock avec le code, le relire en MR quand il change · ❌ le mettre dans `.gitignore` comme `.terraform/` : chaque clone choisirait sa version.
@@ -454,6 +467,7 @@ provider "registry.terraform.io/hashicorp/aws" {
 - Type : recette
 - Niveau : 2
 - Profils : ops
+- Mots-clés : provider, contrainte de version, root module, module Terraform
 - Définition : `terraform providers` affiche l'arbre des providers exigés par le root et chaque module, avec leurs contraintes : le diagnostic d'un conflit de versions.
 - Contexte : Quand `init` échoue sur `no available releases match the given constraints`, l'erreur cite les contraintes mais pas leur auteur : l'arbre montre quel module impose quoi. Un module sans contrainte apparaît sans version. La commande lit la configuration et les modules installés, donc demande un `init` préalable des modules.
 - Usage : ✅ conflit de contraintes entre root et modules, audit avant une montée de provider · ❌ connaître la version installée : `terraform version` ou le lock.
@@ -485,6 +499,7 @@ terraform providers
 - Profils : ops
 - Prérequis : cli-plan-symboles
 - Voir aussi : cli-target-dependances
+- Mots-clés : plan, adresse, prevent_destroy, état
 - Définition : `plan -replace=adresse` (ou `apply -replace=…`) prévoit de détruire et recréer une ressource dont le code n'a pas changé ; remplace `terraform taint`.
 - Contexte : Utile pour un objet abîmé que Terraform croit à jour (instance corrompue, clé à régénérer). Contrairement à `taint`, déprécié, qui modifiait l'état tout de suite, `-replace` passe par le plan : on le relit avant. Il respecte les garde-fous : sur une ressource `prevent_destroy`, le plan échoue (`Instance cannot be destroyed`). L'adresse suit la syntaxe de l'état (`'module.s3.aws_s3_bucket.this["raw"]'`).
 - Usage : ✅ recréer un objet dégradé ou un secret à faire tourner, après relecture du plan · ❌ corriger une dérive d'attribut : un `apply` normal la rétablit sans recréer.
@@ -513,6 +528,7 @@ terraform plan \
 - Profils : ops
 - Prérequis : cli-plan-symboles
 - Voir aussi : DevOps/shell-code-de-sortie
+- Mots-clés : code de sortie, dérive, CI, GitLab CI
 - Définition : `plan -detailed-exitcode` sort avec 0 (rien à faire), 1 (erreur) ou 2 (changements prévus) : la CI sait si l'infra a dérivé.
 - Contexte : Sans l'option, `plan` sort avec 0 qu'il y ait des changements ou non : un job ne peut pas distinguer « à jour » de « à appliquer ». Avec, un job planifié détecte la dérive ou conditionne l'apply. Piège : le 2 est un code d'échec pour le shell, donc pour `set -e` et pour GitLab CI, qui marque le job en échec sans traitement du code.
 - Usage : ✅ job planifié de détection de dérive, porte « rien à appliquer » avant un apply · ❌ un `plan -detailed-exitcode` brut dans un script : capturer le code, `|| rc=$?`.
@@ -552,6 +568,7 @@ drift:
 - Profils : ops
 - Prérequis : cli-plan-out-fichier
 - Voir aussi : cli-output-json-jq
+- Mots-clés : état, tfplan, JSON, sensitive
 - Définition : `terraform show` affiche l'état courant ; `show tfplan` un plan enregistré, et `show -json tfplan` sa version JSON pour un script.
 - Contexte : Le fichier `tfplan` n'est pas lisible tel quel : c'est une archive binaire, que seul `show` décode avec le même root initialisé. En JSON, `.resource_changes[]` donne pour chaque adresse ses `change.actions` (`create`, `update`, `delete`, `no-op`) : c'est ce que lit le contrôle de tags de data-platform. Le JSON contient les valeurs, `sensitive` comprises.
 - Usage : ✅ audit automatique d'un plan en CI (tags, destructions interdites), relecture d'un plan avant `apply tfplan` · ❌ lire une seule valeur de l'état : `state show adresse` ou `output`.
@@ -579,6 +596,7 @@ terraform show -json tfplan | jq -r \
 - Type : recette
 - Niveau : 2
 - Profils : ops
+- Mots-clés : provider, data source, registre Terraform, jq
 - Source : data-platform · S1-08
 - Définition : `terraform providers schema -json` sort le schéma des providers installés : toutes les ressources, data sources et attributs, sans aller sur le registre.
 - Contexte : Pratique pour retrouver un nom (`grep '^aws_lambda_'`), vérifier qu'un attribut existe dans **la version installée** du provider, ou lire ses descriptions. Le schéma vient du dossier `.terraform/` : sans `terraform init`, la commande ne plante pas, elle renvoie un schéma vide. Sortie volumineuse (plusieurs Mo pour AWS) : toujours la filtrer avec `jq`.
@@ -625,6 +643,7 @@ terraform -chdir=infra providers \
 - Profils : ops
 - Prérequis : langage-hcl-required-version-cli
 - Voir aussi : modules-required-providers
+- Mots-clés : contrainte de version, backend, verrou d'état
 - Source : data-platform · S1-09
 - Définition : `required_version` exige la plus ancienne version de Terraform qui gère tout le code ; trop basse, elle laisse passer une version qui casse plus loin.
 - Contexte : Le backend utilise `use_lockfile`, apparu en Terraform 1.10, alors que `infra/versions.tf` disait `>= 1.9` : une 1.9 passait la contrainte, puis butait sur le backend. Le relecteur sans contexte l'a vu en comparant le README (≥ 1.10) et le code. La contrainte se lit dès `init`, avant toute ressource : c'est le contrôle le moins cher.
@@ -660,6 +679,7 @@ terraform init
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : cli-plan-symboles
+- Mots-clés : adresse, état, for_each
 - Définition : `plan -target=adresse` limite le plan à cette ressource et à tout ce dont elle dépend ; le reste est ignoré, avec un avertissement.
 - Contexte : Terraform ajoute les dépendances (ce que la cible lit), sinon il ne pourrait pas la créer ; il n'ajoute pas les ressources qui dépendent d'elle. Le plan est donc partiel : l'état diverge du code jusqu'au prochain plan complet (`Resource targeting is in effect`). Pratique pour débloquer un apply, dangereux comme habitude.
 - Usage : ✅ sortir d'une impasse (créer d'abord une ressource dont dépend un `for_each`), un cas ponctuel · ❌ déploiement de routine par morceaux : un plan complet, ou des roots séparés.
@@ -687,6 +707,7 @@ terraform plan -target=terraform_data.raw
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : cli-lock-provider-commite
+- Mots-clés : .terraform.lock.hcl, provider, registre Terraform, runner
 - Définition : `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64` ajoute au lock les hashes `h1:` de chaque plateforme, sans rien installer.
 - Contexte : `init` sur un Mac n'écrit que le `h1:` de sa plateforme, plus des `zh:` (zips publiés par le registre). Depuis le registre, une CI Linux vérifie avec ces `zh:` ; mais un miroir ou un cache de plugins (`TF_PLUGIN_CACHE_DIR`) ne vérifie que les `h1:` (doc), d'où des échecs sur un runner d'une autre plateforme. La commande complète le lock, elle n'efface pas les hashes déjà présents.
 - Usage : ✅ équipe sur Mac Intel, Mac ARM et CI Linux, avec cache ou miroir de providers · ❌ la relancer à chaque `init` : seulement quand la version ou les plateformes changent.
@@ -716,6 +737,7 @@ grep -c 'h1:' .terraform.lock.hcl
 - Type : recette
 - Niveau : 3
 - Profils : ops, expert
+- Mots-clés : sortie d'erreur, variable d'environnement, provider, verrou d'état
 - Définition : `TF_LOG=DEBUG` (ou `TRACE`, `INFO`…) fait écrire à Terraform son journal interne sur stderr ; `TF_LOG_PATH` l'envoie dans un fichier.
 - Contexte : Le journal montre les appels au provider et à l'API AWS : utile pour une erreur opaque (`AccessDenied` sans détail, verrou). Il va sur stderr : `$(terraform output -raw x)` reste propre. Un niveau inconnu (`TF_LOG=verbose`) retombe sur `TRACE`, le plus bavard. `TF_LOG_PROVIDER` et `TF_LOG_CORE` séparent provider et cœur. Le journal peut contenir des données sensibles.
 - Usage : ✅ diagnostiquer un échec d'API ou de verrou, joindre un journal à un ticket · ❌ le laisser actif en CI : journaux énormes, données sensibles dans les artefacts.

@@ -18,6 +18,7 @@ AWS · API : appeler un service en HTTP sans SDK, signature SigV4, protocole JSO
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : api-sigv4-portee
+- Mots-clés : SigV4, HMAC, clé d'accès, SDK AWS
 - Source : data-platform · pwa-sync
 - Définition : SigV4 signe chaque requête AWS par HMAC-SHA256 avec la clé secrète ; le résultat part dans l'en-tête `Authorization`, la clé secrète jamais.
 - Contexte : AWS recalcule la même signature de son côté et compare : la requête prouve qu'on détient la clé sans la transmettre, et toute modification en route casse la signature. L'en-tête porte trois parties : `Credential` (clé d'accès et portée), `SignedHeaders` (en-têtes couverts), `Signature` (64 caractères hexadécimaux). Les SDK, la CLI et `aws4fetch` le calculent ; il n'y a pas de jeton porteur comme un `Bearer` OAuth.
@@ -48,6 +49,7 @@ x-amz-security-token: <jeton STS>
 - Type : concept
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : SigV4, région AWS, aws4fetch
 - Source : data-platform · pwa-sync
 - Définition : La portée `<clé>/<AAAAMMJJ>/<région>/<service>/aws4_request` lie la signature à un jour, une région et un service précis.
 - Contexte : AWS contrôle la portée avant même la clé : une signature calculée pour `us-east-1` ou pour `s3` est refusée par DynamoDB à Paris, avec un message explicite. C'est pour cela que `aws4fetch` reçoit `service: 'dynamodb'` et `region` à la construction du client : un client signe pour un seul service.
@@ -77,6 +79,7 @@ Credential=AKIA…/20261025/us-east-1/
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : cognito-renouveler-cles-sts
+- Mots-clés : STS, utilisateur IAM, identity pool, jeton de session
 - Source : data-platform · pwa-sync
 - Définition : Des clés temporaires STS (préfixe `ASIA`) vont avec un jeton de session, envoyé dans `x-amz-security-token` et inclus dans les en-têtes signés.
 - Contexte : Une clé permanente d'utilisateur IAM commence par `AKIA` et n'a pas de jeton ; une clé STS (rôle, Cognito identity pool, SSO) commence par `ASIA` et ne vaut rien sans son `SessionToken`. Les trois pièces (`AccessKeyId`, `SecretKey`, `SessionToken`) arrivent ensemble de `GetCredentialsForIdentity` et se passent ensemble au signeur (`sessionToken` d'`AwsClient`).
@@ -114,6 +117,7 @@ h2 = signe(Credentials("AKIAEX", "s"))
 - Type : concept
 - Niveau : 1
 - Profils : débutant, web, ops
+- Mots-clés : SigV4, politique IAM
 - Source : data-platform · pwa-sync
 - Définition : Une requête sans `Authorization` vers une API qui l'exige reçoit `MissingAuthenticationTokenException`, avant tout contrôle IAM.
 - Contexte : Le diagnostic se lit dans l'ordre : pas de signature → `MissingAuthenticationToken` ; signature avec une clé inconnue → `UnrecognizedClientException` ; signature mal formée ou périmée → `InvalidSignatureException` ; signature valide mais droit manquant → `AccessDeniedException`. Seul ce dernier concerne la politique IAM : inutile d'y chercher la cause des trois premiers.
@@ -144,6 +148,7 @@ curl -s https://dynamodb.eu-west-3.amazonaws.com/ \
 - Type : concept
 - Niveau : 1
 - Profils : débutant, web
+- Mots-clés : endpoint, Cognito
 - Source : data-platform · pwa-sync
 - Définition : Les API JSON d'AWS (DynamoDB, Cognito, KMS) reçoivent un `POST /` ; l'en-tête `x-amz-target` nomme l'opération, le corps JSON porte ses paramètres.
 - Contexte : Pas de route par opération comme en REST : l'URL est toujours la racine de l'endpoint régional (`https://dynamodb.eu-west-3.amazonaws.com/`). `x-amz-target` vaut `<préfixe du service>.<Opération>` : `DynamoDB_20120810.Query`, `AWSCognitoIdentityService.GetId`. Les paramètres JSON ont les noms exacts de la doc de l'API (`TableName`, `KeyConditionExpression`), en PascalCase.
@@ -173,6 +178,7 @@ curl -s https://cognito-identity.eu-west-3.amazonaws.com/ \
 - Niveau : 1
 - Profils : web
 - Prérequis : api-protocole-json-target
+- Mots-clés : botocore, boto3, SDK AWS
 - Source : data-platform · pwa-sync
 - Définition : Une erreur d'API JSON arrive en 4xx ou 5xx avec un corps `{"__type": …, "message": …}` ; le code utile termine `__type`.
 - Contexte : DynamoDB préfixe le code (`com.amazon.coral.service#AccessDeniedException`), Cognito Identity non (`ResourceNotFoundException`) : on garde ce qui suit le dernier `#`. Le message s'écrit `message` ou `Message` selon le service : cloud.ts lit les deux, comme botocore. Le SDK fait cette normalisation (`err.name` en JS, `Error.Code` en boto3) ; avec `fetch`, c'est à vous.
@@ -206,6 +212,7 @@ err.get("message") or err.get("Message")
 - Profils : débutant, web
 - Prérequis : api-security-token
 - Voir aussi : cognito-renouveler-cles-sts
+- Mots-clés : STS, epoch, SDK AWS
 - Source : data-platform · pwa-sync
 - Définition : Dans le protocole JSON brut, `Expiration` des clés STS est un nombre de secondes depuis l'epoch ; JavaScript compte en millisecondes.
 - Contexte : La CLI et les SDK convertissent en date lisible (`2026-10-25T12:00:00Z`), d'où la surprise avec `fetch` : on reçoit `1792929600`. `new Date(1792929600)` tombe en janvier 1970 ; il faut `* 1000`, comme `expiresAt: creds.Expiration * 1000` dans cloud.ts. Même piège pour les autres horodatages des API JSON (`CreationDateTime` de DynamoDB).
@@ -240,6 +247,7 @@ new Date(1792929600 * 1000).toISOString()
 - Type : concept
 - Niveau : 1
 - Profils : web
+- Mots-clés : CORS, préflight, endpoint, IAM
 - Source : data-platform · pwa-sync
 - Définition : Les endpoints de DynamoDB, Cognito Identity et STS répondent au préflight CORS avec `Access-Control-Allow-Origin: *` : une page peut les appeler en `fetch`.
 - Contexte : Les en-têtes `authorization`, `x-amz-date`, `x-amz-security-token`, `x-amz-target` sont autorisés, seule la méthode `POST` l'est, et la réponse est mise en cache 48 h (`Max-Age: 172800`). La sécurité ne repose pas sur l'origine mais sur la signature et IAM. S3, lui, applique la configuration CORS de chaque bucket : sans règle, le préflight est refusé.
@@ -270,6 +278,7 @@ curl -s -o /dev/null -D - -X OPTIONS \
 - Niveau : 2
 - Profils : web, expert
 - Prérequis : api-sigv4-portee
+- Mots-clés : SigV4, HMAC, SHA-256, requête canonique
 - Source : data-platform · pwa-sync
 - Définition : La clé qui signe n'est pas le secret : c'est une chaîne de quatre HMAC sur la date, la région, le service puis `aws4_request`.
 - Contexte : `kDate = HMAC("AWS4" + secret, date)`, puis `kRegion`, `kService`, `kSigning`. La signature finale est `HMAC(kSigning, chaîne à signer)`, en hexadécimal. Une clé dérivée fuitée ne vaut que pour ce jour, cette région, ce service. La chaîne à signer contient l'algorithme, l'horodatage, la portée et le SHA-256 de la requête canonique (méthode, chemin, en-têtes signés, hash du corps).
@@ -304,6 +313,7 @@ len(k)  # → 32 : 256 bits
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : api-sigv4-portee
+- Mots-clés : SigV4, rejeu
 - Source : data-platform · pwa-sync
 - Définition : `x-amz-date` est signée ; AWS refuse une requête dont l'heure s'écarte de plus de 5 minutes de la sienne.
 - Contexte : La fenêtre empêche de rejouer longtemps une requête interceptée. Côté client, l'heure vient de l'appareil : une horloge de téléphone déréglée donne `InvalidSignatureException` « Signature expired » sur toutes les requêtes, alors que clés et droits sont bons. Le contrôle passe avant celui de la clé : le message dit l'écart, pas un problème de clé.
@@ -330,6 +340,7 @@ len(k)  # → 32 : 256 bits
 - Type : concept
 - Niveau : 2
 - Profils : web
+- Mots-clés : SigV4, botocore, aws4fetch
 - Source : data-platform · pwa-sync
 - Définition : `SignedHeaders` liste les en-têtes inclus dans la signature ; les autres peuvent changer sans l'invalider, ceux-là non.
 - Contexte : `host` et `x-amz-date` sont toujours signés, `x-amz-security-token` et `x-amz-target` aussi quand ils sont là. Chaque signeur choisit le reste : botocore signe `content-type`, `aws4fetch` l'exclut (avec `user-agent`, `range`… que les navigateurs ou proxys réécrivent). Modifier un en-tête signé après `sign()` donne une signature fausse.
@@ -359,6 +370,7 @@ aws4fetch : SignedHeaders=host;
 - Niveau : 2
 - Profils : web
 - Prérequis : api-signedheaders
+- Mots-clés : SigV4, SHA-256, requête canonique
 - Source : data-platform · pwa-sync
 - Définition : Le SHA-256 du corps entre dans la requête canonique : le corps envoyé doit être exactement celui qui a été signé, octet pour octet.
 - Contexte : Deux JSON équivalents ne sont pas les mêmes octets : `json.dumps` de Python met des espaces, `JSON.stringify` non. D'où, dans cloud.ts, `JSON.stringify(body)` passé à `sign()` puis la `Request` signée envoyée sans retoucher : on ne resérialise jamais entre signature et envoi.
@@ -393,6 +405,7 @@ h(py) == h(js)  # → False
 - Niveau : 2
 - Profils : web
 - Prérequis : api-protocole-json-target
+- Mots-clés : content-type, botocore
 - Source : data-platform · pwa-sync
 - Définition : Chaque API JSON attend son `content-type` : `application/x-amz-json-1.0` pour DynamoDB, `1.1` pour Cognito, KMS ou CloudWatch Logs.
 - Contexte : La version est fixée par le service, pas par vous : elle se lit dans le modèle de l'API (champ `jsonVersion`, avec `targetPrefix` pour `x-amz-target`). Les modèles sont dans botocore et dans la doc. C'est pour cela que cloud.ts écrit `1.1` pour `cognito-identity` et `1.0` pour `dynamodb`.
@@ -427,6 +440,7 @@ meta("cognito-identity")
 - Niveau : 2
 - Profils : web
 - Prérequis : api-protocole-json-target
+- Mots-clés : SigV4, REST, botocore, STS
 - Source : data-platform · pwa-sync
 - Définition : Les API AWS n'ont pas toutes le même format : JSON par `x-amz-target`, REST-JSON par routes, REST-XML (S3), Query en formulaire (STS, IAM, SNS).
 - Contexte : SigV4 est commun à tous, le reste change : DynamoDB, Cognito, KMS = `json` (`POST /`) ; Lambda = `rest-json` (`POST /2015-03-31/functions/<nom>/invocations`) ; S3 = `rest-xml` (méthode HTTP et clé dans l'URL, réponses XML) ; STS, IAM, SNS = `query` (`Action=AssumeRole&…`, réponses XML). Le champ `protocol` du modèle botocore le dit.
@@ -460,6 +474,7 @@ protocole("s3")        # → 'rest-xml'
 - Niveau : 2
 - Profils : web
 - Prérequis : api-security-token
+- Mots-clés : identity id, STS, sub, id token
 - Source : data-platform · pwa-sync
 - Définition : Un cache d'identity id ou de clés STS se rattache à l'utilisateur (`sub` du jeton) : un autre compte sur l'appareil repart de zéro.
 - Contexte : cloud.ts garde `{sub, identityId}` dans le stockage et `session.sub` en mémoire ; à chaque ouverture il relit le `sub` de l'id token et compare. Sans cette clé, le compte B réutiliserait l'identity id ou les clés du compte A : au mieux un refus, au pire des écritures dans la partition de A tant que ses clés vivent.
@@ -498,6 +513,7 @@ identite("sub-2", lambda: next(ids))
 - Profils : web
 - Prérequis : api-cache-par-utilisateur
 - Voir aussi : api-promesse-partagee
+- Mots-clés : identity id, identity pool, localStorage
 - Source : data-platform · pwa-sync
 - Définition : Une valeur en cache refusée par un code précis (`ResourceNotFoundException`) est effacée et redemandée une seule fois ; toute autre erreur remonte.
 - Contexte : Cas de cloud.ts : un identity id gardé dans `localStorage` alors que le pool a été recréé. `GetCredentialsForIdentity` répond `ResourceNotFoundException` : on oublie l'id, on refait `GetId`, puis on réessaie. Le filtrage par code est essentiel : réessayer un `AccessDeniedException` ou une erreur réseau ne ferait que répéter l'échec, voire boucler.
@@ -538,6 +554,7 @@ len(vus)  # → 2
 - Type : choisir
 - Niveau : 2
 - Profils : web
+- Mots-clés : aws4fetch, SDK AWS, PWA, pagination
 - Source : data-platform · pwa-sync
 - Définition : `aws4fetch` signe seulement une requête `fetch` (quelques Ko) ; le SDK v3 sérialise, convertit, réessaie et pagine (60 à 80 Ko).
 - Contexte : Dans une PWA, chaque Ko compte au premier chargement : l'app ne fait que deux opérations DynamoDB et deux appels Cognito publics, `aws4fetch` + `fetch` suffit. En échange, tout est à votre charge : JSON brut au format typé de DynamoDB (`{"S": "…"}`), codes d'erreur, pagination (`LastEvaluatedKey`), retries. Côté serveur (Lambda), la taille compte peu : le SDK.
@@ -567,6 +584,7 @@ taille       ~3 Ko        60-80 Ko
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : api-erreur-json-type
+- Mots-clés : CloudTrail, SDK AWS, boto3
 - Source : data-platform · pwa-sync
 - Définition : Chaque réponse d'API AWS porte `x-amzn-RequestId`, l'identifiant de la requête côté AWS, à journaliser avec l'erreur.
 - Contexte : C'est la clé pour retrouver l'appel dans CloudTrail ou la donner au support. Les endpoints JSON l'exposent au navigateur via `Access-Control-Expose-Headers` (avec `x-amzn-ErrorType`) : un `fetch` peut le lire. Les SDK le rangent dans `$metadata.requestId` (JS) ou `ResponseMetadata.RequestId` (boto3).
@@ -594,6 +612,7 @@ Access-Control-Expose-Headers:
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : api-json-content-type
+- Mots-clés : content-type, Cognito
 - Source : data-platform · pwa-sync
 - Définition : Avec `content-type: application/json` au lieu de `x-amz-json-1.x`, Cognito répond HTTP 200 avec l'erreur cachée dans `Output.__type`.
 - Contexte : Le service bascule sur un autre protocole et enveloppe sa réponse : `{"Output": {"__type": "…UnknownOperationException"}, "Version": "1.0"}`. `res.ok` vaut `true` : un code qui ne teste que le statut croit au succès et lit `IdentityId` → `undefined`. D'où l'intérêt de valider la forme attendue de la réponse, pas seulement le statut.
@@ -626,6 +645,7 @@ curl -s -w ' %{http_code}' \
 - Profils : web, expert
 - Prérequis : api-aws4fetch-ou-sdk
 - Voir aussi : dynamodb-backoff-jitter
+- Mots-clés : throttling, backoff exponentiel, retry
 - Source : data-platform · pwa-sync
 - Définition : `AwsClient.fetch` réessaie seulement les réponses 5xx et 429 ; le throttling de DynamoDB arrive en HTTP 400 et n'est pas réessayé.
 - Contexte : DynamoDB signale la surcharge par `ThrottlingException` ou `ProvisionedThroughputExceededException`, en 400 comme une erreur de validation : seul `__type` les distingue. Le SDK les reconnaît par code et réessaie avec backoff. cloud.ts appelle `sign()` puis son propre `fetch` : aucun retry du tout ; c'est l'outbox de la synchro qui rejoue plus tard.
@@ -655,6 +675,7 @@ for (let i = 0; i <= this.retries; i++) {
 - Niveau : 3
 - Profils : expert
 - Prérequis : api-cle-signature-derivee
+- Mots-clés : aws4fetch, STS, HMAC
 - Source : data-platform · pwa-sync
 - Définition : `kSigning` ne dépend que du secret, du jour, de la région et du service : calculée une fois par jour, réutilisée ensuite.
 - Contexte : `aws4fetch` la garde dans une `Map` indexée par `[secret, date, région, service]` : quatre HMAC économisés par requête. Le cache vit dans l'`AwsClient` : cloud.ts en crée un nouveau à chaque renouvellement des clés STS (nouveau secret), donc le cache repart, ce qui est correct. botocore, lui, recalcule à chaque fois.
@@ -691,6 +712,7 @@ k_signing("s", "20261025") == k_signing("s", "20261026")  # → False
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : api-cache-par-utilisateur
+- Mots-clés : promesse, Cognito, STS
 - Source : data-platform · pwa-sync
 - Définition : Deux requêtes lancées ensemble sans clés en cache déclenchent deux échanges ; garder la promesse en cours et la partager n'en fait qu'un.
 - Contexte : Le test `session &&` ne protège que si le premier échange est terminé. Au démarrage, un `Promise.all([query, query])` voit `session` à `null` deux fois et lance deux `GetId` puis deux `GetCredentialsForIdentity`. Rien de faux, mais des appels en double et deux jeux de clés. Le remède : mémoriser la promesse (`pending ??= open()`), la vider à la fin.

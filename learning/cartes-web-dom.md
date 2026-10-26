@@ -18,6 +18,7 @@ Web · DOM : événements (écouteurs, propagation, nettoyage) et événements p
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : dom-bus-window
+- Mots-clés : EventTarget
 - Source : revision-pwa · pwa-parcours
 - Définition : `new CustomEvent(type, { detail })` crée un événement qui porte une donnée ; l'écouteur la lit dans `e.detail`.
 - Contexte : `Event` ne transporte que son type ; `CustomEvent` ajoute `detail`, n'importe quelle valeur (id, objet). Il part avec `dispatchEvent` sur une cible (`window`, un élément, un `EventTarget` créé à la main) et s'écoute avec `addEventListener`, comme un clic. Il existe aussi dans Node (mesuré en 22), ce qui permet de le tester sans navigateur.
@@ -49,6 +50,7 @@ dispatchEvent(new CustomEvent(OPEN_CARD,
 - Niveau : 1
 - Profils : débutant, web
 - Prérequis : dom-customevent-detail
+- Mots-clés : micro-tâche
 - Source : revision-pwa · pwa-parcours
 - Définition : `dispatchEvent` appelle tous les écouteurs immédiatement, avant de rendre la main : ce n'est ni une file d'attente ni une promesse.
 - Contexte : Venant d'un bus de messages, on imagine un envoi différé : non, la ligne qui suit `dispatchEvent` s'exécute après tous les écouteurs. Un écouteur lent bloque donc l'appelant, et un écouteur qui modifie un état l'a déjà fait à la ligne suivante. Pour différer, l'écouteur passe par `queueMicrotask` ou `setTimeout`.
@@ -118,6 +120,7 @@ const e = await attendre(window, 'revision:pret')
 - Profils : web
 - Prérequis : dom-customevent-detail
 - Voir aussi : dom-evenement-sans-rejeu, dom-typer-windoweventmap
+- Mots-clés : module ES
 - Source : revision-pwa · pwa-parcours
 - Définition : `dispatchEvent` et `addEventListener` appelés sans objet visent `window` : un bus global qui relie deux modules sans import mutuel.
 - Contexte : `data.ts` expose `openCard(id)`, qui envoie `revision:open-card` ; `App.tsx`, qui connaît la navigation, l'écoute. Un lien « Voir aussi » au fond de l'arbre ouvre ainsi une autre carte sans callback passé par props. Préfixer le nom (`revision:`) évite toute collision avec un événement natif ou d'une bibliothèque. Le prix : le lien n'apparaît plus dans les imports.
@@ -156,6 +159,7 @@ useEffect(() => {
 - Niveau : 2
 - Profils : web
 - Prérequis : dom-customevent-detail
+- Mots-clés : phase de capture, shadow DOM
 - Source : revision-pwa · pwa-parcours
 - Définition : Un `CustomEvent` ne remonte pas l'arbre DOM par défaut (`bubbles: false`) : envoyé sur un élément, un écouteur sur `window` ne le reçoit pas.
 - Contexte : Les clics remontent parce que le navigateur les crée avec `bubbles: true` ; un événement construit à la main part à `false`, comme `cancelable`. Pour qu'un composant prévienne un ancêtre ou `window` en envoyant depuis son élément, il faut `{ bubbles: true }`, ou envoyer directement sur `window`. À travers un shadow DOM, il faut en plus `composed: true`.
@@ -194,6 +198,7 @@ document.body.dispatchEvent(
 - Niveau : 2
 - Profils : web
 - Voir aussi : dom-signal-abortcontroller
+- Mots-clés : phase de capture
 - Source : revision-pwa · pwa-parcours
 - Définition : `removeEventListener` ne retire que la fonction exacte passée à `addEventListener` : une flèche réécrite à l'identique est une autre fonction.
 - Contexte : Deux flèches au même code sont deux objets ; `removeEventListener` ne trouve rien et ne dit rien. Dans un `useEffect`, garder la fonction dans une constante utilisée par l'ajout et par le nettoyage. Sinon, chaque exécution de l'effet ajoute un écouteur et le signal est traité plusieurs fois.
@@ -432,6 +437,7 @@ try {
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : dom-retirer-meme-reference
+- Mots-clés : Strict Mode, phase de capture
 - Source : revision-pwa · pwa-parcours
 - Définition : Ajouter deux fois la même fonction avec les mêmes options n'enregistre qu'un écouteur : elle n'est appelée qu'une fois par envoi.
 - Contexte : Le DOM dédoublonne sur type, fonction et `capture`. Cela masque un effet React relancé sans nettoyage… tant que la fonction est la même ; une flèche recréée à chaque rendu s'ajoute, elle, à chaque fois. Le Strict Mode de React, qui exécute deux fois les effets en développement, révèle les nettoyages manquants.

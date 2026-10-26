@@ -18,6 +18,7 @@ Python · Compression : gzip, en-tête reproductible, niveaux, flux (format spec
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : hachage-bytes-pas-str, json-dumps-encoder-bytes
+- Mots-clés : bytes, UTF-8, S3
 - Source : data-platform · S1-07
 - Définition : `gzip.compress` et `gzip.decompress` travaillent sur des `bytes` en mémoire : une `str` s'encode d'abord en UTF-8 (≈ `zlib.gzipSync(Buffer)` en Node).
 - Contexte : Python sépare strictement texte (`str`) et octets (`bytes`), là où Node convertit souvent en silence. `gzip.compress("A1")` lève `TypeError` ; il faut `"A1".encode("utf-8")`, et `decompress` rend des `bytes` qu'on décode à la main. Tout objet « bytes-like » est accepté : `bytes`, `bytearray`, `memoryview`.
@@ -53,6 +54,7 @@ gzip.compress("A1")  # ❌ TypeError
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : compression-gzip-open-modes
+- Mots-clés : gzip, Athena, clé S3
 - Source : data-platform · S1-07
 - Définition : L'extension `.gz` n'est qu'un nom : `open("p.jsonl.gz", "w")` écrit du texte en clair, seuls `gzip.open` ou `GzipFile` compressent.
 - Contexte : Ni Python ni S3 ne regardent l'extension pour compresser. Un fichier nommé `.gz` mais écrit avec `open` est du texte brut : `gzip.decompress` lève `BadGzipFile`, et Athena ou `zcat` échouent à la lecture. Un vrai gzip commence toujours par les octets `\x1f\x8b` : c'est la vérification à faire, pas le nom.
@@ -92,6 +94,7 @@ est_gzip(b'{"id": "A1"}')       # → False
 - Type : recette
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : en flux, générateur, partition
 - Source : data-platform · S1-07
 - Définition : `gzip.GzipFile(fileobj=f, mode="wb")` enveloppe un fichier ouvert : chaque `write` y écrit des octets compressés, la mémoire reste plate.
 - Contexte : C'est le cœur du writer BODACC : on ouvre le fichier final en `"wb"`, on pose un `GzipFile` par-dessus, et on écrit ligne par ligne depuis un générateur. Rien n'est accumulé : 32 373 annonces (55,6 Mo) passent avec un pic mémoire de 4,9 Mo. `write` renvoie le nombre d'octets **non compressés** reçus.
@@ -137,6 +140,7 @@ len(gzip.decompress(buf.getvalue()).splitlines())
 - Niveau : 1
 - Profils : débutant, data, ops
 - Voir aussi : compression-filename-vide, archives-writestr-heure-courante
+- Mots-clés : sha256, idempotent, timestamp Unix
 - Source : data-platform · S1-07
 - Définition : L'en-tête gzip contient un horodatage (`mtime`) ; par défaut c'est l'heure courante, `mtime=0` le fixe pour obtenir des octets reproductibles.
 - Contexte : Les octets 4 à 7 de l'en-tête stockent un horodatage Unix. Sans `mtime`, Python y écrit l'heure de la compression : deux compressions du même contenu à une seconde d'écart donnent des fichiers différents, donc des sha256 différents. Le piège passe les tests rapides (même seconde) et casse l'idempotence en production. `mtime=0` signifie « pas d'horodatage ».
@@ -173,6 +177,7 @@ a == b          # → True
 - Type : choisir
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : empreinte, partition, Lambda
 - Source : data-platform · S1-07
 - Définition : `compresslevel` va de 1 (rapide, plus gros) à 9 (lent, plus petit) ; il change les octets compressés, jamais le contenu décompressé.
 - Contexte : Mesuré sur une journée BODACC de 55,6 Mo : niveau 1 → 5,69 Mo en 0,3 s, niveau 6 → 4,44 Mo en 0,8 s, niveau 9 → 4,30 Mo en 1,3 s. Au-delà de 6, on paie 60 % de temps en plus pour 3 % de gain. Le niveau se fixe dans une constante : le changer modifie les octets du `.gz`, d'où une empreinte calculée sur le brut.
@@ -210,6 +215,7 @@ gzip.decompress(g1) == gzip.decompress(g9)  # → True
 - Type : concept
 - Niveau : 2
 - Profils : data
+- Mots-clés : en flux, encodage, Parquet
 - Définition : `gzip.open` lit et écrit un fichier compressé comme un fichier normal ; les modes `"rt"` et `"wt"` travaillent en texte.
 - Contexte : Un export `.jsonl.gz` se lit sans décompresser sur disque : `gzip.open` décompresse à la volée, ligne par ligne, en mémoire constante. Le mode par défaut est binaire (`"rb"`, `"wb"`) : des `bytes`. En `"rt"` ou `"wt"`, on manipule des `str` : préciser `encoding="utf-8"`, sinon l'encodage de la machine s'applique.
 - Usage : ✅ archiver des journées d'annonces sur S3, lire un export compressé · ❌ lecture aléatoire au milieu du fichier : gzip se lit du début ; analytique : Parquet.
@@ -258,6 +264,7 @@ f.close()
 - Profils : data, ops
 - Prérequis : compression-gzipfile-en-flux
 - Voir aussi : compression-mtime-zero
+- Mots-clés : Lambda, tempfile, sha256
 - Source : data-platform · S1-07
 - Définition : `GzipFile(fileobj=f)` écrit le nom de `f` dans l'en-tête (champ FNAME) ; `filename=""` le laisse vide et rend les octets indépendants du nom.
 - Contexte : Erreur vue sur le writer BODACC : `mtime=0` ne suffisait pas. Sans `filename`, `GzipFile` lit `f.name`, retire `.gz` et l'écrit dans l'en-tête. En Lambda, le fichier vient de `tempfile` et change de nom à chaque invocation : même contenu, autres octets, autre sha256. Mesuré : sans `filename=""` → `False`, avec → `True`. `gzip.compress` et un `io.BytesIO` (sans nom) n'ont pas ce problème.
@@ -301,6 +308,7 @@ b"tmpa1b2c3" in a                  # → False
 - Niveau : 2
 - Profils : data
 - Prérequis : compression-compresslevel-vitesse-taille
+- Mots-clés : gzip, BODACC
 - Source : data-platform · S1-07
 - Définition : `gzip.compress`, `gzip.open` et `GzipFile` compressent au niveau 9 par défaut, alors que la commande `gzip` utilise 6.
 - Contexte : Un même fichier compressé par le terminal puis par Python n'a donc ni la même taille ni les mêmes octets. Le niveau 9 est le plus lent pour un gain faible (4,30 Mo contre 4,44 Mo sur une journée BODACC, en 1,3 s au lieu de 0,8 s). D'où un `compresslevel` toujours explicite et nommé (`COMPRESS_LEVEL = 6`), pour que le choix se lise et ne change pas avec un défaut.
@@ -337,6 +345,7 @@ gzip -l part.jsonl.gz       # tailles et ratio
 - Profils : data
 - Prérequis : compression-gzipfile-en-flux
 - Voir aussi : context-managers-taille-apres-bloc
+- Mots-clés : CRC32, tampon, context manager
 - Source : data-platform · S1-07
 - Définition : Un gzip finit par 8 octets (CRC32 et taille du contenu) écrits seulement à la fermeture : sans `close()`, le fichier est tronqué, illisible.
 - Contexte : Pendant l'écriture, zlib garde des données en tampon et le CRC n'est pas encore connu. C'est `close()` (ou la sortie du `with`) qui vide le tampon et écrit la fin. Lire le fichier avant, ou oublier de fermer, donne `EOFError` à la décompression. D'où `path.stat()` après le bloc `with` dans le writer, jamais dedans.
@@ -378,6 +387,7 @@ int.from_bytes(gz[-4:], "little")  # → 6
 - Niveau : 2
 - Profils : data
 - Prérequis : compression-bytes-pas-str
+- Mots-clés : idempotent, rejeu
 - Source : data-platform · S1-07
 - Définition : Deux gzip collés bout à bout forment un gzip valide à plusieurs membres : la décompression rend les contenus à la suite.
 - Contexte : Le format prévoit des « membres » successifs, chacun avec son en-tête et sa fin. `cat a.gz b.gz > ab.gz` est donc lisible, et `gzip.open(p, "ab")` ajoute un membre au lieu de recompresser. Pratique pour assembler des morceaux, piège pour l'idempotence : un rejeu en mode `"ab"` double la journée sans erreur.
@@ -416,6 +426,7 @@ gzip.decompress(p.read_bytes())
 - Type : comparaison
 - Niveau : 2
 - Profils : data, web
+- Mots-clés : deflate, CRC32, Content-Encoding
 - Source : data-platform · S1-07
 - Définition : `zlib` et `gzip` utilisent le même algorithme (deflate) avec des en-têtes différents : `gzip.decompress` refuse un flux zlib.
 - Contexte : gzip = en-tête de 10 octets (`\x1f\x8b`, heure, nom) + deflate + CRC32 ; zlib = 2 octets (`\x78\x9c`) + deflate + Adler-32. Les fichiers `.gz`, S3 et `Content-Encoding: gzip` attendent gzip ; certains protocoles parlent zlib. `zlib.decompress(data, wbits=31)` lit un gzip, `wbits=47` détecte seul l'un ou l'autre.
@@ -453,6 +464,7 @@ zlib.decompress(gz, wbits=47)  # → b"A1\n"
 - Profils : data
 - Prérequis : compression-gzip-open-modes
 - Voir aussi : json-jsonl-lire
+- Mots-clés : en flux, partition, Lambda
 - Source : data-platform · S1-07
 - Définition : Itérer sur `gzip.open(p)` décompresse à la volée, une ligne à la fois ; `gzip.decompress(p.read_bytes())` charge tout le contenu en mémoire.
 - Contexte : Pour relire une partition de 55 Mo dans une Lambda, la différence est la RAM : `read_bytes()` charge le `.gz`, puis `decompress` crée les 55 Mo d'un bloc. En itérant, seul un tampon et la ligne courante sont gardés. En mode `"rb"`, chaque ligne est un `bytes` terminé par `b"\n"` ; `json.loads` l'accepte tel quel.
@@ -495,6 +507,7 @@ json.loads(ligne)      # → {"id": "A1"}
 - Niveau : 2
 - Profils : data, web
 - Voir aussi : compression-compresslevel-vitesse-taille
+- Mots-clés : deflate, Parquet, Content-Encoding
 - Source : data-platform · S1-07
 - Définition : Des données déjà compressées ou aléatoires (`.gz`, Parquet, images) ne rapetissent plus : gzip ajoute même quelques octets.
 - Contexte : deflate gagne en remplaçant les répétitions ; un fichier compressé n'en contient presque plus. Recompresser coûte du CPU pour rien et complique la lecture (deux décompressions). Cas réel : envoyer un `.jsonl.gz` à S3 avec `Content-Encoding: gzip` et laisser un client le décompresser une fois, au lieu de le recompresser à la volée.
@@ -529,6 +542,7 @@ len(gzip.compress(raw)) < 200     # → True
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : compression-mtime-zero
+- Mots-clés : runtime Lambda, dataset
 - Source : data-platform · S1-07
 - Définition : En Python 3.11 et 3.12, `gzip.compress(mtime=0)` et `GzipFile` écrivent un octet « système » différent : même contenu, autres octets.
 - Contexte : En 3.11 et 3.12, `gzip.compress(..., mtime=0)` délègue à `zlib.compress`, qui écrit l'octet 9 selon la machine (3 sous Linux, 19 sous macOS) ; `GzipFile` écrit 255 (inconnu). Python 3.13 a rétabli 255 partout (mesuré en 3.13 et 3.14). Le runtime Lambda python3.12 est concerné : une seule voie d'écriture par dataset, et hacher le brut plutôt que le `.gz`.
@@ -572,6 +586,7 @@ gzip.decompress(buf.getvalue())  # → b"A1\n"
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : compression-fin-crc-fermeture
+- Mots-clés : manifest, membre gzip
 - Source : data-platform · S1-07
 - Définition : Les 4 derniers octets d'un gzip donnent la taille du contenu modulo 2³² : faux au-delà de 4 Go, et limité au dernier membre.
 - Contexte : `gzip -l` affiche cette valeur comme « uncompressed ». Elle est utile pour une estimation rapide sans décompresser, mais un fichier de 5 Go affiche 1 Go, et un gzip à plusieurs membres n'affiche que la taille du dernier. Pour une taille fiable, la compter pendant l'écriture (`raw_bytes += len(line)`), comme le writer BODACC, et la ranger dans le manifest.
@@ -607,6 +622,7 @@ len(gzip.decompress(ab))            # → 3003
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : compression-gzip-open-modes
+- Mots-clés : deflate, Parquet
 - Source : data-platform · S1-07
 - Définition : `gz.seek(n)` en lecture est permis mais décompresse tout depuis le début (ou la position courante) : un gzip ne se lit que séquentiellement.
 - Contexte : deflate n'a pas d'index : atteindre l'octet n impose de décompresser les n premiers. `seek` en arrière repart même du début du fichier. En écriture, seul un `seek` en avant est accepté (il écrit des zéros). Conséquence data : un gros `.gz` ne se découpe pas entre plusieurs workers, d'où des parts de taille raisonnable ou un format à blocs (Parquet).

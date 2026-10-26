@@ -18,6 +18,7 @@ Data engineering · Ingestion : idempotence, rejeux, fiabilité, flux, planifica
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : ingestion-rejeu-memes-cles
+- Mots-clés : partition, SQS, Step Functions, upsert
 - Définition : Un job idempotent donne le même résultat qu'il tourne une ou dix fois : clé de sortie déterministe, partition remplacée au lieu d'y ajouter.
 - Contexte : Les rejeux sont partout : retry automatique (Lambda asynchrone, SQS livré au moins une fois, Step Functions), rejeu manuel, double déclenchement. Si chaque run ajoute ses lignes, la journée est dupliquée. La règle : un run = une partition `dt=` entièrement réécrite, avec des clés dérivées des entrées (jour, numéro de part), jamais d'un `uuid` ou de l'heure du run : écrire deux fois la même clé écrase l'objet. En base : `MERGE` sur la clé métier.
 - Usage : ✅ tout job planifié ou rejouable, backfill, clés `dt=<jour>/part-<n>` · ❌ `uuid4()` ou `now()` dans une clé de sortie, ajout sans clé de dédoublonnage : chaque rejeu duplique.
@@ -74,6 +75,7 @@ len(s3)  # → 2  (même jour, 2 objets)
 - Profils : débutant, data
 - Prérequis : ingestion-idempotence-ecraser
 - Voir aussi : ingestion-tri-a-la-source
+- Mots-clés : SHA-256, rejeu
 - Source : data-platform · S1-07
 - Définition : Les mêmes lignes dans un autre ordre donnent un autre fichier, donc un autre hash : l'ordre de lecture fait partie du résultat.
 - Contexte : Un hash ne compare pas des ensembles, il compare des octets. Si la source rend les annonces dans un autre ordre au rejeu, le fichier change, son sha256 aussi, et rien ne distingue ce faux changement d'une vraie correction. « Mêmes octets au rejeu » suppose donc un ordre de lecture fixe, en plus d'une sérialisation fixe (clés triées, format compact).
@@ -117,6 +119,7 @@ octets(run1) == octets(run2)  # → True
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : AWS/sqs-eventbridge-firehose-ou-kinesis
+- Mots-clés : Kinesis, générateur
 - Définition : Le batch traite un lot borné à intervalle fixe (une journée) ; le streaming traite chaque événement dès son arrivée, en continu.
 - Contexte : Le choix suit la source et le besoin de fraîcheur, pas la mode. BODACC publie une fois par jour : un batch quotidien suffit. Le streaming coûte plus cher : service toujours allumé (Kinesis), ordre, doublons et état à gérer en continu. Entre les deux, le micro-batch (toutes les 5 min) garde la simplicité du lot. Lire un fichier en flux avec un générateur, c'est du streaming de lecture, pas une architecture streaming.
 - Usage : ✅ batch : source publiée par lots, rapports quotidiens ; streaming : alerte en secondes, clics, capteurs · ❌ streaming pour une source quotidienne : coût et complexité sans gain de fraîcheur utile.
@@ -162,6 +165,7 @@ def fenetre(e):  # tranche de 5 min
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : ingestion-watermark-reprendre
+- Mots-clés : watermark, CDC
 - Définition : Un chargement complet relit toute la source à chaque run ; un incrémental ne lit que ce qui est nouveau depuis le dernier run.
 - Contexte : Le complet est simple et se corrige seul (il reprend aussi les suppressions), mais son coût croît avec l'historique : 51 millions d'annonces BODACC à 1 835 octets, environ 94 Go par run. L'incrémental lit une journée (59 Mo) mais exige un critère fiable de nouveauté (date de parution, watermark). Règle : complet tant que la source est petite, incrémental dès qu'elle grossit.
 - Usage : ✅ complet : référentiel de quelques milliers de lignes (tribunaux) ; incrémental : annonces, logs · ❌ incrémental sur une date peu fiable (date de saisie modifiable) : des lignes passent entre deux runs.
@@ -200,6 +204,7 @@ wm = date(2026, 10, 21)
 - Type : comparaison
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : cron, EventBridge Scheduler, webhook, SQS
 - Définition : En pull, le pipeline va chercher la donnée selon un horaire ; en push, la source (ou S3) prévient le pipeline à chaque arrivée.
 - Contexte : Une API publique comme BODACC n'envoie rien : on la sonde (pull) sur un cron EventBridge Scheduler. Un partenaire qui dépose un fichier dans S3 déclenche au contraire le traitement par notification (push) : pas d'attente, pas d'appel à vide. Le pull doit gérer « rien de neuf » ; le push doit gérer les notifications en double et surveiller l'absence, car personne ne prévient d'un fichier qui n'arrive pas.
 - Usage : ✅ pull : API sans webhook, quota à maîtriser ; push : dépôt S3, webhook, file SQS · ❌ sonder chaque minute une source quotidienne : quota brûlé pour rien.
@@ -243,6 +248,7 @@ traites  # → ["in/2026-10-23.csv"]
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : ingestion-horloge-lue-une-fois, ingestion-backfill-plage
+- Mots-clés : cron, Airflow, backfill
 - Définition : Un run planifié traite une date logique (J-1) reçue en paramètre ; il ne la recalcule jamais depuis l'horloge au moment où il tourne.
 - Contexte : Le cron de 07:00 UTC du 24 traite la parution du 23. Si le job lit `date.today()`, un rejeu lancé le 26 traite le 25 au lieu du 23, et un backfill devient impossible. Comme dans Airflow (`logical_date`), le déclencheur calcule la date et le job la reçoit (`event["jour"]`). Le job devient une fonction de sa date : rejouable, testable sans figer l'horloge.
 - Usage : ✅ tout job quotidien : `jour` dans l'événement, défaut J-1 calculé à l'entrée · ❌ `date.today()` au cœur du traitement : rejeux et backfills faux, tests qui dépendent du jour.
@@ -278,6 +284,7 @@ handler({"jour": "2026-10-23"}, auj)
 - Profils : débutant, data
 - Prérequis : ingestion-date-logique-pas-horloge
 - Voir aussi : Python/dates-date-fromisoformat
+- Mots-clés : date logique, S3
 - Source : data-platform · S1-07
 - Définition : La date reçue en chaîne devient un `date` une fois, à l'entrée ; le job manipule ce `date` et ne reformate qu'à la sortie.
 - Contexte : Une chaîne `"2026-10-20"` ne se compare, ne se décale ni ne se valide : un `date` oui (`day - timedelta(1)`, `day >= today`). Convertir à la frontière concentre la validation en un seul endroit (`resolve_day`). Pour la clé S3, `f"dt={day.isoformat()}"` redonne le format canonique, même si l'entrée était `20261020`.
@@ -305,6 +312,7 @@ day - timedelta(1)   # → date(2026, 10, 19)
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : ingestion-date-logique-pas-horloge
+- Mots-clés : manifest, partition, _SUCCESS
 - Source : data-platform · S1-07
 - Définition : Une ingestion quotidienne ne traite qu'une journée terminée : le jour même et le futur sont refusés, jamais ingérés à moitié.
 - Contexte : La parution du jour peut encore grossir : l'ingérer à 10 h produit une partition partielle, que le manifest (nombre d'annonces, `_SUCCESS`) déclarerait complète, et que personne ne relirait. `resolve_day` refuse donc `day >= today`, avec `today` calculé à Paris. Une erreur explicite vaut mieux qu'un trou silencieux ; une date future, elle, n'a encore rien publié.
@@ -337,6 +345,7 @@ jour_clos(t, t)    # ❌ ValueError
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : ingestion-evenement-cles-inconnues
+- Mots-clés : handler, Step Functions
 - Source : data-platform · S1-07
 - Définition : Le handler valide ses paramètres (date, format, fuseau) avant tout appel réseau ou écriture, et lève une erreur claire si l'un est faux.
 - Contexte : Une date invalide découverte après l'appel à l'API, ou en cours d'écriture, laisse des fichiers partiels et un message obscur (`KeyError`, `TypeError` loin de la cause). Valider tout de suite coûte une milliseconde et rend l'erreur permanente évidente : Step Functions la route en `Catch` au lieu de la réessayer. C'est le rôle de `resolve_day`, première ligne du handler.
@@ -368,6 +377,7 @@ appels   # → []
 - Niveau : 1
 - Profils : débutant, data
 - Voir aussi : ingestion-manifest-souligne-ignore, ingestion-manifest-quoi-combien-preuve
+- Mots-clés : partition, _SUCCESS
 - Source : data-platform · S1-07
 - Définition : Un manifest est un petit JSON écrit après les données : il marque la partition complète et décrit le fichier (lignes, empreinte, tailles, format).
 - Contexte : Un `_SUCCESS` vide dit seulement « fini ». Le manifest dit aussi quoi : le lecteur sait combien de lignes attendre, peut vérifier l'empreinte, connaît le format et le code qui a écrit, sans ouvrir le fichier. Il reste un marqueur : écrit en dernier, son absence veut dire « partition pas prête ». Équivalent TS : le `package.json` d'un dossier `dist/`, qui décrit ce qui est livré.
@@ -401,6 +411,7 @@ lire("2026-10-21")   # → None : pas prête
 - Niveau : 1
 - Profils : débutant, data
 - Prérequis : ingestion-manifest-success-qui-decrit
+- Mots-clés : Athena, Spark, partition
 - Source : data-platform · S1-07
 - Définition : Nommer le manifest `_MANIFEST.json`, comme `_SUCCESS`, le fait ignorer par Athena, Hive et Spark, qui sautent les fichiers commençant par `_` ou `.`.
 - Contexte : Ces moteurs lisent tous les objets sous l'emplacement d'une partition. Un `manifest.json` sans souligné serait lu comme une donnée : une ligne de plus, ou une erreur de format dans une table `jsonl.gz`. La convention vient de Hadoop (`_SUCCESS`, `_logs`) : un nom en `_` ou `.` désigne un fichier technique. Notre propre lecteur, lui, le cherche par son nom exact.
@@ -435,6 +446,7 @@ len(lues(cles))   # → 2 : manifest.json est lu
 - Profils : data
 - Prérequis : ingestion-date-logique-pas-horloge
 - Voir aussi : ingestion-rejeu-memes-cles
+- Mots-clés : idempotent, partition
 - Définition : Un backfill relance l'ingestion sur une plage de jours passés (trou, bug corrigé), jour par jour, grâce à l'idempotence.
 - Contexte : Un bug dans le parsing, une panne de l'API, une nouvelle colonne à remplir : on relance le même job sur chaque jour concerné. C'est sûr uniquement si le job est idempotent (il écrase sa partition). On boucle jour par jour plutôt qu'en un seul appel sur toute la plage : une erreur ne fait rejouer qu'un jour, et chaque jour garde sa partition `dt=`.
 - Usage : ✅ combler un trou, recalculer `processed` après un correctif · ❌ job qui ajoute au lieu d'écraser : le backfill duplique les données.
@@ -483,6 +495,7 @@ list(parts)[-1]  # → "dt=2026-11-02"
 - Profils : data
 - Prérequis : ingestion-full-ou-incremental
 - Voir aussi : ingestion-lookback-relire-derniers-jours
+- Mots-clés : DynamoDB, Lambda, partition
 - Définition : Le watermark est le dernier jour traité avec succès ; le run suivant repart du lendemain (≈ un curseur de pagination).
 - Contexte : Une Lambda quotidienne qui traite « hier » rate des jours dès qu'un run échoue. Avec un watermark persisté (fichier d'état S3, item DynamoDB), le run suivant traite tous les jours depuis le dernier succès, et rattrape seul les trous. On ne l'avance qu'après l'écriture complète de la partition, jamais avant.
 - Usage : ✅ ingestion incrémentale quotidienne, reprise après panne · ❌ watermark avancé avant la fin de l'écriture : un crash laisse un trou que personne ne revoit.
@@ -524,6 +537,7 @@ wm = date.fromisoformat(
 - Profils : data
 - Prérequis : ingestion-watermark-reprendre
 - Voir aussi : ingestion-dedoublonnage-derniere-version
+- Mots-clés : watermark, idempotent, partition
 - Définition : Une fenêtre de relecture (lookback) refait aussi les N derniers jours à chaque run, pour rattraper les données publiées en retard.
 - Contexte : Un watermark strict suppose qu'un jour clos ne change plus. Or une source peut compléter une journée après coup (annonces ajoutées le lendemain, corrections). Relire J-1 à J-3 à chaque run, en écrasant leurs partitions, les rattrape ; l'idempotence rend la relecture sans risque. Le coût est proportionnel à N : on le fixe d'après le retard réellement observé sur la source, pas au hasard.
 - Usage : ✅ sources qui complètent des jours passés, données tardives (logs mobiles, événements hors ligne) · ❌ job qui ajoute au lieu d'écraser : chaque relecture duplique.
@@ -564,6 +578,7 @@ lake["2026-10-21"]  # → ["A1", "A9"]
 - Niveau : 2
 - Profils : data
 - Voir aussi : ingestion-at-least-once-doublon-normal
+- Mots-clés : clé métier, BODACC, rejeu
 - Définition : On dédoublonne sur une clé métier (id d'annonce) en gardant la dernière version : rejeux et lots qui se recouvrent renvoient la même ligne.
 - Contexte : Un dict indexé par la clé métier fait le travail en une passe : chaque nouvelle version écrase l'ancienne, et l'ordre d'insertion de la première apparition est conservé. Le piège est de choisir la mauvaise clé : dans BODACC, `numeroannonce` repart à 1 dans chaque bulletin (A, B, C), donc seule la paire `(bulletin, numero)` est unique.
 - Usage : ✅ fusionner des pages ou des runs qui se recouvrent, rejouer une journée · ❌ clé non unique : on perd des annonces en silence ; rectificatif à id propre : l'appliquer à l'annonce visée.
@@ -607,6 +622,7 @@ len({(l["bulletin"], l["numero"]): l
 - Profils : data, ops
 - Prérequis : api-de-donnees-codes-http-retenter-ou-lever
 - Voir aussi : ingestion-retry-ou-rejeu, ingestion-retry-flux-avant-premier-yield
+- Mots-clés : Retry-After, quota, Step Functions
 - Définition : On réessaie un appel en échec avec un délai qui double à chaque essai, plafonné et randomisé (jitter) pour ne pas saturer la source.
 - Contexte : Sans délai croissant, un client qui réessaie en boucle aggrave la surcharge qui a causé l'erreur. Le plafond borne l'attente, le jitter évite que plusieurs workers relancent tous au même instant. Si la réponse porte `Retry-After`, on le respecte. On ne réessaie que les erreurs transitoires (quota, 5xx, réseau), et dans `fetch_day` seulement avant la première annonce rendue, sinon on émettrait des doublons.
 - Usage : ✅ appels HTTP vers une API à quota (BODACC), S3, DynamoDB ; sur AWS, Step Functions le déclare dans `Retry` · ❌ erreur permanente (requête invalide, 404) : réessayer ne change rien, lever tout de suite.
@@ -670,6 +686,7 @@ attentes  # → [7.0, 8.0, 2.0]
 - Profils : data
 - Prérequis : Python/generateurs-yield-a-la-demande
 - Voir aussi : Python/generateurs-pipeline
+- Mots-clés : générateur, JSON Lines
 - Définition : Chaîner des générateurs fait passer les lignes une à une d'étape en étape, mémoire constante quelle que soit la taille du fichier.
 - Contexte : Chaque étape (`lire`, `parser`, `filtrer`) consomme un itérable et en produit un autre, sans liste intermédiaire. Rien ne s'exécute tant que la dernière étape n'itère pas : c'est paresseux. `fetch_day` du client BODACC est un générateur : aucune requête n'est faite avant le premier `for`. Un générateur s'épuise : après un parcours complet, il ne rend plus rien.
 - Usage : ✅ fichiers JSON Lines de plusieurs dizaines de Mo, flux HTTP en streaming · ❌ données qu'on parcourt plusieurs fois ou qu'on trie : matérialiser en `list`.
@@ -716,6 +733,7 @@ sum(1 for a in parser(brut)
 - Niveau : 2
 - Profils : data
 - Voir aussi : ingestion-manifest-success-qui-decrit
+- Mots-clés : partition, Spark
 - Définition : Un fichier vide `_SUCCESS` écrit en fin de job signale aux lecteurs que la partition est complète et lisible.
 - Contexte : Une partition fait plusieurs fichiers écrits l'un après l'autre : un lecteur qui arrive pendant l'écriture verrait une journée partielle. Le marqueur, écrit à la toute fin, est le signal « fini ». Spark l'écrit par défaut, et un consommateur (Lambda, job aval) attend sa présence avant de lire. Un rejeu commence par le supprimer.
 - Usage : ✅ partitions multi-fichiers lues par d'autres jobs · ❌ partition d'un seul objet S3 : son écriture est déjà atomique.
@@ -761,6 +779,7 @@ lire("2026-10-23")  # → None
 - Profils : data
 - Prérequis : ingestion-manifest-success-qui-decrit
 - Voir aussi : ingestion-hash-du-brut-pas-du-gzip
+- Mots-clés : manifest, SHA-256, partition
 - Source : data-platform · S1-07
 - Définition : Un manifest utile répond à trois questions : quoi (source, date, clé, format), combien (lignes, octets), prouvé comment (sha256, version du code).
 - Contexte : Dans `build_manifest` : `source`, `date`, `part`, `format`, `count`, `sha256`, `raw_bytes`, `gz_bytes`, `fetched_at`, `bodacc_client_version`. `raw_bytes` sert au contrôle et au sha256 ; `gz_bytes` à estimer le stockage et le scan. Tout est mesuré par le writer pendant l'écriture : aucune seconde lecture du fichier. La version du client relie chaque partition au code qui l'a produite.
@@ -797,6 +816,7 @@ round(manifest["gz_bytes"] / manifest["raw_bytes"], 2)
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : ingestion-calendrier-source-constate, AWS/sqs-eventbridge-scheduler-cron
+- Mots-clés : cron, UTC, dataset
 - Source : data-platform · S1-05
 - Définition : Une ingestion quotidienne se planifie après l'heure réelle de mise à jour de la source, lue dans ses métadonnées, avec une marge, en UTC.
 - Contexte : Les métadonnées du dataset BODACC donnent `data_processed` : `2026-10-22T06:17:43+00:00`, soit 08:17 à Paris en octobre, 07:17 en novembre. Un cron en heure de Paris dérive au changement d'heure : on planifie en UTC fixe (`cron(0 7 * * ? *)`). La source ne publie pas tous les jours : J-1 peut légitimement être vide, ce n'est pas une panne.
@@ -842,6 +862,7 @@ cron - maj >= timedelta(minutes=30)
 - Profils : data, ops
 - Prérequis : ingestion-idempotence-ecraser
 - Voir aussi : ingestion-dedoublonnage-derniere-version
+- Mots-clés : SQS, Lambda, idempotent
 - Définition : SQS standard, les notifications S3 et la Lambda asynchrone livrent chaque message au moins une fois : un même message peut arriver deux fois.
 - Contexte : Garantir « exactement une fois » de bout en bout coûte cher : la plateforme préfère livrer parfois deux fois plutôt que perdre. L'effet « exactement une fois » s'obtient côté consommateur : traitement idempotent (écrasement d'une clé) ou mémoire des ids déjà traités. SQS FIFO dédoublonne, mais seulement sur une fenêtre de 5 minutes ; au-delà, le consommateur reste responsable.
 - Usage : ✅ tout consommateur d'événements : supposer le doublon, rendre l'effet idempotent · ❌ compteur incrémenté ou ligne ajoutée à chaque message : un rejeu fausse le total.
@@ -882,6 +903,7 @@ total  # → 5
 - Niveau : 2
 - Profils : data
 - Voir aussi : ingestion-cdc-journal-des-changements, ingestion-at-least-once-doublon-normal
+- Mots-clés : CDC, upsert, SQS
 - Définition : Les événements peuvent arriver dans le désordre ; on garde celui dont la version (date source, numéro) est la plus haute, pas le dernier reçu.
 - Contexte : Retries, parallélisme, plusieurs partitions : un rectificatif peut être traité avant l'annonce qu'il corrige. « Le dernier arrivé gagne » réécrit alors une valeur périmée. On compare donc un champ porté par l'événement (horodatage source, numéro de séquence, LSN en CDC) avant d'écrire. Seules des files ordonnées (SQS FIFO, shard Kinesis) garantissent l'ordre, et seulement par clé, au prix du débit.
 - Usage : ✅ upsert d'états (statut d'une entreprise), CDC, consommateurs parallèles · ❌ heure de réception comme version : elle date l'arrivée, pas le fait.
@@ -921,6 +943,7 @@ etat["483609327"]  # → (2, "radiée")
 - Niveau : 2
 - Profils : data
 - Voir aussi : AWS/glue-athena-dms-cdc, ingestion-appliquer-par-version
+- Mots-clés : chargement incrémental, data lake
 - Définition : Le CDC (Change Data Capture) transmet chaque insert, update et delete d'une base source, dans l'ordre de son journal, au lieu de recopier les tables.
 - Contexte : Plutôt que relire 10 millions de lignes chaque nuit, on lit le journal de transactions (binlog MySQL, WAL PostgreSQL) avec DMS ou Debezium. Chaque événement porte une opération (`I`, `U`, `D`), la clé, l'état après, et une position (LSN) qui sert d'ordre et de point de reprise. Contrairement à l'incrémental par date, le CDC voit les suppressions. Il commence par un chargement complet, puis suit les changements depuis sa position.
 - Usage : ✅ répliquer une base applicative vers le lake, propager des suppressions · ❌ API publique ou dépôt de fichiers : pas de journal, rester sur un incrémental par date.
@@ -963,6 +986,7 @@ dernier = 2           # LSN persisté
 - Profils : data
 - Prérequis : ingestion-date-logique-objet-date
 - Voir aussi : ingestion-deux-fuseaux-deux-roles, Python/dates-zoneinfo-nom-iana
+- Mots-clés : UTC, fuseau horaire, Lambda, cron
 - Source : data-platform · S1-07
 - Définition : La veille se calcule dans le fuseau où la source découpe ses journées (Paris pour le BODACC), pas dans celui du serveur (UTC sur Lambda).
 - Contexte : Entre minuit et 2 h à Paris (1 h l'hiver), la date UTC est encore celle de la veille : J-1 calculé en UTC vise alors J-2 à Paris, et J-1 n'est pas ingéré par ce run. Invisible avec un cron à 07:00 UTC, le bug apparaît dès qu'on avance le run ou qu'on relance juste après minuit. Calculer en heure de la source supprime la classe de bug, quel que soit l'horaire.
@@ -995,6 +1019,7 @@ str(veille(run, timezone.utc))  # → "2026-10-23"
 - Profils : data
 - Prérequis : ingestion-manifest-success-qui-decrit
 - Voir aussi : ingestion-calendrier-source-constate
+- Mots-clés : manifest, partition, BODACC
 - Source : data-platform · S1-07
 - Définition : Une journée sans publication (samedi) s'écrit en partition vide avec un manifest à 0 : « vide » se distingue de « non traitée ».
 - Contexte : Le BODACC ne date aucune parution du samedi (0 sur 8 semaines, mesuré) : le run du dimanche vise une journée à 0 annonce, ce n'est pas une erreur. Si le job n'écrit rien, l'aval ne sait pas si la journée est vide ou si le run a échoué, et un contrôle de complétude alerte à tort. Écrire le manifest (`count: 0`) rend l'absence d'annonces explicite, datée et vérifiable.
@@ -1028,6 +1053,7 @@ lake["dt=2026-10-24/manifest"]
 - Profils : data
 - Prérequis : ingestion-date-logique-pas-horloge
 - Voir aussi : Python/dates-now-none-injectable
+- Mots-clés : date logique, run, Airflow, handler
 - Source : data-platform · S1-07
 - Définition : L'heure courante se lit une seule fois, à l'entrée du run ; la date logique qui en découle est passée à toutes les étapes.
 - Contexte : Deux lectures de l'horloge dans un même run peuvent tomber de part et d'autre de minuit : le préfixe S3 dit le 24, le manifest le 25. Lire l'heure une fois (`resolve_day` au début), puis passer `day` en paramètre rend le run cohérent et testable : un seul instant à injecter. C'est la date logique d'Airflow, appliquée à l'intérieur du job.
@@ -1058,6 +1084,7 @@ prefixe == manifest   # → False
 - Niveau : 2
 - Profils : data
 - Prérequis : ingestion-fail-fast-valider-evenement
+- Mots-clés : handler, Step Functions, EventBridge
 - Source : data-platform · S1-07
 - Définition : Le handler ne lit que les clés qu'il connaît dans l'événement et ignore les autres : l'appelant peut en ajouter sans casser le job.
 - Contexte : Step Functions, EventBridge ou un rejeu manuel envoient des événements de formes différentes (`source`, `execution_id`…). Lire `event.get("date")` et ignorer le reste (lecteur tolérant) découple le job de son déclencheur. À l'inverse, la valeur d'une clé connue se valide strictement : une date fausse lève. Tolérant sur la forme, strict sur le contenu.
@@ -1088,6 +1115,7 @@ jour(event)   # → date(2026, 10, 20)
 - Profils : data
 - Prérequis : ingestion-ordre-des-lignes-octets
 - Voir aussi : ingestion-tri-a-la-source
+- Mots-clés : SHA-256, BODACC, rejeu
 - Source : data-platform · S1-07
 - Définition : Un ordre de réponse stable mais non documenté est un comportement observé, pas un contrat : on le demande explicitement (`order_by`, `ORDER BY`).
 - Contexte : Mesuré sur deux journées, l'export BODACC rendait toujours le même ordre : celui, interne, du serveur. Une réindexation peut le changer sans prévenir, et le rejeu donnerait un autre sha256 pour les mêmes annonces. Demander l'ordre dans la requête (`order_by=id` sur l'export, `ORDER BY id` en SQL) en fait une garantie, protégée par un test qui vérifie le paramètre envoyé.
@@ -1133,6 +1161,7 @@ def export(order_by=None):
 - Niveau : 2
 - Profils : data
 - Voir aussi : api-de-donnees-total-count-mesurer, IA/extraction-evaluer-journee-complete
+- Mots-clés : fixture, BODACC
 - Source : data-platform · S1-07
 - Définition : Une propriété de la source (ordre stable, ids uniques, volume) se mesure sur une vraie journée complète, jamais sur la fixture des tests.
 - Contexte : La fixture (25 lignes figées dans le dépôt) est stable par construction : la relire donne forcément le même ordre, elle ne dit rien du serveur. On mesure avec un script jetable hors dépôt, sur une journée passée : deux lectures, comparaison des ids et du hash, doublons, taille, durée. BODACC du 2026-10-20 : 32 373 annonces, 55,6 Mo, ordre stable mais non trié.
@@ -1176,6 +1205,7 @@ m["ordre"], m["trie"]   # → (True, False)
 - Profils : data
 - Prérequis : formats-gzip-compresser-le-brut
 - Voir aussi : Python/compression-mtime-zero
+- Mots-clés : JSON Lines, SHA-256, gzip, manifest
 - Source : data-platform · S1-07
 - Définition : L'empreinte d'une partition se calcule sur le JSONL non compressé : changer de niveau ou d'outil de compression ne change pas l'identité de la donnée.
 - Contexte : Le même contenu compressé au niveau 1, 6 ou 9 donne trois `.gz` différents, donc trois sha256, pour une donnée identique. Hacher les octets bruts au fil de l'écriture (`digest.update(line)` à côté de `gz.write(line)`) donne une identité stable, rangée dans le manifest avec le nombre de lignes et les deux tailles. Le hash du `.gz` reste utile pour vérifier un transfert, pas pour dire « même donnée ».
@@ -1223,6 +1253,7 @@ digest.digest() == hashlib.sha256(brut).digest()
 - Profils : data
 - Prérequis : ingestion-idempotence-ecraser
 - Voir aussi : ingestion-octets-reproductibles
+- Mots-clés : gzip, idempotent, Lambda
 - Source : data-platform · S1-07
 - Définition : Le test d'idempotence d'un writer écrit deux fois le même contenu, sous deux noms, et compare les octets des fichiers, pas leur contenu décodé.
 - Contexte : Comparer le contenu décompressé passe même si l'en-tête gzip contient l'heure ou le nom du fichier : c'est justement le cas piège. Deux noms différents (`tmpa1b2c3`, `part-0001.jsonl.gz`) reproduisent la Lambda, où `tempfile` invente un nom à chaque invocation. Compléter par « ordre des clés sans effet » et « ordre des lignes significatif ».
@@ -1272,6 +1303,7 @@ ecrire(d / "tmpa1", "") == ecrire(d / "p.gz", "")
 - Profils : data
 - Prérequis : ingestion-manifest-quoi-combien-preuve
 - Voir aussi : ingestion-rejeu-reel-versions-s3
+- Mots-clés : manifest, SHA-256, rejeu
 - Source : data-platform · S1-07
 - Définition : Au rejeu, comparer `count` et sha256 du nouveau fichier à ceux du manifest existant dit si la source a changé, sans relire l'ancien fichier.
 - Contexte : Le manifest garde ce que le writer a mesuré : nombre de lignes, sha256 du brut, tailles. Même sha256 : rejeu neutre, rien à propager. sha256 différent alors que l'ordre et la sérialisation sont fixés : la source a vraiment publié autre chose (rectificatif tardif), à journaliser. Sans ordre fixé, un hash différent ne prouve rien.
@@ -1316,6 +1348,7 @@ stats(v1)[1] == stats(v2)[1]   # → False
 - Niveau : 2
 - Profils : data, ops
 - Voir aussi : ingestion-lecteur-part-du-manifest
+- Mots-clés : S3, manifest, partition
 - Source : data-platform · S1-07
 - Définition : S3 écrit chaque objet en entier ou pas du tout, mais jamais deux ensemble : publier données et manifest, c'est deux requêtes séparées.
 - Contexte : Entre le `PUT` du fichier et celui du manifest, un lecteur peut lister la partition. L'ordre choisit l'état intermédiaire visible : données sans manifest (non publiée, sans danger) plutôt que manifest sans données (publiée, illisible). Il n'y a pas de `rollback` : si le second `PUT` échoue, le premier reste. Équivalent TS : deux `fetch` successifs, pas une transaction de base.
@@ -1355,6 +1388,7 @@ ordre[-1]   # → "_MANIFEST.json"
 - Profils : data
 - Prérequis : ingestion-idempotence-ecraser
 - Voir aussi : ingestion-octets-reproductibles
+- Mots-clés : manifest, ETag, SSE-KMS, rejeu
 - Source : data-platform · S1-07
 - Définition : Au rejeu d'une journée inchangée, seul `fetched_at` (l'heure de collecte) change dans le manifest : « même résultat » se juge sur les données.
 - Contexte : Le manifest mêle deux natures : des faits sur les données (`count`, `sha256`, tailles), stables, et un fait sur le run (`fetched_at`), qui change à chaque exécution. Exiger un manifest identique octet pour octet obligerait à figer l'heure et perdrait l'info « quand a-t-on collecté ». Le test de rejeu compare le `sha256` ou les octets du part, ou le manifest privé de `fetched_at` ; jamais l'ETag (nouveau à chaque PUT en SSE-KMS), `LastModified` ni `VersionId`.
@@ -1386,6 +1420,7 @@ stable(m1) == stable(m2)   # → True : même résultat
 - Niveau : 2
 - Profils : data
 - Prérequis : ingestion-manifest-success-qui-decrit, ingestion-s3-pas-de-transaction
+- Mots-clés : manifest, Iceberg, partition, Athena
 - Source : data-platform · S1-07
 - Définition : Le lecteur d'une partition lit d'abord le manifest, puis le fichier qu'il désigne (`part`), au lieu de lister le préfixe et de tout prendre.
 - Contexte : Lister ramasse aussi ce qui ne fait pas partie de la publication : un part d'un run interrompu, un fichier temporaire, un ancien nom. Le manifest est la liste fermée des fichiers valides, comme le journal d'une table Delta ou Iceberg, en plus simple. Il donne aussi `count` et `sha256` pour contrôler ce qu'on vient de lire.
@@ -1418,6 +1453,7 @@ s3[m["part"]]                # → 2 : le bon
 - Niveau : 2
 - Profils : data
 - Prérequis : ingestion-manifest-success-qui-decrit
+- Mots-clés : S3, multipart upload, _SUCCESS
 - Source : data-platform · S1-07
 - Définition : Avec un seul fichier, l'atomicité de S3 évite déjà la lecture partielle ; le manifest sert alors à décrire, vérifier et préparer plusieurs parts.
 - Contexte : Un `PUT`, ou un multipart complété, n'est visible qu'entier : pas de demi-fichier, et un `_SUCCESS` vide n'apporterait rien. Mais le manifest donne `count` et `sha256` sans relire, la version du code, et reste le signal « fini » le jour où la journée est découpée en `part-0001`, `part-0002`. Ajouter ce contrat plus tard obligerait tous les lecteurs à changer.
@@ -1450,6 +1486,7 @@ complete(manifest, present)   # → False
 - Profils : data
 - Prérequis : ingestion-idempotence-ecraser
 - Voir aussi : AWS/iam-sans-deleteobject-rejeu
+- Mots-clés : manifest, partition, Athena, UUID
 - Source : data-platform · S1-07
 - Définition : Un run coupé entre fichier et manifest laisse la partition non publiée ; le rejeu réécrit les deux aux mêmes clés et la répare.
 - Contexte : Aucun nettoyage spécial n'est nécessaire : le part orphelin est écrasé par le nouveau, le manifest arrive ensuite. Cela ne marche que parce que les clés sont fixes (`part-0001.jsonl.gz`, `_MANIFEST.json`), dérivées du jour seulement. Avec un nom unique par run, chaque échec laisserait un résidu que les moteurs liraient.
@@ -1485,6 +1522,7 @@ len(s3)   # → 2 : rien en trop
 - Niveau : 2
 - Profils : data
 - Voir aussi : ingestion-rejeu-rate-partition-valide, ingestion-retry-flux-avant-premier-yield
+- Mots-clés : data lake, manifest, multipart upload, orchestrateur
 - Source : data-platform · S1-07
 - Définition : Le run lit toute la journée vers un fichier local, puis publie : une coupure pendant la lecture ne laisse rien dans le data lake.
 - Contexte : Envoyer au fil de l'eau (un objet par lot, un multipart ouvert pendant la lecture) expose une partition à moitié écrite dès que la source coupe. Écrire d'abord dans `/tmp` (512 Mo, un `.gz` de 4,4 Mo pour une journée BODACC) puis publier données et manifest découple les deux risques : la lecture peut échouer sans effet, la publication est courte. L'exception remonte, l'orchestrateur rejoue.
@@ -1535,6 +1573,7 @@ lake  # → {"2026-10-20": ["A202602011"]}
 - Niveau : 2
 - Profils : data
 - Prérequis : ingestion-lecteur-part-du-manifest
+- Mots-clés : manifest, partition, ETag
 - Source : data-platform · S1-07
 - Définition : Un rejeu qui échoue pendant la lecture ne touche ni fichier ni manifest publiés : la partition reste celle du dernier run réussi.
 - Contexte : C'est le test « coupure au rejeu » : un premier run publie, la source coupe au second, et l'`ETag` du part est inchangé. Possible parce que rien n'est supprimé ni écrasé avant la fin de la lecture. Supprimer la partition en début de run (« on repart propre ») ferait l'inverse : un rejeu raté efface une journée valide.
@@ -1570,6 +1609,7 @@ lake["2026-10-20"]  # → ("A1", "A2")
 - Profils : data, ops
 - Prérequis : ingestion-rejeu-memes-cles
 - Voir aussi : AWS/s3-etag-sse-kms, AWS/s3-version-id
+- Mots-clés : versioning S3, Lambda, ETag, idempotent
 - Source : data-platform · S1-07
 - Définition : Sur AWS, l'idempotence d'un rejeu se prouve en téléchargeant les deux versions du fichier et en comparant leurs octets.
 - Contexte : Le test unitaire prouve le writer ; le rejeu réel prouve toute la chaîne : ordre renvoyé par l'API, runtime Lambda, upload. Le bucket versionné garde l'ancienne version : `list-object-versions`, deux `get-object --version-id`, puis `cmp` ou `shasum`. ETag, `LastModified` et `VersionId` changent forcément à chaque écriture : ils ne prouvent rien.
@@ -1601,6 +1641,7 @@ shasum -a 256 run.gz rejeu.gz
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : ingestion-retry-backoff-exponentiel, ingestion-rejeu-memes-cles
+- Mots-clés : retry, Lambda, EventBridge Scheduler, idempotent
 - Source : data-platform · S1-08
 - Définition : Les retries automatiques couvrent une panne de quelques minutes ; au-delà, une alarme et un rejeu explicite rattrapent la journée.
 - Contexte : Des heures de tentatives (6 h par défaut pour l'asynchrone Lambda, 24 h pour Scheduler) cachent la panne : personne n'est prévenu, l'API source est martelée, et la journée arrive en retard sans trace. Borner les retries à l'horizon d'un raté réseau (1 h ici), puis alarmer sur l'échec et rejouer la date quand la source est revenue. L'idempotence rend le rejeu sans danger.
@@ -1631,6 +1672,7 @@ make replay FROM=2026-10-26 TO=2026-10-26
 - Niveau : 2
 - Profils : data
 - Voir aussi : ingestion-journee-vide-ou-absente
+- Mots-clés : BODACC, manifest
 - Source : data-platform · S1-08
 - Définition : Les jours de publication d'une source se mesurent sur plusieurs semaines de vraies données, par jour de la semaine, jamais d'après l'intuition.
 - Contexte : Supposé : « pas de parution le week-end ». Mesuré sur 8 semaines : BODACC date ses parutions du dimanche et du mardi au vendredi, jamais du samedi, presque jamais du lundi, avec une exception (31/08 publié, 01/09 vide). Le calendrier conditionne l'heure de la planification, les alertes « journée vide » et les attentes d'un rejeu. Même constaté, il peut glisser : un `count` à 0 se constate, il ne se prévoit pas.
@@ -1667,6 +1709,7 @@ dict(profil)
 - Profils : data
 - Prérequis : ingestion-rejeu-memes-cles
 - Voir aussi : qualite-reconciliation-lus-ecrits-rejetes
+- Mots-clés : rejeu, backfill, manifest
 - Source : data-platform · S1-08
 - Définition : Un rejeu se vérifie en rapprochant trois chiffres : ce que l'outil a affiché, ce que disent les manifests, et ce que compte la source.
 - Contexte : `19/19 jours ingérés` ne prouve que l'absence d'exception. On compte ensuite les manifests de la plage (19), on additionne leurs `count` et on compare à la somme des lignes affichées (225 765), puis on vérifie quelques jours contre la source (`count_day`). Un écart sur un seul jour désigne la partition à rejouer. Les jours à 0 annonce gardent leur manifest : 19, pas 13.
@@ -1707,6 +1750,7 @@ done | awk '{n++; s+=$1} END {print n, s}'
 - Profils : data
 - Prérequis : ingestion-hash-du-brut-pas-du-gzip
 - Voir aussi : api-de-donnees-etag-if-none-match
+- Mots-clés : SHA-256, chargement incrémental
 - Définition : Un hash SHA-256 du contenu sérialisé détecte qu'un enregistrement a changé entre deux ingestions, sans comparer champ par champ.
 - Contexte : On stocke l'empreinte de chaque annonce avec son id. Au run suivant, même id et même empreinte : rien à réécrire ; empreinte différente : rectificatif à propager. La sérialisation doit être canonique : `sort_keys=True` fixe l'ordre des clés, sinon deux dicts égaux donnent deux chaînes, donc deux hash. Tronquer à quelques caractères suffit pour comparer, pas pour un identifiant global.
 - Usage : ✅ ingestion incrémentale, détection de rectificatifs, cache · ❌ comparer des objets avec des `float` ou des dates non normalisés : sérialiser d'abord en types stables.
@@ -1753,6 +1797,7 @@ apres = {"A1": {"v": 1}, "A2": {"v": 2}}
 - Niveau : 2
 - Profils : data
 - Voir aussi : ingestion-appliquer-par-version
+- Mots-clés : upsert, BODACC, CDC
 - Source : data-platform · S1-05
 - Définition : Une annulation ou un rectificatif est une nouvelle ligne, avec son propre id, qui désigne une ligne antérieure : on l'applique à celle-ci.
 - Contexte : Un upsert sur `id` absorbe les rejeux, mais une annulation a un autre `id` : l'insérer seule laisse l'annonce visée intacte, et la table garde un événement qui n'a pas eu lieu (une radiation annulée neuf mois plus tard). BODACC donne la cible dans `parutionavisprecedent` : lettre du bulletin, `numeroParution`, `numeroAnnonce`. Annulation : marquer ou supprimer la cible ; rectificatif : la remplacer.
@@ -1802,6 +1847,7 @@ p = json.loads(
 - Profils : data, expert
 - Prérequis : ingestion-retry-backoff-exponentiel, ingestion-generateurs-pipeline-en-flux
 - Voir aussi : ingestion-lire-tout-puis-publier
+- Mots-clés : générateur, keyset, idempotent
 - Source : data-platform · S1-06
 - Définition : Sur un flux sans point de reprise, on ne réessaie que l'ouverture ; une coupure après la première ligne rendue doit lever, pas relancer.
 - Contexte : Relancer un export après 10 000 annonces émises les rend une seconde fois : doublons silencieux en aval. `fetch_day` garde un drapeau `started` : erreur avant le premier `yield`, backoff puis nouvel essai ; après, `BodaccError`. C'est acceptable parce que l'appelant est idempotent : la Lambda rejoue la journée entière et écrase la même clé S3. Une pagination keyset, elle, réessaie page par page sans doublon.
@@ -1864,6 +1910,7 @@ list(sur())  # ❌ RuntimeError
 - Profils : data, expert
 - Prérequis : ingestion-watermark-reprendre
 - Voir aussi : Python/generateurs-batched-lots
+- Mots-clés : watermark, backfill, Step Functions, keyset
 - Définition : Un job long écrit par lots numérotés et note le dernier lot validé : après un crash, il repart du suivant sans tout refaire.
 - Contexte : Un backfill de 300 jours ne tient pas dans une Lambda (15 min). Découpé en lots déterministes (un jour, ou `part-0007` toutes les 10 000 lignes), chaque lot est idempotent ; le checkpoint (S3, DynamoDB) n'avance qu'après l'écriture du lot. C'est le watermark, au grain du lot. Le découpage doit être identique d'un run à l'autre, et la source doit savoir resauter au bon endroit (keyset, `Range`), sinon on relit pour rien.
 - Usage : ✅ backfills longs, gros fichiers, boucles Step Functions · ❌ lots de taille variable selon le run : le lot 7 du rejeu n'est plus le lot 7 d'avant.
@@ -1897,6 +1944,7 @@ list(ecrits), checkpoint
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : ingestion-veille-fuseau-source, data-lake-jour-de-partition-utc
+- Mots-clés : UTC, fuseau horaire, partition
 - Source : data-platform · S1-07
 - Définition : Le jour métier (`dt=`) se calcule en heure de la source ; les horodatages techniques (`ingested_at`) s'écrivent en UTC, avec leur décalage.
 - Contexte : Le jour de partition suit le découpage de la source (Paris), l'instant d'ingestion reste absolu et comparable entre systèmes. Une annonce du 25 ingérée juste après minuit à Paris a donc un `ingested_at` daté du 24 en UTC, et c'est juste. Mélanger les deux (grouper par `ingested_at[:10]`, ou écrire `ingested_at` naïf) crée des écarts d'une ou deux heures, difficiles à voir.
@@ -1931,6 +1979,7 @@ rec["ingested_at"]  # → "2026-10-24T22:30:00+00:00"
 - Profils : data, expert
 - Prérequis : ingestion-ordre-des-lignes-octets
 - Voir aussi : api-de-donnees-keyset-derniere-cle
+- Mots-clés : générateur, streaming, Lambda
 - Source : data-platform · S1-07
 - Définition : Pour un flux trié sans charger la journée en RAM, on demande le tri à la source (`order_by`) au lieu d'appeler `sorted()` dans la Lambda.
 - Contexte : `sorted()` consomme tout le générateur avant de rendre la première ligne : la journée entière (59 Mo de JSON, bien plus en objets Python) passe en mémoire, le streaming est perdu. Côté serveur, le tri coûte du temps (4,5 s au lieu de 1,8 s mesurés sur le BODACC) mais la mémoire reste plate. Si la source ne sait pas trier : morceaux triés sur disque, fusionnés par `heapq.merge`.
@@ -1970,6 +2019,7 @@ list(fusion)   # → ["A2", "A3", "A4"]
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : ingestion-tri-a-la-source
+- Mots-clés : idempotent, BODACC
 - Source : data-platform · S1-07
 - Définition : Un serveur peut trier en ordre naturel (`A9` avant `A10`), Python en ordre lexical : seul compte que l'ordre soit identique à chaque appel.
 - Contexte : Avec `order_by=id`, l'export BODACC rend `A202602011`, `A202602012`… en ordre naturel ; `ids == sorted(ids)` vaut donc `False` côté Python. Ce n'est pas un bug : l'idempotence demande un ordre déterministe, pas celui de Python. On vérifie « même ordre sur deux lectures », pas « trié comme `sorted` ». Pour reproduire l'ordre naturel : une clé qui convertit les chiffres en `int`.
@@ -2010,6 +2060,7 @@ sorted(ids, key=naturel)
 - Profils : data, expert
 - Prérequis : ingestion-tri-a-la-source
 - Voir aussi : Python/collections-sorted-plusieurs-cles
+- Mots-clés : SHA-256, pagination
 - Source : data-platform · S1-07
 - Définition : Trier sur une clé non unique (date) laisse les ex aequo dans l'ordre d'entrée : finir la clé par l'id rend l'ordre déterministe.
 - Contexte : `ORDER BY dateparution` seul ne fixe pas l'ordre des annonces d'un même jour : le moteur les rend comme il veut, et le hash varie. En Python, `sorted` est stable : les ex aequo gardent leur ordre d'arrivée, lui-même non garanti. La règle : trier sur une clé unique, ou terminer par une colonne unique (`ORDER BY dateparution, id`). Même règle pour paginer par curseur.
@@ -2049,6 +2100,7 @@ sorted(r1, key=cle) == sorted(r2, key=cle)
 - Profils : data, expert
 - Prérequis : ingestion-ordre-des-lignes-octets, ingestion-hash-du-brut-pas-du-gzip
 - Voir aussi : Python/compression-mtime-zero
+- Mots-clés : gzip, SHA-256, BODACC
 - Source : data-platform · S1-07
 - Définition : Rendre un fichier reproductible octet pour octet, c'est neutraliser chaque source de variation : ordre, sérialisation, en-têtes, réglages de compression.
 - Contexte : Inventaire du writer BODACC : ordre des lignes (`order_by=id`), ordre des clés (`sort_keys=True`), espaces (`separators`), échappement (`ensure_ascii=False`), heure et nom dans l'en-tête gzip (`mtime=0`, `filename=""`), niveau de compression en constante. Reste hors du code la version de zlib, qui peut changer les octets compressés : d'où l'empreinte calculée sur le brut.
@@ -2094,6 +2146,7 @@ octets(0, "a") == octets(0, "")   # → False
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : ingestion-manifest-empreinte-au-rejeu, ingestion-s3-pas-de-transaction
+- Mots-clés : manifest, SHA-256, rejeu
 - Source : data-platform · S1-07
 - Définition : Pendant un rejeu, le fichier est réécrit sous l'ancien manifest : un lecteur peut lire le nouveau fichier avec l'ancien `count` et `sha256`.
 - Contexte : « Données puis manifest » protège la première publication, pas le remplacement : entre l'écrasement du part et celui du manifest, les deux ne vont plus ensemble si la source a changé. Parades : le lecteur compare le `sha256` lu au manifest et réessaie en cas d'écart ; ou le rejeu supprime d'abord le manifest ; ou chaque version va sous une nouvelle clé, que le manifest désigne.

@@ -18,6 +18,7 @@ DevOps · jq : lire, filtrer, sortie, scripts (format spec v4 de revision-pwa).
 - Niveau : 1
 - Profils : débutant, ops, data
 - Voir aussi : jq-cle-avec-tiret, Terraform/cli-output-json-jq
+- Mots-clés : JSON, entrée standard, output, CLI
 - Source : data-platform · S1-08
 - Définition : `jq '.clé'` lit un champ d'un JSON reçu sur l'entrée standard ; `.a.b` descend dans les objets imbriqués (≈ `obj.a.b` en JS).
 - Contexte : `jq` est le `JSON.parse` du terminal : il lit du JSON, applique un filtre, réécrit du JSON. `.` seul renvoie tout, joliment indenté. C'est le compagnon de toutes les CLI qui sortent du JSON : `aws`, `terraform output -json`, `gh api`. Le filtre se met toujours entre guillemets simples, pour que le shell ne touche ni aux `$` ni aux `[`.
@@ -51,6 +52,7 @@ echo '{"a":{"b":1}}' | jq '.a.b'
 - Profils : débutant, ops
 - Prérequis : jq-lire-champ
 - Voir aussi : Terraform/langage-hcl-output-raw
+- Mots-clés : JSON, substitution de commande
 - Source : data-platform · S1-08
 - Définition : `jq -r` écrit les chaînes sans guillemets JSON : la forme à passer à une autre commande ou à une variable du shell.
 - Contexte : Sans `-r`, `jq '.raw'` affiche `"dp-raw"`, guillemets compris : `aws s3 ls s3://"dp-raw"` recevrait les guillemets dans le nom. Avec `-r`, on obtient `dp-raw`. Piège : `-r` sur une valeur absente écrit le **texte** `null`, qui devient un nom de bucket ou de fonction plausible et fait échouer plus loin.
@@ -76,6 +78,7 @@ echo "$J" | jq -r '.raw'  # → dp-raw
 - Type : piège
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : code de sortie, output, locals
 - Source : data-platform · S1-08
 - Définition : Une clé avec un tiret, un point ou un espace se lit entre guillemets : `."ingest-bodacc"` ; `.ingest-bodacc` est lu comme une soustraction.
 - Contexte : jq comprend `.ingest-bodacc` comme `.ingest - bodacc`, où `bodacc` serait une fonction : erreur de compilation, code 3. C'est le cas des clés de `local.lambdas` (`ingest-bodacc`), donc de l'output `lambda_functions`. Autre écriture : `.["ingest-bodacc"]` (≈ `obj["ingest-bodacc"]` en JS).
@@ -105,6 +108,7 @@ echo "$J" | jq -r '.ingest-bodacc'
 - Profils : débutant, ops
 - Prérequis : jq-lire-champ
 - Voir aussi : jq-e-code-de-sortie, jq-valeur-par-defaut
+- Mots-clés : JSON, code de sortie
 - Source : data-platform · S1-08
 - Définition : Un champ absent renvoie `null` et le code 0 : jq ne signale pas une faute de frappe (≈ `undefined` en JS).
 - Contexte : `.x.y` sur un objet sans `x` donne aussi `null`, sans erreur : jq propage `null` comme l'opérateur `?.` de TS. Pratique pour lire des champs facultatifs, dangereux dans un script : une clé mal écrite passe en silence. D'où `-e` (carte « -e ») ou `//` (valeur par défaut) dès qu'une valeur est obligatoire.
@@ -132,6 +136,7 @@ echo $?   # → 0
 - Profils : débutant, data
 - Prérequis : jq-lire-champ
 - Voir aussi : jq-map-transformer
+- Mots-clés : JSON, manifest
 - Source : data-platform · S1-08
 - Définition : `.[]` sort chaque élément d'un tableau, un résultat par élément : la base de tout filtre sur une liste (≈ `for (const x of arr)`).
 - Contexte : jq travaille en flux : un filtre peut produire plusieurs résultats, chacun écrit sur sa ligne. `.[] | .date` sort une date par élément. Sur un objet, `.[]` sort les valeurs. Pour regrouper les résultats dans un tableau, entourer de crochets : `[.[] | .date]`.
@@ -165,6 +170,7 @@ echo "$M" | jq -c '[.[] | .count]'
 - Type : recette
 - Niveau : 1
 - Profils : débutant, ops
+- Mots-clés : JSON, JSONL, output
 - Source : data-platform · S1-08
 - Définition : `keys` liste les clés d'un objet, triées ; `length` compte les éléments d'un tableau, les clés d'un objet, ou les caractères d'une chaîne.
 - Contexte : Premier réflexe devant une réponse inconnue : `jq 'keys'` pour voir ce qu'elle contient, avant d'écrire un chemin. `keys` trie par ordre alphabétique ; `keys_unsorted` garde l'ordre du document. `length` de `null` vaut `0`, sans erreur : un champ absent passe pour vide.
@@ -193,6 +199,7 @@ echo "$J" | jq 'length'            # → 2
 - Profils : ops
 - Prérequis : jq-champ-absent-null
 - Voir aussi : jq-codes-de-sortie
+- Mots-clés : code de sortie, substitution de commande, Makefile
 - Source : data-platform · S1-08
 - Définition : `jq -e` sort avec le code 1 si le dernier résultat est `null` ou `false` : un champ absent fait enfin échouer la commande.
 - Contexte : Sans `-e`, jq réussit toujours sur un JSON valide. Avec `-e`, `make replay` échoue si la clé de la Lambda n'existe pas dans l'output. Seuls `null` et `false` comptent comme échec : `0` et `""` réussissent. Piège : `-e` change le code mais **affiche quand même** `null` ; dans `$(…)`, le code est perdu et `null` est capturé.
@@ -224,6 +231,7 @@ echo "fn=[$(echo '{}' | jq -er '.x')]"
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : jq-iterer-tableau
+- Mots-clés : JSON, manifest
 - Source : data-platform · S1-08
 - Définition : `select(condition)` laisse passer un élément si la condition est vraie, et le supprime sinon (≈ `arr.filter(…)`, appliqué au flux).
 - Contexte : S'utilise après `.[]` : `.[] | select(.count > 0)`. En jq, seuls `false` et `null` sont faux : `0` et `""` sont vrais, à l'inverse de JS. `select(.count)` garde donc les journées à 0 annonce. Écrire la comparaison complète.
@@ -252,6 +260,7 @@ echo "$M" | jq -r '.[] | select(.count > 0)
 - Niveau : 2
 - Profils : ops
 - Prérequis : jq-champ-absent-null
+- Mots-clés : JSON
 - Source : data-platform · S1-08
 - Définition : `a // b` vaut `a`, sauf si `a` est `null` ou `false` : alors `b` (≈ `??` en TS, mais `false` déclenche aussi).
 - Contexte : `.profile // "default"` donne une valeur à un champ facultatif. Différence avec `??` : en TS, `false ?? "x"` vaut `false` ; en jq, `false // "x"` vaut `"x"`. Comme pour `select`, `0` n'est pas « vide » : `0 // 5` vaut `0`.
@@ -279,6 +288,7 @@ echo '{"a":null,"b":false,"c":0}' | jq -c \
 - Profils : data
 - Prérequis : jq-iterer-tableau
 - Voir aussi : jq-slurp-tout-le-flux
+- Mots-clés : JSONL, pipe
 - Source : data-platform · S1-08
 - Définition : `jq -c` écrit chaque résultat sur une seule ligne : la sortie devient du JSON Lines, pour `wc -l`, `grep` ou un autre `jq`.
 - Contexte : Par défaut, jq indente : un objet prend plusieurs lignes, et `wc -l` compte des lignes d'affichage, pas des objets. `-c` donne exactement un objet par ligne, le format des fichiers `part-*.jsonl.gz` du bucket raw. À combiner avec `.[]` pour transformer un tableau en JSONL.
@@ -308,6 +318,7 @@ echo '[{"a":1},{"a":2}]' | jq -c '.[]' \
 - Profils : ops
 - Prérequis : jq-lire-champ
 - Voir aussi : shell-guillemets-simples
+- Mots-clés : shell, JSON
 - Source : data-platform · S1-08
 - Définition : `jq --arg nom valeur` rend la valeur disponible dans le filtre sous `$nom`, toujours comme chaîne ; `--argjson` la passe comme JSON.
 - Contexte : Insérer la variable dans le filtre (`jq ".\"$L\""`) casse dès qu'elle contient un guillemet, et oblige à jongler avec les guillemets doubles. `--arg` transmet la valeur à part, sans interprétation. Piège : `--arg n 5` donne la **chaîne** `"5"`, qui n'est pas égale au nombre `5` ; pour un nombre, `--argjson`.
@@ -334,6 +345,7 @@ echo "$J" | jq -r --arg k "$L" '.[$k]'
 - Niveau : 2
 - Profils : data
 - Prérequis : jq-iterer-tableau
+- Mots-clés : JSON, manifest
 - Source : data-platform · S1-08
 - Définition : `map(f)` applique `f` à chaque élément d'un tableau et rend un tableau de résultats (≈ `arr.map(f)`).
 - Contexte : `map(f)` est un raccourci de `[.[] | f]` : il garde la forme tableau, contrairement à `.[] | f` qui sort un flux de valeurs séparées. `map(.count)` extrait une colonne d'une liste de manifests, prête à être sommée, triée ou comptée. Dans `f`, `.` désigne l'élément courant.
@@ -369,6 +381,7 @@ echo '[1,2]' | jq -c 'map(. + 1)'
 - Niveau : 2
 - Profils : data, ops
 - Prérequis : jq-map-transformer
+- Mots-clés : manifest, rejeu
 - Source : data-platform · S1-08
 - Définition : `add` additionne les nombres d'un tableau, concatène chaînes ou tableaux, fusionne des objets ; sur un tableau vide, il vaut `null`.
 - Contexte : `map(.count) | add` additionne les `count` d'une liste de manifests : la vérification d'un rejeu tient en une ligne. Piège : sur un tableau vide, `add` vaut `null`, pas `0` ; avec `-r`, un script lit alors le texte `null`. Protéger avec `add // 0`. Le comportement suit le type des éléments : `+` de jq sur chacun.
@@ -402,6 +415,7 @@ echo '[]' | jq 'add // 0'   # → 0
 - Niveau : 2
 - Profils : ops
 - Prérequis : jq-keys-length-explorer
+- Mots-clés : JSON, output
 - Source : data-platform · S1-08
 - Définition : `to_entries` change un objet en liste de `{key, value}` (≈ `Object.entries`) ; `from_entries` fait l'inverse.
 - Contexte : Indispensable quand les clés sont des données, comme `lambda_functions` ou `bucket_names` : on boucle sur les paires sans connaître les noms. `with_entries(f)` combine les deux (`to_entries | map(f) | from_entries`) pour modifier les clés ou les valeurs d'un objet.
@@ -430,6 +444,7 @@ echo "$J" | jq -r 'to_entries[]
 - Niveau : 3
 - Profils : data
 - Prérequis : jq-c-une-ligne-par-objet
+- Mots-clés : JSONL, DuckDB
 - Source : data-platform · S1-08
 - Définition : `jq -s` (slurp) lit tous les JSON de l'entrée et les met dans un seul tableau, avant d'appliquer le filtre.
 - Contexte : Sans `-s`, jq applique le filtre à chaque objet d'un JSONL, séparément : impossible de faire une somme ou un tri global. Avec `-s`, tout est chargé en mémoire : pratique pour quelques milliers de lignes, à éviter sur un fichier de 55 Mo, où `reduce` ou `--stream` lisent en flux.
@@ -460,6 +475,7 @@ printf '{"count":3}\n{"count":5}\n' \
 - Profils : data
 - Prérequis : jq-r-chaine-brute, jq-iterer-tableau
 - Voir aussi : shell-column-aligner
+- Mots-clés : CSV, Parquet
 - Source : data-platform · S1-08
 - Définition : `[…] | @tsv` ou `@csv` change un tableau de valeurs en ligne de tableur (tabulations ou virgules), avec `-r`.
 - Contexte : Pour lire un résultat en colonnes ou l'ouvrir dans un tableur. `@csv` met les chaînes entre guillemets et double les guillemets internes ; `@tsv` échappe tabulations et retours à la ligne (`\t`, `\n`) au lieu de casser les colonnes. Les deux n'acceptent que des valeurs simples, pas d'objets imbriqués.
@@ -489,6 +505,7 @@ echo "$M" | jq -r '.[] | [.date, .count]
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : jq-e-code-de-sortie
+- Mots-clés : code de sortie, pipe, JSON
 - Source : data-platform · S1-08
 - Définition : Codes de jq : `0` succès, `1` `-e` sur `null`/`false`, `2` fichier ou option, `3` filtre invalide, `5` entrée non JSON.
 - Contexte : Un script distingue ainsi « la valeur manque » (1) de « la réponse n'est pas du JSON » (5), par exemple une page d'erreur HTML renvoyée par une API à la place du JSON. `set -o pipefail` reste nécessaire : dans `aws … | jq …`, seul le code de jq compte sans lui.
@@ -517,6 +534,7 @@ echo $?   # → 2
 - Niveau : 3
 - Profils : ops, expert
 - Prérequis : make-double-dollar-shell, shell-guillemets-simples
+- Mots-clés : recette, Makefile, output
 - Source : data-platform · S1-08
 - Définition : Dans une recette, le filtre jq reste entre guillemets simples ; une variable Make s'y insère par `$(VAR)`, une variable du shell par `$$VAR`.
 - Contexte : Make développe `$(REPLAY_LAMBDA)` avant le shell : `'."$(REPLAY_LAMBDA)"'` devient `'."ingest-bodacc"'`, que le shell passe tel quel à jq. Un `$` de jq (`$k` avec `--arg`) doit être doublé (`$$k`), sinon Make le prend pour sa variable `k`, vide. `make -n` montre le filtre final.

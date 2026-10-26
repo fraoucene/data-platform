@@ -18,6 +18,7 @@ Web · Modules ES : import statique et dynamique, modules JSON et import attribu
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : modules-es-import-ou-fetch
+- Mots-clés : module ES, bundle, Vite
 - Source : revision-pwa · pwa-parcours
 - Définition : `import d from './d.json' with { type: 'json' }` charge un fichier JSON comme module ; l'attribut `type` déclare ce qu'on attend.
 - Contexte : Les import attributes (ES2025) disent à l'hôte comment traiter le fichier. Node les exige pour le JSON : sans `with`, `ERR_IMPORT_ATTRIBUTE_MISSING` (mesuré, Node 22). Vite l'accepte et met le JSON dans le bundle. C'est ainsi que `parcours.ts` charge `spec/parcours.json` : la spec reste un fichier JSON lisible, l'app la reçoit typée, sans `fetch`.
@@ -52,6 +53,7 @@ import spec from './parcours.json'
 - Profils : débutant, web
 - Prérequis : modules-es-import-json-with
 - Voir aussi : modules-es-vite-tree-shaking-json
+- Mots-clés : module ES, Vite
 - Source : revision-pwa · pwa-parcours
 - Définition : Un module JSON n'exporte que `default`, l'objet entier : `import { version } from './d.json' with { type: 'json' }` échoue dans Node.
 - Contexte : Mesuré (Node 22) : `SyntaxError: The requested module './d.json' does not provide an export named 'version'`. Vite, lui, accepte les imports nommés de JSON : un code qui marche en dev peut casser dans un script Node (`tsx scripts/…`). Importer l'objet puis déstructurer marche partout.
@@ -87,6 +89,7 @@ import { version } from './d.json'
 - Niveau : 1
 - Profils : débutant, web
 - Voir aussi : vite-effet-de-bord-a-limport, modules-es-import-dynamique
+- Mots-clés : module ES, effet de bord, import dynamique
 - Source : revision-pwa · pwa-parcours
 - Définition : Un `import` statique est hissé : le module importé s'exécute avant la première ligne de l'importeur, où que soit écrit l'`import`.
 - Contexte : Mesuré : un `console.log` écrit avant l'`import` s'affiche après le code du module importé. Un `import` ne peut donc pas être conditionnel, et un effet de bord au chargement (lecture de `localStorage`) s'exécute dès l'import, avant le code de l'appelant. Pour charger à la demande : `await import(…)`.
@@ -115,6 +118,7 @@ import { x } from './dep.mjs'
 - Niveau : 1
 - Profils : débutant, web
 - Prérequis : modules-es-import-hisse
+- Mots-clés : module ES, chunk, Vite
 - Source : revision-pwa · pwa-parcours
 - Définition : `await import(chemin, { with: { type: 'json' } })` charge un module à la demande ; le JSON est dans `default`.
 - Contexte : L'appel dynamique accepte une expression et peut être conditionnel. Il renvoie une promesse de l'objet module : pour un JSON, une seule clé, `default`. Les attributs passent dans un second argument `{ with: { … } }`. Vite en fait un fichier séparé, chargé au premier appel.
@@ -142,6 +146,7 @@ m.default.version  // 4
 - Niveau : 2
 - Profils : web
 - Prérequis : modules-es-import-json-with
+- Mots-clés : import attributes
 - Source : revision-pwa · pwa-parcours
 - Définition : `assert { type: 'json' }`, l'ancienne syntaxe, est remplacée par `with { type: 'json' }` ; Node 22 la refuse.
 - Contexte : La proposition s'appelait « import assertions » (`assert`), puis est devenue « import attributes » (`with`) : l'attribut peut influer sur le chargement, pas seulement le vérifier. Mesuré : Node 22 lève `SyntaxError: Unexpected identifier 'assert'`. Des tutoriels et des réponses générées montrent encore `assert` : changer le mot suffit.
@@ -175,6 +180,7 @@ import d from './d.json'
 - Niveau : 2
 - Profils : web
 - Prérequis : modules-es-import-json-with
+- Mots-clés : module ES
 - Source : revision-pwa · pwa-parcours
 - Définition : Un module n'est évalué qu'une fois : tous les imports d'un même JSON reçoivent le même objet, et une mutation se voit partout.
 - Contexte : Mesuré (Node 22) : après `d1.version = 99`, un `import()` du même fichier lit `99`, et les deux références sont `===`. Trier ou enrichir sur place l'objet de `domaines.json` dans un composant change donc ce que voient tous les autres. Copier avant de transformer.
@@ -205,6 +211,7 @@ m.default === d1    // true
 - Niveau : 2
 - Profils : web
 - Prérequis : modules-es-import-json-with
+- Mots-clés : import attributes, Vite
 - Source : revision-pwa · pwa-parcours
 - Définition : TypeScript n'accepte `with { type: 'json' }` que si `module` vaut `esnext`, `node18`, `node20`, `nodenext` ou `preserve` ; sinon erreur TS2823.
 - Contexte : Mesuré avec TypeScript 6 : `--module es2022` refuse l'attribut. L'app (`module: esnext`, `moduleResolution: bundler`) et les scripts (`module: nodenext`) l'acceptent. `resolveJsonModule` donne en plus au JSON un type déduit de son contenu.
@@ -233,6 +240,7 @@ tsc --module esnext a.ts    # OK
 - Niveau : 2
 - Profils : web
 - Prérequis : modules-es-ts-option-module
+- Mots-clés : import attributes, module ES, Vite
 - Source : revision-pwa · pwa-parcours
 - Définition : Avec `module: nodenext`, TypeScript applique les règles de Node : un JSON importé dans un module ES exige `with { type: 'json' }` (TS1543).
 - Contexte : TypeScript reproduit à la compilation ce que Node ferait à l'exécution ; avec `esnext` (bundler), il laisse passer l'import sans attribut, que Vite accepte. Écrire l'attribut partout rend le même fichier valide dans les deux configurations : c'est pourquoi `data.ts` et `progress.ts` l'écrivent alors que Vite n'en a pas besoin.
@@ -299,6 +307,7 @@ export const PARCOURS =
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : modules-es-import-json-with
+- Mots-clés : bundle, Vite
 - Source : revision-pwa · pwa-parcours
 - Définition : Un JSON importé est figé dans le build et change au déploiement ; lu par `fetch`, il change à chaque publication.
 - Contexte : L'app importe `domaines.json`, `parcours.json` et `ids-v3.json` : registre et table changent avec le code, et un nouveau domaine attend le déploiement de l'app. Le catalogue, lui, est lu par `fetch('/content/catalog.json')` : une carte publiée apparaît sans redéployer. Mesuré avec Vite 8 : le JSON importé est écrit dans le bundle JS.
@@ -328,6 +337,7 @@ const catalog = await res.json()
 - Niveau : 2
 - Profils : web, ops
 - Prérequis : modules-es-import-json-with
+- Mots-clés : module ES
 - Source : revision-pwa · pwa-parcours
 - Définition : En CommonJS, `require('./d.json')` lit un JSON sans attribut ; dans un module ES, Node exige `import … with { type: 'json' }`.
 - Contexte : `require` est synchrone et propre à Node ; il parse le JSON et le garde en cache. Un `.mjs`, ou un `.js` sous `"type": "module"`, est un module ES : `require` n'y existe pas. Mesuré dans Node 22 : `require('./d.json').version` → `4` dans un `.cjs`. Pour un vieux paquet CommonJS depuis un module ES : `createRequire(import.meta.url)`.
@@ -360,6 +370,7 @@ console.log(d.version)   // 4
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : modules-es-json-export-default
+- Mots-clés : bundle, module ES
 - Source : revision-pwa · pwa-parcours
 - Définition : Avec Vite, un import nommé d'un JSON ne met dans le bundle que les valeurs utilisées ; l'import par défaut y copie l'objet entier.
 - Contexte : Vite transforme le JSON en module ES avec un export par clé de premier niveau (`json.namedExports`, actif par défaut). Mesuré (Vite 8) : `import { version }` donne `console.log(4)` dans le bundle, sans le reste ; `import d` puis `d.version` y inline tout l'objet. Utile pour un gros JSON dont on lit une clé, mais l'import nommé casse sous Node.
@@ -395,6 +406,7 @@ console.log(d.version)
 - Profils : web, expert
 - Prérequis : modules-es-import-dynamique
 - Voir aussi : modules-es-import-ou-fetch
+- Mots-clés : bundle, service worker, précache, PWA
 - Source : revision-pwa · pwa-parcours
 - Définition : Avec Vite, `import('./d.json')` produit un fichier JS séparé, chargé au premier appel, au lieu d'inliner le JSON dans le bundle principal.
 - Contexte : Mesuré (Vite 8) : le build sort `assets/d-<hash>.js` à côté de `index-<hash>.js`. Le bundle initial maigrit, au prix d'un aller-retour au premier appel ; le service worker d'une PWA doit le précacher pour le hors-ligne. Le JSON reste du code livré : il ne change qu'au déploiement.
@@ -421,6 +433,7 @@ console.log(m.default.version)
 - Niveau : 3
 - Profils : web, expert
 - Prérequis : modules-es-import-json-with
+- Mots-clés : type MIME, import attributes
 - Source : revision-pwa · pwa-parcours
 - Définition : `type: 'json'` empêche un serveur de faire exécuter du code à la place de données : une réponse non JSON est refusée.
 - Contexte : Le navigateur interprète un module d'après le type MIME de la réponse, pas d'après l'extension. Sans attribut, un serveur compromis ou mal configuré qui répond `text/javascript` pour `config.json` ferait exécuter du code. Avec `type: 'json'`, une réponse non JSON fait échouer l'import (spec HTML). C'est la raison d'être de l'attribut.

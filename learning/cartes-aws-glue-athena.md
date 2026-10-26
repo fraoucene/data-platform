@@ -17,6 +17,7 @@ AWS · Glue et Athena : catalogue, coût, choisir, partitions, iceberg, gouverna
 - Type : concept
 - Niveau : 1
 - Profils : débutant, data
+- Mots-clés : Athena, EMR, ETL, schema-on-read
 - Définition : Une table du Glue Data Catalog décrit schéma, format, partitions et emplacement S3 ; elle ne contient aucune donnée.
 - Contexte : Athena, Glue ETL, EMR et Redshift Spectrum lisent le même catalogue : une table déclarée une fois sert à tous les moteurs. Le schéma est appliqué à la lecture (schema-on-read) : un fichier qui ne colle pas n'échoue pas à l'écriture, mais donne des `NULL` ou une erreur à la requête. En Terraform : `aws_glue_catalog_table`.
 - Usage : ✅ déclarer `processed/annonces` une fois, l'interroger depuis Athena et Spark · ❌ attendre du catalogue une validation des données : contrôler au job (pydantic, tests).
@@ -48,6 +49,7 @@ LOCATION
 - Niveau : 1
 - Profils : débutant, data, ops
 - Voir aussi : Data engineering/formats-parquet-vs-csv, Data engineering/data-lake-partitionnement-hive
+- Mots-clés : Parquet, partition, data lake
 - Définition : Athena facture les octets lus dans S3 par requête : Parquet et le filtre sur la partition `dt` réduisent ce qui est scanné.
 - Contexte : En eu-west-3, Athena coûte 7 $ par To scanné, avec un minimum de 10 Mo par requête. Sur du JSON ou du CSV, chaque requête relit les fichiers en entier ; sur Parquet, Athena ne lit que les colonnes citées et saute des blocs grâce aux min / max ; avec `dt` dans le `WHERE`, il ne lit que le préfixe du jour. La console affiche « Data scanned » après chaque requête : c'est la facture.
 - Usage : ✅ `processed` en Parquet partitionné, colonnes nommées, `WHERE dt = …` · ❌ `SELECT *` sans filtre de partition sur tout le lake ; `raw` en JSON requêté tous les jours.
@@ -86,6 +88,7 @@ round(cout, 6)       # → 0.00028
 - Profils : débutant, data
 - Prérequis : glue-athena-cout-au-scanne
 - Voir aussi : couts-cout-au-repos
+- Mots-clés : Redshift, Trino, BI
 - Définition : Athena exécute du SQL directement sur S3, payé au To scanné ; Redshift est un entrepôt pour une BI lourde, concurrente et répétitive.
 - Contexte : Athena (moteur Trino) n'a rien à démarrer : 0 $ sans requête, ce qui colle à un usage ponctuel. Chaque requête rescanne S3 : la même requête lancée 100 fois est payée 100 fois. Redshift Serverless garde les données chargées et optimisées, facture le calcul (RPU-heure) pendant les requêtes, et amortit une charge répétitive sur les mêmes tables.
 - Usage : ✅ Athena pour l'exploration, quelques requêtes par jour, jobs d'export · ❌ dizaines de dashboards rafraîchis en continu sur les mêmes To : Redshift.
@@ -124,6 +127,7 @@ round(to * prix_to, 2)  # → 8.4  ($/mois)
 - Niveau : 2
 - Profils : data
 - Prérequis : glue-athena-table-metadonnees
+- Mots-clés : partition, catalogue Glue, crawler, partition projection
 - Définition : Athena ne lit que les partitions enregistrées dans le catalogue Glue ; un nouveau préfixe `dt=` doit y être ajouté.
 - Contexte : Écrire des fichiers dans S3 ne met pas le catalogue à jour. Trois façons d'ajouter une partition : `ALTER TABLE ADD PARTITION` (ciblé, rapide), `MSCK REPAIR TABLE` (liste tout le préfixe, lent sur un gros lake, seulement pour les clés au format Hive), un crawler Glue (payant à la DPU-heure). La partition projection supprime le besoin.
 - Usage : ✅ `ADD PARTITION` en fin de job d'écriture, quand on connaît le jour écrit · ❌ `MSCK REPAIR` à chaque run sur des années de partitions.
@@ -155,6 +159,7 @@ WHERE dt = '2026-10-23';
 - Niveau : 2
 - Profils : data
 - Voir aussi : step-functions-sync-attendre-job
+- Mots-clés : Spark, DPU, EMR, ETL
 - Définition : Au-delà de ce qu'une machine traite, on passe à Spark : Glue ETL serverless d'abord, EMR (Serverless) quand il faut régler finement le moteur.
 - Contexte : Glue facture 0,44 $ par DPU-heure à Paris (0,308 $ à partir de Glue 6.0), à la seconde avec une minute minimum, et ajoute catalogue, crawlers et signets de reprise. EMR Serverless facture vCPU et mémoire, laisse choisir la version de Spark et sa configuration, et revient moins cher à grande échelle. Sous quelques Go par jour, Spark est surdimensionné : Lambda ou Fargate suffisent.
 - Usage : ✅ Glue pour des jobs ETL standards sur des dizaines de Go · ❌ Spark pour 50 Mo par jour : Lambda avec Python (pyarrow) ; besoin de réglages fins : EMR.
@@ -185,6 +190,7 @@ round(glue, 3)         # → 0.073
 - Niveau : 2
 - Profils : data, web
 - Voir aussi : glue-athena-cout-au-scanne
+- Mots-clés : BI, Redshift, API Gateway
 - Définition : QuickSight sert des dashboards BI managés sur Athena ou Redshift ; une appli React se justifie quand l'écran est un produit.
 - Contexte : QuickSight donne filtres, exports et nouveaux graphes sans développement, facturé par utilisateur (auteurs et lecteurs) ; son cache SPICE évite de rescanner Athena à chaque ouverture. Une appli React sur une API (API Gateway, Lambda) coûte du développement pour chaque écran, mais maîtrise l'UX, la marque et les droits. Le critère : qui consomme, et qui fait évoluer l'écran.
 - Usage : ✅ QuickSight pour des analystes internes et des KPI qui changent souvent · ❌ QuickSight pour un écran vendu à des clients externes dans le produit : React + API.
@@ -215,6 +221,7 @@ Pourquoi: self-service, pas de
 - Niveau : 2
 - Profils : data
 - Prérequis : glue-athena-partition-non-declaree
+- Mots-clés : crawler, partition, DPU, partition projection
 - Définition : Pour qu'Athena voie les nouvelles partitions, on choisit entre crawler Glue, `ADD PARTITION` en fin de job ou partition projection.
 - Contexte : Trois options, trois coûts. Le crawler relit S3 et infère schéma et partitions, facturé à la DPU-heure (10 min minimum par exécution) : pratique pour découvrir une source, imprévisible en production. `ADD PARTITION` est exact, gratuit et vu par tous les moteurs, mais ajoute une étape au job. La projection n'a rien à maintenir, mais seul Athena la voit.
 - Usage : ✅ projection pour des partitions `dt` régulières lues par Athena, `ADD PARTITION` si Spark lit aussi · ❌ crawler planifié chaque jour sur une table au schéma déjà connu.
@@ -246,6 +253,7 @@ Si Spark lit aussi : ADD PARTITION
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : glue-athena-crawler-ou-projection
+- Mots-clés : partition, catalogue Glue, EMR
 - Définition : La partition projection calcule les partitions depuis des règles posées sur la table, sans les enregistrer : plus de `ADD PARTITION` quotidien.
 - Contexte : Athena déduit les valeurs possibles de `dt` (type `date`, plage, format) et construit les chemins S3 avec `storage.location.template`. Plus rapide qu'une table à des milliers de partitions, et rien à maintenir. Limites : la projection ne sert qu'à Athena (Glue ETL, EMR et Spectrum ne la voient pas), et un jour projeté sans fichier renvoie simplement 0 ligne.
 - Usage : ✅ partitions régulières et prévisibles (une par jour) lues par Athena · ❌ table aussi lue par Spark ou Glue via le catalogue : déclarer les partitions.
@@ -278,6 +286,7 @@ SET TBLPROPERTIES (
 - Niveau : 3
 - Profils : data, expert
 - Prérequis : glue-athena-table-metadonnees
+- Mots-clés : data lake, Parquet, snapshot, RGPD
 - Définition : Une table Apache Iceberg sur S3 ajoute `UPDATE`, `DELETE` et `MERGE` transactionnels au lake, utilisables depuis Athena, Glue et Spark.
 - Contexte : Iceberg garde ses propres métadonnées (snapshots, manifestes) à côté des fichiers Parquet : une modification écrit de nouveaux fichiers et un nouveau snapshot, de façon atomique. On gagne aussi le time travel et l'évolution de schéma. Le prix : des petits fichiers et des fichiers de suppression s'accumulent, il faut compacter (`OPTIMIZE`) et purger les vieux snapshots (`VACUUM`).
 - Usage : ✅ table mise à jour (statut d'entreprise), effacement RGPD, `MERGE` d'un delta quotidien · ❌ données en ajout seul, jamais modifiées : une table Parquet classique suffit.
@@ -309,6 +318,7 @@ WHEN MATCHED THEN UPDATE
 - Type : choisir
 - Niveau : 3
 - Profils : data, expert
+- Mots-clés : Iceberg, réplication, Transfer Family
 - Définition : DMS copie une base vers une cible (S3, Aurora…) en chargement complet puis en continu (CDC), en lisant le journal de transactions.
 - Contexte : Le CDC capte `INSERT`, `UPDATE` et `DELETE` au fil de l'eau, sans requêter les tables source ; côté Postgres, il faut activer la réplication logique. Vers S3, chaque ligne porte une colonne d'opération (`I`, `U`, `D`) : on reconstruit l'état avec un `MERGE`, typiquement dans une table Iceberg. DMS Serverless évite de dimensionner l'instance de réplication.
 - Usage : ✅ base relationnelle d'un partenaire à garder à jour dans le lake · ❌ fichiers déposés (CSV, JSON) : Transfer Family ou dépôt S3 direct, puis le pipeline fichier.
@@ -340,6 +350,7 @@ Pourquoi: suit INSERT/UPDATE/DELETE
 - Profils : data, ops, expert
 - Prérequis : glue-athena-table-metadonnees
 - Voir aussi : iam-politique-de-ressource
+- Mots-clés : catalogue Glue, IAM, Athena, Parquet
 - Définition : Lake Formation accorde des droits par base, table, colonne ou ligne du catalogue, là où IAM ne voit que des objets S3 entiers.
 - Contexte : Athena, Glue et EMR demandent à Lake Formation des identifiants temporaires limités à ce que l'utilisateur a le droit de voir, et filtrent colonnes et lignes à la lecture. Les droits se donnent en `GRANT` sur le catalogue, plus en politiques S3. Contrepartie : un modèle de permissions de plus à comprendre, et des moteurs non intégrés qui contournent le filtrage.
 - Usage : ✅ données personnelles (dirigeants) à cacher à une partie des analystes · ❌ quelques utilisateurs qui voient tout : IAM et des buckets séparés suffisent.
