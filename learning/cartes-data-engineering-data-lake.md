@@ -9,7 +9,7 @@ updated: 2026-10-26
 ---
 
 # Cartes · Data lake
-Data engineering · Data lake : zones, partitions, fichiers, tables, gouvernance (format spec v3 de revision-pwa).
+Data engineering · Data lake : zones, partitions, fichiers, tables (format spec v3 de revision-pwa).
 
 ## 1. data lake : trois zones
 - Id : data-lake-trois-zones
@@ -595,99 +595,7 @@ WHERE dt = '2026-10-22';
 - [ ] Oui, depuis les fichiers `raw`
 - Réponse : non : l'expiration retire le snapshot et ses fichiers devenus inutiles ; le time travel ne remonte qu'à la rétention choisie.
 
-## 16. lignage : d'où vient la ligne
-- Id : data-lake-lignage
-- Sous-thème : gouvernance
-- Type : recette
-- Niveau : 2
-- Profils : data, ops
-- Voir aussi : duckdb-filename-origine-ligne
-- Mots-clés : zone raw, zone processed, run, log structuré
-- Définition : Le lignage relie chaque donnée à sa source : une ligne de `processed` porte le fichier `raw` lu, l'heure d'ingestion et l'id du run.
-- Contexte : Une valeur fausse dans un export : sans lignage, on ne sait ni quel fichier brut la contient ni quel run l'a produite. Avec trois colonnes techniques (`_source`, `_ingere_le`, `_run_id`), on remonte en une requête au fichier `raw` et aux logs du run (le même `run_id` dans les logs JSON). Le `run_id` permet aussi de retirer tout ce qu'un run défectueux a écrit. À l'échelle, OpenLineage trace les dépendances entre tables.
-- Usage : ✅ colonnes techniques sur chaque ligne de `processed`, `run_id` partagé avec les logs · ❌ heure d'ingestion recalculée à la lecture : elle date la requête, pas l'écriture.
-
-```python
-# Exemple 1 : les colonnes techniques
-from datetime import datetime, timezone
-
-def enrichir(a, cle, run_id, now):
-    return a | {"_source": cle,
-                "_run_id": run_id,
-                "_ingere_le": now.isoformat()}
-
-now = datetime(2026, 10, 24, 7,
-               tzinfo=timezone.utc)
-l = enrichir({"siren": "483609327"},
-             "raw/bodacc/dt=2026-10-23/p0",
-             "r42", now)
-l["_ingere_le"]
-# → "2026-10-24T07:00:00+00:00"
-```
-
-```python
-# Exemple 2 : retrouver ce qu'un run a écrit
-lignes = [{"siren": "1", "_run_id": "r1"},
-          {"siren": "2", "_run_id": "r2"},
-          {"siren": "3", "_run_id": "r2"}]
-[l["siren"] for l in lignes
- if l["_run_id"] == "r2"]  # → ["2", "3"]
-```
-
-- Quiz : `run_id = str(uuid.uuid4())` est calculé dans `enrichir`, à chaque ligne : combien de `run_id` distincts pour un run de 3 annonces ?
-- [ ] 1
-- [x] 3
-- [ ] 0
-- Réponse : 3 : un uuid par appel ; le `run_id` se génère une fois au début du run et se passe à chaque ligne et à chaque log.
-
-## 17. pseudonymiser : HMAC plutôt que SHA-256
-- Id : data-lake-pseudonymiser-hmac
-- Sous-thème : gouvernance
-- Type : recette
-- Niveau : 2
-- Profils : data, ops
-- Voir aussi : Python/hachage-sha256-empreinte, IA/extraction-masquer-donnees-personnelles
-- Mots-clés : HMAC, SHA-256, RGPD, Secrets Manager
-- Définition : Pour joindre des données personnelles sans les exposer, on remplace l'identifiant par un HMAC à clé secrète, pas par un simple hash.
-- Contexte : Les annonces BODACC citent des personnes physiques (5 983 le 20 octobre). Le SHA-256 d'un nom se renverse par force brute : on hache tous les candidats et on compare. Le HMAC mélange une clé gardée hors du lake (Secrets Manager) : même entrée, même jeton, donc les jointures marchent, mais impossible à recalculer sans la clé. Au sens du RGPD, c'est une pseudonymisation : les données restent personnelles, la clé est la protection.
-- Usage : ✅ colonnes de personnes physiques dans `processed` et `out`, une clé par environnement · ❌ SHA-256 sans clé d'un nom ou d'un numéro court ; clé stockée dans le même bucket que les données.
-
-```python
-# Exemple 1 : un hash se renverse
-import hashlib
-
-def h(s):
-    return hashlib.sha256(s.encode()).hexdigest()
-
-fuite = h("MARTIN Paul")
-candidats = ["DUPONT Léa", "MARTIN Paul"]
-[c for c in candidats if h(c) == fuite]
-# → ["MARTIN Paul"]
-```
-
-```python
-# Exemple 2 : HMAC, stable mais secret
-import hashlib, hmac
-
-cle = b"lue-dans-secrets-manager"
-def jeton(s):
-    return hmac.new(cle, s.encode(),
-                    hashlib.sha256).hexdigest()
-
-jeton("MARTIN Paul") == jeton("MARTIN Paul")
-# → True
-sha = hashlib.sha256(b"MARTIN Paul")
-jeton("MARTIN Paul") == sha.hexdigest()
-# → False
-```
-
-- Quiz : Même clé HMAC des deux côtés, mais `"Martin Paul"` dans une source et `"MARTIN Paul"` dans l'autre : la jointure marche-t-elle ?
-- [ ] Oui : même clé, même jeton
-- [x] Non : deux jetons différents
-- [ ] Oui, HMAC ignore la casse
-- Réponse : non : un octet différent donne un jeton sans rapport ; normaliser (casse, espaces, accents) avant de pseudonymiser.
-
-## 18. compaction : réécrire sans perdre
+## 16. compaction : réécrire sans perdre
 - Id : data-lake-compaction
 - Sous-thème : fichiers
 - Type : recette
@@ -725,7 +633,7 @@ len(lu)  # → 4  (doublons, avant nettoyage)
 - [ ] Les lignes en double
 - Réponse : 0 ligne, sans erreur : le préfixe est vide à cet instant, une table Hive n'a aucune liste pour s'en apercevoir.
 
-## 19. overwrite : la partition, pas la table
+## 17. overwrite : la partition, pas la table
 - Id : data-lake-overwrite-partition
 - Sous-thème : partitions
 - Type : piège
@@ -765,7 +673,7 @@ spark.conf.set(
 - [ ] Erreur à l'écriture
 - Réponse : inchangée : en dynamique, seules les partitions présentes dans le DataFrame sont remplacées ; un jour vide ne remplace rien, l'ancienne version reste.
 
-## 20. commit optimiste : deux écrivains
+## 18. commit optimiste : deux écrivains
 - Id : data-lake-commit-optimiste
 - Sous-thème : tables
 - Type : concept

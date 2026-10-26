@@ -162,6 +162,12 @@ updated: 2026-10-26
 - Exemple : `capsys.readouterr().err` contient le message d'usage d'argparse après une option manquante.
 - Carte : ligne-de-commande-main-argv-teste
 
+## caractère combinant
+- Définition : Caractère Unicode qui se pose sur le précédent au lieu de s'afficher seul, comme l'accent aigu U+0301 : « e » suivi de U+0301 s'affiche « é ».
+- Exemple : Un « é » copié depuis macOS ou un PDF vaut souvent `e` + accent combinant : deux points de code, `len` vaut 2.
+- Alias : caractères combinants, accent combinant, accents combinants
+- Carte : texte-nombres-unicode-nfc
+
 ## CEST
 - Définition : Central European Summer Time : heure d'été de Paris, UTC+2, de fin mars à fin octobre ; l'hiver, c'est CET, UTC+1.
 - Exemple : 22:30 UTC le 24 octobre est déjà 00:30 le 25 à Paris, en CEST.
@@ -172,6 +178,12 @@ updated: 2026-10-26
 - Définition : Annotation `ClassVar[T]` qui déclare un attribut partagé par la classe, et non un champ de chaque instance, par exemple dans une dataclass.
 - Exemple : `NIVEAU: ClassVar[int] = 6` dans une dataclass reste une constante, absente de `__init__`.
 - Carte : classes-dataclass-sans-annotation
+
+## clé de recherche
+- Définition : Forme simplifiée d'un texte (sans casse, sans accents, espaces réduits) qui sert à comparer ou indexer ; le texte d'origine reste celui qu'on affiche.
+- Exemple : « Rôle IAM », « role iam » et « ROLE  IAM » ont la même clé `role iam` : l'app retrouve le terme du glossaire.
+- Alias : clés de recherche, clé normalisée
+- Carte : unicode-cle-de-recherche
 
 ## clé de tri
 - Définition : Fonction passée à `key=` de `sorted`, `min`, `max` : elle reçoit un élément et renvoie la valeur à comparer, sans comparateur `(a, b)`.
@@ -311,6 +323,12 @@ updated: 2026-10-26
 - Alias : descripteurs, descriptor
 - Carte : decorateurs-classe-call
 
+## diacritique
+- Définition : Signe ajouté à une lettre pour en changer la prononciation : accent, cédille, tréma. En JS, la classe `\p{Diacritic}` couvre plus large que les accents.
+- Exemple : Retirer les diacritiques de « Créteil » donne « Creteil », pratique pour une recherche tolérante.
+- Alias : diacritiques
+- Carte : unicode-diacritic-vs-combining
+
 ## __dict__
 - Définition : Dictionnaire interne d'un objet Python qui range ses attributs, nom → valeur ; `vars(obj)` le renvoie.
 - Exemple : Après `a.sirens = []`, `a.__dict__` vaut `{"sirens": []}` ; `cached_property` y range sa valeur calculée.
@@ -375,6 +393,12 @@ updated: 2026-10-26
 - Définition : Dictionnaire qui associe des noms à des objets : variables d'un module, d'une fonction, ou dict passé à `exec`.
 - Exemple : `check_cards.py` exécute chaque carte dans un espace de noms neuf, pour qu'aucune variable ne fuite d'une carte à l'autre.
 - Carte : execution-dynamique-eval-vs-exec
+
+## espace insécable
+- Définition : Espace qui interdit un retour à la ligne (U+00A0, ou U+202F pour l'espace fine) : identique à l'écran, différente d'une espace pour `==`.
+- Exemple : « 12 000 » copié d'une page web contient souvent une espace fine : `int()` échoue tant qu'on ne l'a pas retirée.
+- Alias : espaces insécables, NBSP, espace fine
+- Carte : unicode-espace-insecable
 
 ## évaluation paresseuse
 - Définition : Calcul retardé jusqu'au moment où la valeur est demandée ; générateurs, `map`, `filter` et `range` fonctionnent ainsi.
@@ -836,9 +860,9 @@ updated: 2026-10-26
 - Carte : logging-niveaux-entiers
 
 ## normalisation Unicode
-- Définition : Conversion d'un texte vers une forme unique (NFC, NFD) quand un même caractère accentué peut s'écrire de deux façons.
+- Définition : Conversion d'un texte vers une forme unique (NFC, NFD, NFKC) quand un même caractère accentué peut s'écrire de deux façons.
 - Exemple : « é » d'un PDF (e + accent combinant) et « é » saisi diffèrent pour `==` jusqu'à `unicodedata.normalize("NFC", s)`.
-- Alias : NFC, NFD
+- Alias : NFC, NFD, NFKC
 - Carte : texte-nombres-unicode-nfc
 
 ## objet fichier
@@ -1263,6 +1287,11 @@ updated: 2026-10-26
 - Exemple : Lambda tourne en UTC : 22:30 UTC le 24 octobre est déjà le 25 à Paris.
 - Alias : timezone.utc
 - Carte : dates-naif-ou-aware
+
+## UTF-16
+- Définition : Encodage Unicode en unités de 2 octets, utilisé en interne par JavaScript ; un emoji y occupe deux unités, d'où `"😀".length` qui vaut 2.
+- Exemple : Une limite de longueur vérifiée en TS (`length`) et en Python (`len`) diffère dès qu'un texte contient un emoji.
+- Carte : unicode-len-points-de-code
 
 ## UTF-8
 - Définition : Encodage Unicode le plus répandu : 1 octet pour l'ASCII, 2 à 4 pour les autres caractères (2 pour « é »).

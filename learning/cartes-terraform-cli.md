@@ -276,7 +276,104 @@ terraform output -json | jq -c .token
 - [ ] `"data-platform-dev-raw"`
 - Réponse : `null` (mesuré) : sans nom, chaque sortie est enveloppée ; le chemin est `.bucket_names.value.raw`.
 
-## 9. plan -out : appliquer le plan relu
+## 9. plan : tous les .tf du dossier, commités ou non
+- Id : cli-plan-tous-les-fichiers-tf
+- Sous-thème : plan
+- Type : concept
+- Niveau : 1
+- Profils : débutant, ops
+- Prérequis : cli-plan-symboles
+- Voir aussi : cli-plan-raison-destruction
+- Mots-clés : root module, arbre de travail, état
+- Source : revision-pwa · pwa-parcours
+- Définition : `plan` lit tous les fichiers `.tf` du dossier racine tels qu'ils sont sur le disque ; ni git, ni les sous-dossiers, ni un `ancien.tf.bak`.
+- Contexte : Terraform ne connaît pas git : il compare l'arbre de travail à l'état, brouillon non commité compris. Un fichier renommé en `.bak` sort de la configuration et ses ressources sont détruites (mesuré). Un sous-dossier n'est lu que s'il est appelé par un bloc `module`. Le plan reflète donc le dossier entier, pas la branche ni le dernier commit.
+- Usage : ✅ `git status` avant `plan`, brouillons hors du dossier racine · ❌ « désactiver » une ressource en renommant son fichier.
+
+```bash
+# Exemple 1 : renommer pour désactiver (mesuré)
+mv ancien.tf ancien.tf.bak
+terraform plan
+# → # terraform_data.bak will be destroyed
+#   # (because terraform_data.bak is not
+#   #  in configuration)
+# → Plan: 0 to add, 0 to change, 1 to destroy.
+```
+
+- Quiz : `sous/x.tf` déclare une ressource, sans bloc `module` qui appelle `sous/`. Que planifie `terraform plan` ?
+- [ ] Sa création
+- [x] Rien : `No changes.`
+- [ ] Une erreur : fichier hors module
+- [ ] Sa création, avec un avertissement
+- Réponse : rien (mesuré) : seuls les `.tf` du dossier courant forment le root module ; un sous-dossier n'existe pour Terraform que s'il est appelé.
+
+## 10. plan : les en-têtes d'abord
+- Id : cli-plan-en-tetes-actions
+- Sous-thème : plan
+- Type : recette
+- Niveau : 1
+- Profils : débutant, ops
+- Prérequis : cli-plan-symboles
+- Voir aussi : cli-show-plan-json
+- Mots-clés : adresse, plan
+- Source : revision-pwa · pwa-parcours
+- Définition : Chaque ressource du plan s'ouvre par une ligne `# adresse will be …` : les lister d'abord donne toutes les actions en un écran.
+- Contexte : Les phrases sont fixes : `will be created`, `will be updated in-place`, `must be replaced`, `will be destroyed`, `will be read during apply`. Le détail d'un plan peut faire des centaines de lignes ; la liste des en-têtes se compare d'un coup d'œil à ce qu'on attendait. On lit ensuite en entier les destructions et remplacements.
+- Usage : ✅ premier passage de relecture, en local comme dans un journal de CI · ❌ s'arrêter aux en-têtes : le détail dit quel argument change et pourquoi.
+
+```bash
+# Exemple 1 : la liste des actions (mesuré)
+terraform plan -no-color | grep '^  # '
+# → # terraform_data.child must be replaced
+#   # terraform_data.lambda will be
+#   #   updated in-place
+#   # terraform_data.parent must be replaced
+```
+
+```bash
+# Exemple 2 : ce qui détruit, seulement
+terraform plan -no-color \
+  | grep -E '^  # .*(destroyed|replaced)'
+```
+
+- Quiz : Quel en-tête accompagne le symbole `-/+` dans le plan ?
+- [ ] `will be recreated`
+- [ ] `will be destroyed and created`
+- [x] `must be replaced`
+- [ ] `will be updated in-place`
+- Réponse : `must be replaced` (mesuré) : remplacement imposé par un argument `# forces replacement` ; `+/-` (create_before_destroy) porte le même en-tête.
+
+## 11. plan : écrire l'attendu avant de lire
+- Id : cli-plan-attendu-avant-lecture
+- Sous-thème : plan
+- Type : recette
+- Niveau : 1
+- Profils : débutant, ops
+- Prérequis : cli-plan-en-tetes-actions
+- Voir aussi : cli-apply-tout-ecart-en-attente
+- Mots-clés : plan, apply, Lambda
+- Source : revision-pwa · pwa-parcours
+- Définition : Avant `plan`, écrire ce qu'on attend (« 1 Lambda modifiée ») ; toute ligne du plan absente de cette liste s'explique avant l'apply.
+- Contexte : Sans attente, on cherche son changement dans le plan, on le trouve, et on valide le reste par lassitude. Avec une attente, la lecture devient une comparaison : une ressource Cognito dans un déploiement de Lambda saute aux yeux. Écart expliqué : on applique, ou on sépare. Inexpliqué : on n'applique pas.
+- Usage : ✅ chaque `make plan` avant `make up`, chaque relecture de plan en MR · ❌ « le plan a l'air bon » sans liste de départ.
+
+```text
+# Exemple 1 : attendu contre plan
+Attendu : ~ lambda catalog-build
+Plan    : ~ lambda catalog-build
+          ~ cognito user pool   ← ?
+→ écart : trouver son origine
+  (git log, autre session) avant l'apply
+```
+
+- Quiz : Attendu : 1 Lambda modifiée. Le plan dit `Plan: 0 to add, 1 to change, 0 to destroy.`, mais c'est une autre ressource. Que fait-on ?
+- [ ] On applique : le compte est bon
+- [ ] On applique avec `-target` sur la Lambda
+- [x] On n'applique pas : écart à expliquer
+- [ ] On relance `plan` jusqu'à voir la Lambda
+- Réponse : on n'applique pas : le résumé compte, il ne nomme rien ; la ressource inattendue s'explique d'abord (et la Lambda manquante aussi).
+
+## 12. plan -out : appliquer le plan relu
 - Id : cli-plan-out-fichier
 - Sous-thème : plan
 - Type : recette
@@ -317,7 +414,7 @@ make plan   # data-platform
 - [ ] `"v2"`, après une nouvelle confirmation
 - Réponse : `"v1"` : le fichier embarque la configuration du moment du plan ; le `plan` suivant propose `"v1" -> "v2"` (mesuré avec `terraform_data`).
 
-## 10. dérive : la console contre le code
+## 13. dérive : la console contre le code
 - Id : cli-derive-hors-terraform
 - Sous-thème : plan
 - Type : concept
@@ -358,7 +455,7 @@ terraform -chdir=infra plan -refresh-only \
 - [ ] Une proposition d'`import`
 - Réponse : rien : Terraform ne relit que les ressources de son état ; un objet créé à la main lui est invisible (le reprendre par `import`).
 
-## 11. destroy : l'état survit, vide
+## 14. destroy : l'état survit, vide
 - Id : cli-destroy-etat-vide
 - Sous-thème : apply
 - Type : concept
@@ -399,7 +496,7 @@ terraform -chdir=infra state list | wc -l
 - [ ] Le bucket sort de l'état, laissé sur AWS
 - Réponse : `BucketNotEmpty` : `destroy` supprime avec les valeurs de l'état, pas du code ; `force_destroy` doit d'abord passer par un `apply`.
 
-## 12. init -upgrade : monter les versions
+## 15. init -upgrade : monter les versions
 - Id : cli-init-upgrade-versions
 - Sous-thème : init
 - Type : recette
@@ -429,7 +526,7 @@ grep version .terraform.lock.hcl
 - [ ] 3.1.0, le plancher de la contrainte
 - Réponse : 3.1.1 (mesuré, « Reusing previous version ») : le lock respecte encore la nouvelle contrainte, donc `init` le garde.
 
-## 13. .terraform.lock.hcl : se commite
+## 16. .terraform.lock.hcl : se commite
 - Id : cli-lock-provider-commite
 - Sous-thème : init
 - Type : concept
@@ -461,7 +558,7 @@ provider "registry.terraform.io/hashicorp/aws" {
 - [ ] Supprime le lock et repart de zéro
 - Réponse : erreur (`locked provider … 3.3.2 does not match configured version constraint ~> 3.1.0`, mesuré) : il faut `init -upgrade` pour choisir à nouveau.
 
-## 14. providers : qui exige quoi
+## 17. providers : qui exige quoi
 - Id : cli-providers-arbre-contraintes
 - Sous-thème : init
 - Type : recette
@@ -491,7 +588,7 @@ terraform providers
 - [ ] Lance `init` puis affiche l'arbre
 - Réponse : `Module not installed` (mesuré) : même un module local doit être enregistré par `init` avant d'être lu.
 
-## 15. -replace : forcer une recréation
+## 18. -replace : forcer une recréation
 - Id : cli-replace-forcer-recreation
 - Sous-thème : plan
 - Type : recette
@@ -520,7 +617,7 @@ terraform plan \
 - [ ] Il propose de créer `updd`
 - Réponse : `No changes.` (mesuré) : une adresse `-replace` qui ne correspond à rien est ignorée en silence ; vérifier que le plan annonce bien `will be replaced`.
 
-## 16. -detailed-exitcode : y a-t-il des changements ?
+## 19. -detailed-exitcode : y a-t-il des changements ?
 - Id : cli-detailed-exitcode-ci
 - Sous-thème : plan
 - Type : recette
@@ -560,7 +657,7 @@ drift:
 - [ ] 3
 - Réponse : 0 (mesuré) : un plan réussi sort toujours avec 0 ; seule l'option distingue « changements » (2) de « rien à faire » (0).
 
-## 17. show : relire l'état ou un plan
+## 20. show : relire l'état ou un plan
 - Id : cli-show-plan-json
 - Sous-thème : plan
 - Type : recette
@@ -590,7 +687,7 @@ terraform show -json tfplan | jq -r \
 - [ ] La liste des adresses à modifier
 - Réponse : une archive zip (mesuré, `unzip -l` : `tfplan`, `tfstate`, `tfconfig/`, `.terraform.lock.hcl`) : d'où un plan rejouable seul, et des secrets dedans.
 
-## 18. providers schema : lister ressources et attributs
+## 21. providers schema : lister ressources et attributs
 - Id : cli-providers-schema-json
 - Sous-thème : init
 - Type : recette
@@ -635,7 +732,7 @@ terraform -chdir=infra providers \
 - [ ] Le schéma de la dernière version d'AWS
 - Réponse : un schéma vide (mesuré) : sans provider installé dans `.terraform/`, il n'y a rien à décrire, et aucune erreur n'avertit.
 
-## 19. required_version : la version de la fonctionnalité
+## 22. required_version : la version de la fonctionnalité
 - Id : cli-required-version-fonctionnalite
 - Sous-thème : init
 - Type : piège
@@ -672,7 +769,177 @@ terraform init
 - [ ] À `apply`, sur la première ressource
 - Réponse : sur le backend : 1.9.5 respecte `>= 1.9`, donc la contrainte ne protège de rien ; c'est `use_lockfile`, inconnu avant 1.10, qui échoue.
 
-## 20. -target : les dépendances suivent
+## 23. apply : tout l'écart, pas seulement le tien
+- Id : cli-apply-tout-ecart-en-attente
+- Sous-thème : apply
+- Type : piège
+- Niveau : 2
+- Profils : ops
+- Prérequis : cli-apply-confirmation-yes, cli-plan-tous-les-fichiers-tf
+- Voir aussi : cli-plan-out-fichier, cli-target-dependances
+- Mots-clés : état, cible Make, Cognito
+- Source : revision-pwa · pwa-parcours
+- Définition : `apply` applique tout ce qui sépare le code de l'état, y compris les changements commités par d'autres et jamais appliqués.
+- Contexte : Erreur vue le 2026-10-26 : `make up`, lancé pour une Lambda, a aussi appliqué un renommage Cognito d'une autre session, commité mais pas déployé. Terraform ne connaît ni auteur ni intention. Et `make up` est `apply -auto-approve` : il recalcule un plan et l'applique sans l'afficher pour confirmation ; ce n'est pas le plan relu avec `make plan`.
+- Usage : ✅ relire chaque ressource du plan, puis appliquer ce plan précis (`apply tfplan`) · ❌ supposer que le plan égale son `git diff`.
+
+```bash
+# Exemple 1 : deux écarts, un apply (mesuré)
+# lambda : modifiée par moi
+# pool   : modifié par une autre session
+terraform plan -no-color | grep '^  # '
+# → # terraform_data.lambda will be
+#   #   updated in-place
+#   # terraform_data.pool will be
+#   #   updated in-place
+```
+
+```makefile
+# Exemple 2 : ce que fait make up
+up: tf-init
+	$(TF) apply -input=false -auto-approve $(TF_VARS)
+# recalcule et applique, sans question
+```
+
+- Quiz : Pour ne déployer que la Lambda, on lance `apply -target=…lambda`. Que devient le changement Cognito ?
+- [ ] Annulé dans le code
+- [ ] Appliqué quand même
+- [x] Toujours en attente au prochain apply
+- [ ] Retiré de l'état
+- Réponse : toujours en attente : `-target` ne fait que reporter l'écart, le prochain apply complet l'appliquera ; on le traite (appliquer ou revenir dessus) en connaissance de cause.
+
+## 24. Changes to Outputs : hors de la ligne Plan
+- Id : cli-plan-changes-to-outputs
+- Sous-thème : plan
+- Type : concept
+- Niveau : 2
+- Profils : ops
+- Prérequis : cli-plan-symboles
+- Voir aussi : cli-detailed-exitcode-ci
+- Mots-clés : output, terraform_remote_state, plan
+- Source : revision-pwa · pwa-parcours
+- Définition : Les sorties modifiées sont listées sous `Changes to Outputs:`, après le résumé : la ligne `Plan:` ne compte que les ressources.
+- Contexte : Mesuré : si seul un output change, le plan n'a même pas de ligne `Plan:`, seulement « You can apply this plan to save these new output values ». Un output lu par un autre root (`terraform_remote_state`), un script (`output -json`) ou une CI change pourtant leur comportement : un nom de bucket, une URL.
+- Usage : ✅ relire la section Outputs quand un script ou un autre root la consomme · ❌ conclure « rien à faire » faute de ligne `Plan:`.
+
+```bash
+# Exemple 1 : seul un output change (mesuré)
+terraform plan
+# → Changes to Outputs:
+#     + autre = "o"
+#   You can apply this plan to save
+#   these new output values to the
+#   Terraform state …
+```
+
+```bash
+# Exemple 2 : ressources et outputs (mesuré)
+# → Plan: 2 to add, 4 to change, 2 to destroy.
+#
+#   Changes to Outputs:
+#     ~ nom = "x-a" -> "x-b"
+```
+
+- Quiz : Un plan ne change qu'un output. Quel code de sortie donne `plan -detailed-exitcode` ?
+- [ ] `0`
+- [ ] `1`
+- [x] `2`
+- [ ] `3`
+- Réponse : `2` (mesuré) : un output à écrire dans l'état est un changement ; la CI le voit même sans ressource touchée.
+
+## 25. attributs masqués : seules les lignes marquées changent
+- Id : cli-plan-attributs-masques
+- Sous-thème : plan
+- Type : concept
+- Niveau : 2
+- Profils : ops
+- Prérequis : cli-plan-symboles
+- Voir aussi : cli-show-plan-json
+- Mots-clés : plan, tfplan, état
+- Source : revision-pwa · pwa-parcours
+- Définition : `# (4 unchanged attributes hidden)` signale des attributs inchangés que le plan n'affiche pas ; seules les lignes marquées `~`, `+` ou `-` changent.
+- Contexte : Le plan est compact : dans une ressource modifiée, il montre ce qui change, plus quelques lignes de repère sans symbole (`id`). Une ligne sans symbole n'est pas un changement. Pour l'objet entier, avant et après : `terraform show -json tfplan` (champs `before` et `after` de `resource_changes`), ou `state show` pour la valeur actuelle.
+- Usage : ✅ lire uniquement les lignes marquées, ouvrir `show -json` en cas de doute · ❌ prendre une ligne de repère pour une modification.
+
+```bash
+# Exemple 1 : une clé sur cinq change (mesuré)
+~ resource "terraform_data" "lambda" {
+      id     = "3abe9aec-…"
+    ~ input  = {
+        ~ code    = "a" -> "b"
+          # (4 unchanged attributes hidden)
+      }
+```
+
+- Quiz : Quelle commande montre les valeurs complètes, avant et après, d'une ressource d'un plan enregistré ?
+- [ ] `terraform plan -verbose`
+- [x] `terraform show -json tfplan`
+- [ ] `terraform plan -no-compact`
+- [ ] `terraform state list`
+- Réponse : `show -json tfplan` : `before` / `after` de chaque `resource_changes` ; `-verbose` et `-no-compact` n'existent pas (« Failed to parse command-line flags », mesuré).
+
+## 26. jsonencode : la politique se relit élément par élément
+- Id : cli-plan-diff-jsonencode
+- Sous-thème : plan
+- Type : recette
+- Niveau : 2
+- Profils : ops
+- Prérequis : cli-plan-attributs-masques
+- Mots-clés : politique IAM, moindre privilège, JSON
+- Source : revision-pwa · pwa-parcours
+- Définition : Pour un attribut écrit avec `jsonencode(...)` (politique IAM, motif EventBridge), le plan décode le JSON et marque chaque élément ajouté ou retiré.
+- Contexte : Une politique change souvent d'une action ; le plan affiche `~ input = jsonencode(` puis l'arbre, avec `+` sur l'action ajoutée et les champs inchangés masqués. C'est la ligne à relire : une action ajoutée (`s3:*`), une `Resource` élargie à `"*"`, un `Effect` qui passe à `Allow`. Le résumé `Plan:` n'en dit rien : c'est un simple `update in-place`.
+- Usage : ✅ relire chaque `+` et `-` dans un `jsonencode` de politique avant l'apply · ❌ passer un `~` sur un rôle IAM parce qu'il « ne fait que modifier ».
+
+```bash
+# Exemple 1 : une action ajoutée (mesuré)
+~ input  = jsonencode(
+    ~ {
+        ~ Statement = [
+            ~ {
+                ~ Action   = [
+                      "s3:GetObject",
+                    + "s3:PutObject",
+                  ]
+                  # (2 unchanged attributes hidden)
+```
+
+- Quiz : Dans le diff d'une politique, la ligne ajoutée est `+ "s3:*",` sur une `Resource` limitée au bucket raw. Que fait-on ?
+- [ ] Rien : la ressource est limitée
+- [x] On bloque : toutes les actions S3, suppression comprise
+- [ ] Rien : c'est un update in-place
+- [ ] On applique, puis on restreint
+- Réponse : on bloque : `s3:*` ajoute `DeleteObject`, `PutBucketPolicy`… sur ce bucket ; on liste les actions nécessaires (moindre privilège).
+
+## 27. destruction : lire la raison
+- Id : cli-plan-raison-destruction
+- Sous-thème : plan
+- Type : concept
+- Niveau : 2
+- Profils : ops
+- Prérequis : cli-plan-en-tetes-actions
+- Voir aussi : state-backend-moved-renommer, state-backend-state-rm-vs-removed
+- Mots-clés : for_each, moved, adresse
+- Source : revision-pwa · pwa-parcours
+- Définition : Sous l'en-tête d'une destruction, une ligne `# (because …)` dit pourquoi Terraform détruit : bloc absent du code, clé retirée d'un `for_each`…
+- Contexte : `is not in configuration` : le bloc n'est plus dans le root (supprimé, fichier renommé, renommage sans `moved`). `key ["tmp"] is not in for_each map` : la clé a disparu de la map ou du set (mesuré). Une raison inattendue désigne la cause à corriger : remettre le bloc, ajouter un `moved`, ou `removed` pour oublier sans détruire.
+- Usage : ✅ lire la raison de chaque `will be destroyed` avant l'apply · ❌ corriger au hasard en relançant `plan` jusqu'à ce que la destruction disparaisse.
+
+```bash
+# Exemple 1 : bloc retiré du code (mesuré)
+# terraform_data.pool will be destroyed
+# (because terraform_data.pool is not in
+#  configuration)
+```
+
+- Quiz : Le plan dit `# (because key ["tmp"] is not in for_each map)`. Quelle est la cause ?
+- [ ] Le bloc `resource` a été supprimé
+- [x] `"tmp"` a été retiré de la collection du `for_each`
+- [ ] La ressource a été renommée sans `moved`
+- [ ] L'état ne connaît pas la clé `"tmp"`
+- Réponse : la clé a quitté la collection (mesuré avec `var.k` passé de `["raw", "tmp"]` à `["raw"]`) : le bloc existe, seule cette instance est détruite.
+
+## 28. -target : les dépendances suivent
 - Id : cli-target-dependances
 - Sous-thème : plan
 - Type : piège
@@ -700,7 +967,7 @@ terraform plan -target=terraform_data.raw
 - [ ] Rien : une cible ne peut pas avoir de dépendants
 - Réponse : `kms` seulement (mesuré, `1 to add`) : `-target` ajoute ce dont la cible dépend, jamais ce qui dépend d'elle.
 
-## 21. providers lock : hashes multi-plateformes
+## 29. providers lock : hashes multi-plateformes
 - Id : cli-providers-lock-plateformes
 - Sous-thème : init
 - Type : recette
@@ -731,7 +998,7 @@ grep -c 'h1:' .terraform.lock.hcl
 - [ ] Refusé : la plateforme courante manque
 - Réponse : gardés (mesuré : 2 → 4 `h1:`) : `providers lock` fusionne avec le lock existant pour la même version.
 
-## 22. TF_LOG : journal de débogage
+## 30. TF_LOG : journal de débogage
 - Id : cli-tf-log-debogage
 - Sous-thème : exécution
 - Type : recette
@@ -756,3 +1023,34 @@ grep -c DEBUG /tmp/tf.log
 - [x] Rien : fichier vide
 - [ ] La sortie du plan
 - Réponse : rien (mesuré : 0 octet) : `TF_LOG_PATH` choisit seulement la destination ; sans `TF_LOG`, aucun journal n'est produit.
+
+## 31. remplacement en cascade
+- Id : cli-plan-remplacement-cascade
+- Sous-thème : plan
+- Type : piège
+- Niveau : 3
+- Profils : ops, expert
+- Prérequis : cli-plan-symboles
+- Voir aussi : cli-replace-forcer-recreation
+- Mots-clés : known after apply, dépendance implicite, KMS
+- Source : revision-pwa · pwa-parcours
+- Définition : Une ressource remplacée reçoit un nouvel `id` ; toute ressource dont un argument à remplacement obligatoire lit cet `id` est remplacée à son tour.
+- Contexte : Mesuré : `parent` remplacé, `child` (`triggers_replace = parent.id`) affiche `-> (known after apply) # forces replacement` sans qu'on y ait touché. Sur AWS, recréer une clé KMS ou un rôle peut ainsi entraîner bucket, alias ou Lambda. Le premier `-/+` explique les suivants : remonter la chaîne jusqu'à la cause, et juger s'il faut l'éviter (`moved`, `lifecycle`).
+- Usage : ✅ pour chaque `-/+`, chercher quel argument force et d'où vient sa valeur · ❌ approuver une liste de remplacements « parce qu'ils viennent de la même modif ».
+
+```bash
+# Exemple 1 : le parent entraîne l'enfant (mesuré)
+# terraform_data.child must be replaced
+-/+ resource "terraform_data" "child" {
+  ~ triggers_replace = "591f…"
+      -> (known after apply) # forces replacement
+}
+# terraform_data.parent must be replaced
+```
+
+- Quiz : Le plan montre trois `-/+` ; on n'a changé qu'un argument. Comment trouver la cause ?
+- [ ] Le premier `-/+` dans l'ordre affiché
+- [x] Celui dont la valeur change de façon connue (`"a" -> "b"`)
+- [ ] Celui qui a le plus d'attributs modifiés
+- [ ] Impossible sans `TF_LOG=DEBUG`
+- Réponse : la cause change d'une valeur connue à une autre ; les suivantes passent à `(known after apply) # forces replacement` à cause d'un `id` futur. L'ordre affiché est alphabétique (mesuré).

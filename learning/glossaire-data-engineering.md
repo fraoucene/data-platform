@@ -6,6 +6,48 @@ updated: 2026-10-26
 
 # Glossaire Data engineering
 
+## catalogue de données
+- Définition : Inventaire des jeux de données d'une organisation : emplacement, schéma, propriétaire, fraîcheur, pour les trouver sans demander à personne.
+- Exemple : Le catalogue Glue liste les tables du lake et leurs colonnes ; un outil comme DataHub y ajoute propriétaires et glossaire.
+- Alias : data catalog
+- Carte : gouvernance-glossaire-dictionnaire-catalogue
+
+## déterministe
+- Définition : Se dit d'un traitement qui donne toujours le même résultat pour les mêmes entrées, quels que soient l'ordre d'arrivée ou le moment.
+- Exemple : Le catalogue de revision-pwa trie les fichiers par nom avant de les lire : deux reconstructions donnent le même résultat.
+- Alias : déterminisme
+- Carte : gouvernance-conflit-regle-deterministe
+
+## dictionnaire de données
+- Définition : Description des colonnes d'un jeu de données : nom, type, unité, contraintes et sens de chaque valeur.
+- Exemple : `dateparution` : DATE, jour de parution du bulletin, jamais nulle.
+- Alias : data dictionary
+- Carte : gouvernance-glossaire-dictionnaire-catalogue
+
+## données de référence
+- Définition : Listes de codes stables partagées par plusieurs systèmes (tribunaux, pays, codes d'activité), tenues par un propriétaire et utilisées pour valider les données.
+- Exemple : Une annonce dont le code tribunal est absent du référentiel part en quarantaine, avec une alerte au propriétaire.
+- Alias : donnée de référence, référentiel, référentiels, reference data
+- Carte : gouvernance-donnees-de-reference
+
+## golden record
+- Définition : Fiche maître d'une entité (entreprise, client) construite champ par champ depuis plusieurs sources, selon des règles de priorité.
+- Exemple : Pour un même SIREN : nom repris de l'INSEE, statut de procédure repris du BODACC.
+- Alias : fiche maître, enregistrement maître
+- Carte : gouvernance-golden-record
+
+## propriétaire de donnée
+- Définition : Personne ou équipe seule autorisée à écrire une donnée partagée, et responsable de sa justesse ; les autres la lisent ou la citent.
+- Exemple : Le terme OIDC appartient au glossaire AWS : une carte DevOps le cite sans le redéfinir.
+- Alias : propriétaire des données, data owner
+- Carte : gouvernance-proprietaire-unique
+
+## source de vérité
+- Définition : L'endroit unique qui fait foi pour une donnée ; toute autre copie en dérive et se corrige depuis lui.
+- Exemple : La zone raw du lake est la source de vérité des annonces : les tables dérivées se reconstruisent depuis elle.
+- Alias : source unique de vérité, single source of truth
+- Carte : gouvernance-citer-pas-copier
+
 ## _SUCCESS
 - Définition : Fichier vide écrit en dernier dans une partition par un job (Spark, Hadoop) pour signaler aux lecteurs qu'elle est complète.
 - Exemple : Un job aval attend `_SUCCESS` sous `dt=2026-10-20/` avant de lire les fichiers de la journée.
@@ -425,6 +467,12 @@ updated: 2026-10-26
 - Exemple : `ConditionExpression: version = :lue` refuse la mise à jour si un autre processus a incrémenté `version` entre-temps.
 - Alias : verrouillage optimiste, optimistic locking
 - Carte : AWS/dynamodb-verrou-optimiste
+
+## vocabulaire contrôlé
+- Définition : Liste fermée des termes admis : chaque notion a un terme officiel, une définition et ses écritures acceptées (alias), pour que tous emploient les mêmes mots.
+- Exemple : Les mots-clés des cartes de révision doivent exister dans un glossaire ; « Amazon S3 » et « s3 » renvoient au même terme.
+- Alias : vocabulaires contrôlés
+- Carte : gouvernance-vocabulaire-controle
 
 ## watermark
 - Définition : Repère conservé du dernier élément traité avec succès (jour, clé) ; le run suivant reprend juste après lui.

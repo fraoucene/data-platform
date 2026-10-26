@@ -85,6 +85,7 @@ Exercice 5 min : ordonner à la main `tranche` (prérequis `index`), `index`, `h
 - Concept : vocabulaire contrôlé (un terme = une définition, des alias), propriétaire unique d'une donnée partagée.
 - Vérifier : `make cards` → 0 erreur, 0 mot-clé absent du glossaire ; sur l'iPhone : tap sur une pastille → définition
 - Erreur vue : `make up` attendu pour la seule Lambda a aussi appliqué un changement Cognito d'une autre session (renommage « Stack » des e-mails, déjà commité) : relire chaque ligne du plan avant d'appliquer.
+- Cartes : +11 Python / Unicode (13, nouveau thème), +11 Data engineering / Gouvernance (13, nouveau thème), +9 Terraform / CLI (31), +13 termes de glossaire, source `revision-pwa · pwa-parcours` (publiées)
 
 ## Pièges courants
 1. Publier les fichiers v4 avant de déployer le parser v4 dans la Lambda : l'ancien parser ne connaît pas `- Id :`, la carte entière est rejetée, le catalogue se vide.
