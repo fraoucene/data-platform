@@ -2,17 +2,22 @@
 title: "Cartes · SQS et EventBridge"
 type: cartes
 langage: AWS
+chapitre: Messages et événements
 cours: SQS et EventBridge
 created: 2026-10-24
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · SQS et EventBridge
-AWS · SQS et EventBridge : choisir, eventbridge, sqs (format spec v3 de revision-pwa).
+AWS · SQS et EventBridge : scheduler, choisir, règles, sqs, événements, cibles (format spec v4 de revision-pwa).
 
 ## 1. EventBridge Scheduler : le cron
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-scheduler-cron
+- Sous-thème : scheduler
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data, ops
+- Voir aussi : sqs-eventbridge-regle-ou-scheduler, sqs-eventbridge-fuseau-horaire
 - Définition : EventBridge Scheduler déclenche une cible (Lambda, Step Functions) selon une expression `cron` à six champs, dans un fuseau horaire choisi.
 - Contexte : Les six champs sont minute, heure, jour du mois, mois, jour de semaine, année. Sans `schedule_expression_timezone`, l'heure est UTC : 6 h devient 7 h ou 8 h à Paris selon la saison. `flexible_time_window` peut étaler le départ pour lisser la charge. Scheduler gère retries et DLQ de la cible, sans Lambda intermédiaire.
 - Usage : ✅ ingestion quotidienne, rapport hebdomadaire, tâche ponctuelle (`at(…)`) · ❌ réagir à un fait (fichier déposé) : notification S3 ou règle EventBridge sur événement.
@@ -43,8 +48,12 @@ resource "aws_scheduler_schedule" "j" {
 - Réponse : non : jour du mois et jour de semaine ne peuvent pas valoir `*` tous les deux ; l'un des deux doit être `?`.
 
 ## 2. SQS : quand découpler
+- Id : sqs-eventbridge-quand-sqs
 - Sous-thème : choisir
+- Type : choisir
 - Niveau : 1
+- Profils : débutant, data
+- Voir aussi : sqs-eventbridge-standard-ou-fifo, sns-sqs-ou-eventbridge
 - Définition : SQS est une file entre un producteur et un consommateur : elle absorbe les pics, retente les échecs et isole les messages cassés en DLQ.
 - Contexte : Le producteur dépose et repart ; le consommateur lit à son rythme. Avec Lambda, `maximum_concurrency` sur le mapping borne le nombre de lecteurs, donc le débit vers une API limitée. Une file standard livre au moins une fois, sans ordre garanti ; une file FIFO garde l'ordre et déduplique, à débit plus faible. Un message n'est lu que par un consommateur.
 - Usage : ✅ lisser des appels vers une API limitée (BODACC, 429), file de jours à rejouer · ❌ diffuser un même événement à plusieurs services : SNS ou EventBridge en amont.
@@ -79,8 +88,12 @@ resource "aws_lambda_event_source_mapping" "m" {
 - Réponse : non : un message SQS est consommé par un seul lecteur ; il faut un fan-out (SNS ou EventBridge vers une file par consommateur).
 
 ## 3. event_pattern : le filtre EventBridge
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-event-pattern
+- Sous-thème : règles
+- Type : concept
 - Niveau : 1
+- Profils : data, ops
+- Prérequis : sqs-eventbridge-enveloppe-evenement
 - Définition : `event_pattern` décrit les événements qui déclenchent la règle : une liste vaut OU entre valeurs, des clés différentes valent ET.
 - Contexte : CodeCommit publie un événement « Repository State Change » par référence modifiée : `referenceCreated`, `referenceUpdated` ou `referenceDeleted`, avec le nom et le type (branche ou tag). Le motif ne garde que la création et la mise à jour de la branche `main` ; la suppression et les tags sont ignorés. Un champ absent de l'événement ne matche jamais.
 - Usage : ✅ déclencher sur une branche, un type de référence, un dépôt précis · ❌ filtrer sur les fichiers modifiés : l'événement ne les contient pas, le tester dans le build.
@@ -113,8 +126,11 @@ suppression de main   → non (event)
 - Réponse : `1` : l'événement porte sur la référence, pas sur les commits ; `main` passe une fois à son nouveau commit, un seul `referenceUpdated`.
 
 ## 4. SQS : standard ou FIFO
+- Id : sqs-eventbridge-standard-ou-fifo
 - Sous-thème : sqs
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant, data
 - Définition : Une file standard livre au moins une fois, sans ordre garanti ; une file FIFO garde l'ordre par groupe et déduplique sur 5 minutes.
 - Contexte : En FIFO, `MessageGroupId` est obligatoire : l'ordre vaut à l'intérieur d'un groupe (un SIREN), les groupes se traitent en parallèle. La déduplication repose sur `MessageDeduplicationId` ou, avec `content_based_deduplication`, sur le SHA-256 du corps. Débit FIFO : 300 appels/s par action hors mode haut débit (3 000 messages/s en lots de 10), contre un débit quasi illimité en standard.
 - Usage : ✅ FIFO quand l'ordre par entité compte (événements successifs d'un même SIREN) · ❌ FIFO par réflexe : standard et traitement idempotent, plus simple et sans plafond.
@@ -146,8 +162,11 @@ aws sqs send-message \
 - Réponse : une erreur (mesuré) : le nom d'une file FIFO doit finir par `.fifo` ; le provider le vérifie dès le plan.
 
 ## 5. SQS : 1 Mio, 14 jours
+- Id : sqs-eventbridge-taille-retention
 - Sous-thème : sqs
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
 - Définition : Un message SQS pèse au plus 1 Mio et reste au plus 14 jours en file (4 par défaut), puis il est supprimé sans bruit.
 - Contexte : `message_retention_seconds` va de 60 à 1 209 600 s. Avec le défaut, un consommateur en panne pendant un long week-end suffit à perdre des messages. Au-delà de 1 Mio, on dépose le contenu dans S3 et on envoie sa clé dans le message (motif « claim check ») : le message reste petit, le fichier garde sa propre durée de vie.
 - Usage : ✅ envoyer une référence S3 (bucket, clé) plutôt que l'annonce ou le fichier brut · ❌ SQS comme stockage : au-delà de quelques jours, S3.
@@ -177,8 +196,11 @@ len(corps.encode()) < 1024 * 1024  # → True
 - Réponse : refusé : SQS rejette tout message de plus de 1 Mio ; la bibliothèque « extended client » fait le dépôt S3, SQS ne le fait pas seul.
 
 ## 6. événement : source, detail-type, detail
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-enveloppe-evenement
+- Sous-thème : événements
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
 - Définition : Un événement EventBridge est un JSON à enveloppe fixe : `source` (émetteur), `detail-type` (nature du fait), `detail` (contenu libre), plus `time`, `account`, `region`.
 - Contexte : Les règles filtrent sur ces champs ; `source` et `detail-type` suffisent souvent. Un événement maison prend une `source` à soi (`data-platform.bodacc`). `detail` est un objet JSON ; l'événement entier pèse au plus 256 Ko. Dans `put-events`, `Detail` se passe comme une chaîne JSON, pas comme un objet.
 - Usage : ✅ un `detail-type` par fait métier (`AnnoncePubliee`, `JourIngere`) · ❌ un seul type générique avec un champ `action` : les règles deviennent illisibles.
@@ -202,8 +224,12 @@ len(corps.encode()) < 1024 * 1024  # → True
 - Réponse : refusé (`NotAuthorizedForSourceException`) : seuls les services AWS publient en `aws.*`, ce qui empêche d'imiter leurs événements.
 
 ## 7. bus personnalisé : put-events
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-bus-personnalise
+- Sous-thème : événements
+- Type : concept
 - Niveau : 1
+- Profils : data, ops
+- Prérequis : sqs-eventbridge-enveloppe-evenement
 - Définition : Un bus personnalisé reçoit les événements métier de l'application, envoyés par `put-events`, à part du bus `default` où arrivent ceux des services AWS.
 - Contexte : Une règle appartient à un bus (`event_bus_name`) : une règle du bus `default` ne voit jamais un événement du bus `data-platform`. L'émetteur a besoin de `events:PutEvents` sur l'ARN du bus. `put-events` accepte 10 entrées par appel. Sans `event_bus_name`, une règle Terraform va sur `default`.
 - Usage : ✅ un bus `data-platform` pour les faits du pipeline (jour ingéré, annonce publiée) · ❌ événements métier sur `default` : mélangés à ceux d'AWS, droits plus larges.
@@ -239,8 +265,11 @@ aws events put-events --entries \
 - Réponse : un succès avec `FailedEntryCount: 1` : l'appel ne lève rien ; il faut lire `Entries` et renvoyer soi-même les entrées en `ErrorCode`.
 
 ## 8. state : suspendre sans détruire
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-scheduler-state
+- Sous-thème : scheduler
+- Type : recette
 - Niveau : 1
+- Profils : data, ops
 - Source : data-platform · S1-08
 - Définition : `state = "DISABLED"` met une planification Scheduler en pause sans la supprimer ; `"ENABLED"` la relance à sa prochaine occurrence.
 - Contexte : Pendant une panne de la source ou une migration, couper le déclencheur sans perdre sa configuration (expression, fuseau, rôle, cible). En Terraform, c'est une modification sur place, pas une recréation. La planification ne rattrape pas seule les jours sautés : c'est le rôle d'un rejeu explicite (`make replay`).
@@ -271,8 +300,12 @@ aws scheduler get-schedule \
 - Réponse : perdus : une planification désactivée n'invoque rien, et rien n'est mis en attente ; le rattrapage passe par un rejeu explicite de ces dates.
 
 ## 9. SQS : DLQ et maxReceiveCount
+- Id : sqs-eventbridge-dlq-max-receive
 - Sous-thème : sqs
+- Type : concept
 - Niveau : 2
+- Profils : data, ops
+- Voir aussi : sqs-eventbridge-visibility-timeout, lambda-destinations-ou-dlq
 - Définition : Une redrive policy déplace un message vers une DLQ après `maxReceiveCount` réceptions sans suppression, pour l'isoler et l'analyser.
 - Contexte : Chaque lecture incrémente `ApproximateReceiveCount` ; le message n'est supprimé que si le consommateur le confirme (Lambda le fait pour un lot réussi). Un message toxique (JSON cassé) bloquerait sinon des ressources sans fin. La DLQ doit être du même type (standard ou FIFO) et sa rétention plus longue que celle de la file source. `start-message-move-task` rejoue la DLQ vers la source après correction.
 - Usage : ✅ toute file consommée par Lambda, avec alarme sur la profondeur de la DLQ · ❌ DLQ sans alarme : les échecs s'y accumulent sans que personne ne le voie.
@@ -305,8 +338,12 @@ aws sqs start-message-move-task \
 - Réponse : en DLQ au premier échec : une seule réception autorisée, donc aucun retry ; garder plusieurs réceptions pour absorber les erreurs transitoires.
 
 ## 10. EventBridge : règle ou Scheduler
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-regle-ou-scheduler
+- Sous-thème : choisir
+- Type : choisir
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : sqs-eventbridge-event-pattern
 - Définition : EventBridge route des événements vers des cibles selon des règles sur leur contenu, et planifie des tâches (Scheduler, ≈ cron managé).
 - Contexte : Une règle filtre sur n'importe quel champ (`source`, `detail.type`, préfixe, plage numérique) et envoie à jusqu'à 5 cibles : c'est le fan-out sans code. Les événements des services AWS (S3, Glue, Step Functions) y arrivent nativement. Scheduler est un service à part : il déclenche à une heure, pas sur un fait, avec fuseau horaire et retries.
 - Usage : ✅ alertes métier sur certaines annonces, réagir à la fin d'un job Glue, cron du pipeline · ❌ file de travail à lisser et rejouer : SQS.
@@ -331,8 +368,11 @@ aws sqs start-message-move-task \
 - Réponse : Scheduler : il n'y a pas d'événement source, juste une heure ; il gère aussi le fuseau horaire et les retries de la cible.
 
 ## 11. flux continu : Firehose ou Kinesis
+- Id : sqs-eventbridge-firehose-ou-kinesis
 - Sous-thème : choisir
+- Type : choisir
 - Niveau : 2
+- Profils : data
 - Définition : Data Firehose pose un flux dans S3 par lots, sans code ; Kinesis Data Streams garde le flux pour plusieurs lecteurs, qui peuvent le relire.
 - Contexte : Firehose bufferise (taille ou durée), convertit en Parquet, puis écrit : rien à dimensionner, payé au Go ingéré, mais une fois livré, le flux n'est plus relisible. Kinesis Data Streams conserve les enregistrements 24 h par défaut, jusqu'à 365 jours : chaque consommateur lit à sa position et peut revenir en arrière. Les deux se combinent : Streams en entrée, Firehose vers S3.
 - Usage : ✅ Firehose pour archiver des événements dans le lake · ❌ Firehose quand plusieurs consommateurs temps réel ou un rejeu sont nécessaires : Kinesis Data Streams.
@@ -357,8 +397,12 @@ Pourquoi: zéro code, zéro shard,
 - Réponse : Kinesis Data Streams : rétention rejouable (24 h par défaut, jusqu'à 365 jours) et plusieurs consommateurs ; Firehose livre puis oublie, SQS ne donne chaque message qu'à un lecteur.
 
 ## 12. jsonencode : le motif en HCL
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-jsonencode-motif
+- Sous-thème : règles
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : sqs-eventbridge-event-pattern
 - Définition : `jsonencode` convertit un objet HCL en chaîne JSON : le motif s'écrit en HCL lisible plutôt qu'en JSON échappé dans une chaîne.
 - Contexte : `event_pattern` attend une chaîne JSON. `jsonencode` produit du JSON compact aux clés triées par ordre alphabétique (vérifié dans `terraform console`), donc stable d'un `plan` à l'autre. Une clé avec un tiret comme `detail-type` doit être entre guillemets en HCL, sinon elle est lue comme une soustraction. `resources` limite la règle à un ARN de dépôt.
 - Usage : ✅ tout attribut qui attend du JSON (motif, politique de file, `definition` d'une machine d'états) · ❌ politique IAM : `aws_iam_policy_document`, qui valide les champs.
@@ -386,8 +430,13 @@ event_pattern = jsonencode({
 - Réponse : tous les dépôts CodeCommit du compte et de la région : seul l'ARN dans `resources` désigne `revision-pwa`.
 
 ## 13. rôle EventBridge : StartBuild seulement
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-role-cible
+- Sous-thème : cibles
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : iam-role-confiance-permissions
+- Voir aussi : sqs-eventbridge-event-target
 - Définition : Pour lancer CodeBuild, EventBridge endosse son propre rôle, qui n'a qu'un droit : `codebuild:StartBuild` sur ce projet.
 - Contexte : EventBridge n'agit jamais avec les droits de celui qui a créé la règle : il lui faut un rôle dont la trust policy accepte `events.amazonaws.com`. Ce rôle (`revision-pwa-dev-events-deploy`) ne voit ni S3 ni CloudFront : il démarre le build, et c'est le rôle de CodeBuild qui déploie. Deux rôles, deux services, deux jeux de droits disjoints.
 - Usage : ✅ un rôle dédié par cible EventBridge, limité à l'ARN de la cible · ❌ `codebuild:*` ou `resources = ["*"]` : la règle pourrait lancer ou modifier n'importe quel projet.
@@ -413,8 +462,13 @@ data "aws_iam_policy_document" "events" {
 - Réponse : sa trust policy n'accepte que CodeBuild, et il porte des droits S3 inutiles à EventBridge : un rôle par service, un droit chacun.
 
 ## 14. event_target : relier règle et projet
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-event-target
+- Sous-thème : cibles
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : sqs-eventbridge-event-pattern
+- Voir aussi : sqs-eventbridge-role-cible
 - Définition : `aws_cloudwatch_event_target` branche la règle sur le projet CodeBuild et indique le rôle qu'EventBridge endosse pour le lancer.
 - Contexte : Une règle sans cible ne fait rien : elle matche les événements et les jette. La cible porte l'ARN du projet et le rôle. Les ressources gardent le préfixe `cloudwatch_event` pour des raisons historiques : EventBridge s'appelait CloudWatch Events. Une règle accepte jusqu'à cinq cibles, chacune avec son rôle.
 - Usage : ✅ une cible par action déclenchée (build, Lambda, notification) · ❌ une Lambda intermédiaire qui appelle `StartBuild` : la cible CodeBuild native suffit.
@@ -436,8 +490,11 @@ resource "aws_cloudwatch_event_target" "deploy" {
 - Réponse : la cible est refusée : pour une cible CodeBuild, EventBridge a besoin d'un rôle autorisé à `StartBuild` ; il n'emprunte aucun autre rôle.
 
 ## 15. long polling : attendre 20 s
+- Id : sqs-eventbridge-long-polling
 - Sous-thème : sqs
+- Type : concept
 - Niveau : 2
+- Profils : data, ops
 - Définition : Le long polling fait attendre `ReceiveMessage` jusqu'à 20 s qu'un message arrive, au lieu de répondre vide aussitôt : moins d'appels facturés.
 - Contexte : Le défaut est le short polling (`receive_wait_time_seconds = 0`) : chaque appel répond tout de suite, souvent vide, et chaque appel se paie, même vide. Le mapping Lambda fait déjà du long polling : le réglage compte pour un consommateur maison (script, conteneur). Côté client, `WaitTimeSeconds` d'un appel prime sur le réglage de la file.
 - Usage : ✅ `receive_wait_time_seconds = 20` sur toute file lue par un consommateur maison · ❌ boucle `while True` en short polling : appels vides facturés à la chaîne.
@@ -466,8 +523,12 @@ int(short), int(long_)  # → (864000, 4320)
 - Réponse : pas forcément : en short polling, SQS n'interroge qu'un échantillon de ses serveurs ; le long polling les interroge tous.
 
 ## 16. mapping SQS : lot et fenêtre
+- Id : sqs-eventbridge-mapping-lot-fenetre
 - Sous-thème : sqs
+- Type : concept
 - Niveau : 2
+- Profils : data
+- Prérequis : lambda-event-source-mapping
 - Définition : `batch_size` fixe le nombre maximal de messages par invocation ; `maximum_batching_window_in_seconds` attend jusqu'à N secondes pour remplir le lot.
 - Contexte : Avec une file standard, `batch_size` va jusqu'à 10 000. Un lot plus gros réduit le nombre d'invocations, mais un échec rejoue tout le lot sans `ReportBatchItemFailures`. La charge utile d'une invocation reste limitée à 6 Mo : le lot s'arrête avant. La fenêtre ajoute de la latence : jusqu'à N secondes avant traitement.
 - Usage : ✅ messages petits et nombreux (SIREN à enrichir) : lots de 100, fenêtre de 30 s · ❌ gros lots sans réponse partielle : un message cassé rejoue tous les autres.
@@ -491,8 +552,13 @@ resource "aws_lambda_event_source_mapping" "m" {
 - Réponse : refusé par l'API (le `plan` passe, mesuré) : un `batch_size` au-delà de 10 exige une fenêtre d'au moins 1 s (doc AWS).
 
 ## 17. politique de file : qui peut écrire
+- Id : sqs-eventbridge-politique-de-file
 - Sous-thème : sqs
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : iam-politique-de-ressource
+- Voir aussi : sns-vers-sqs-fan-out
 - Définition : `aws_sqs_queue_policy` autorise un service (EventBridge, SNS, S3) à déposer dans la file ; pour une cible SQS, EventBridge n'endosse pas de rôle.
 - Contexte : C'est une politique de ressource, comme `aws_lambda_permission` : le principal est `events.amazonaws.com`, borné par `aws:SourceArn` à la règle. Sans elle, rien ne casse à l'`apply` : la règle matche, puis chaque livraison échoue et l'événement est retenté puis perdu. Une file chiffrée par une clé KMS du client demande aussi `kms:GenerateDataKey` au service dans la politique de clé.
 - Usage : ✅ une déclaration par émetteur, bornée par `aws:SourceArn` · ❌ `Principal: "*"` sans condition : n'importe qui peut remplir la file.
@@ -524,8 +590,13 @@ data "aws_iam_policy_document" "q" {
 - Réponse : `FailedInvocations` : la règle a matché mais la livraison est refusée ; la file ne reçoit rien, sa DLQ et son consommateur non plus.
 
 ## 18. cible : retries et DLQ
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-cible-retries-dlq
+- Sous-thème : cibles
+- Type : piège
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : sqs-eventbridge-event-target
+- Voir aussi : sqs-eventbridge-dlq-max-receive
 - Définition : Si la livraison à une cible échoue, EventBridge réessaie 24 h et 185 fois au plus par défaut, puis jette l'événement, sauf DLQ.
 - Contexte : `retry_policy` réduit la fenêtre (`maximum_event_age_in_seconds`, `maximum_retry_attempts`). `dead_letter_config` garde l'événement non livré dans une file SQS, avec la raison en attributs (`ERROR_CODE`, `ERROR_MESSAGE`). Ces retries couvrent la livraison (cible absente, droits, limitation), pas l'échec du code de la cible.
 - Usage : ✅ DLQ sur chaque cible, avec alarme ; fenêtre courte pour un événement qui périme vite · ❌ défaut de 24 h pour une alerte : livrée trop tard pour servir.
@@ -563,8 +634,11 @@ aws scheduler get-schedule \
 - Réponse : non : EventBridge a livré (appel asynchrone accepté) ; l'échec du code relève des 2 retries et de la destination `on_failure` de la Lambda.
 
 ## 19. schedule group : default si rien
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-schedule-group
+- Sous-thème : scheduler
+- Type : piège
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-08
 - Définition : Toute planification Scheduler appartient à un groupe ; sans `group_name`, c'est le groupe `default`, qui existe dans chaque compte et région.
 - Contexte : Le groupe porte les tags et sert de frontière d'accès : c'est son ARN que voit `aws:SourceArn` dans la confiance du rôle d'exécution. Un groupe par environnement ou par équipe permet de borner les rôles et de tout supprimer d'un coup. Le nom d'une planification n'est unique que dans son groupe : `get-schedule` cherche dans `default` si `--group-name` manque.
@@ -584,8 +658,11 @@ aws scheduler list-schedule-groups \
 - Réponse : `ResourceNotFoundException` : sans `--group-name`, la recherche se fait dans `default`, où ce nom n'existe pas.
 
 ## 20. fuseau : 06:00 Paris, deux heures UTC
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-fuseau-horaire
+- Sous-thème : scheduler
+- Type : concept
 - Niveau : 2
+- Profils : data, ops
 - Source : data-platform · S1-08
 - Définition : Avec `schedule_expression_timezone = "Europe/Paris"`, `cron(0 6 * * ? *)` tombe à 04:00 UTC l'été et 05:00 UTC l'hiver, sans rien changer.
 - Contexte : Scheduler évalue l'expression dans le fuseau IANA donné et suit seul les changements d'heure. Les logs et métriques AWS restent en UTC : une invocation lue à 05:00 dans CloudWatch est bien celle de 06:00 Paris en hiver. Sans fuseau, l'expression est en UTC et l'heure locale glisse d'une heure deux fois par an.
@@ -611,8 +688,11 @@ hiver.astimezone(U).hour  # → 5
 - Réponse : 04:00 (calculé avec `zoneinfo`) : l'heure d'été met Paris à UTC+2, donc 06:00 Paris = 04:00 UTC.
 
 ## 21. flexible_time_window : partir dans les N minutes
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-flexible-time-window
+- Sous-thème : scheduler
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-08
 - Définition : `mode = "FLEXIBLE"` avec `maximum_window_in_minutes = N` laisse Scheduler invoquer la cible n'importe quand dans les N minutes **après** l'heure prévue.
 - Contexte : Sert à disperser beaucoup de planifications calées sur la même heure (des milliers de tâches à minuit), pour ne pas saturer la cible. Le bloc est obligatoire : `OFF` si on n'en veut pas. Même en `OFF`, la précision est la minute : `06:00` part entre 06:00:00 et 06:00:59 (doc).
@@ -641,8 +721,11 @@ flexible_time_window {
 - Réponse : 06:11 : la fenêtre s'ouvre à l'heure prévue et dure 15 minutes ; jamais avant 06:00 ni après 06:15.
 
 ## 22. input : pas de date figée dans la planification
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-input-sans-date
+- Sous-thème : scheduler
+- Type : piège
 - Niveau : 2
+- Profils : data
 - Source : data-platform · S1-08
 - Définition : L'`input` d'une planification quotidienne ne porte pas le jour à traiter : la cible le calcule à l'exécution, ici la veille à Paris.
 - Contexte : `input` est un texte fixe, envoyé tel quel à chaque déclenchement : `{"date":"2026-10-25"}` ingérerait le 25 tous les matins. Avec `{}`, le handler résout le jour lui-même (`resolve_day`) ; un départ en retard ou une livraison réessayée vise toujours la bonne journée, et le même handler accepte `{"date": …}` pour un rejeu.
@@ -674,23 +757,27 @@ resolve_day({}, datetime(2026, 10, 27, 5, tzinfo=U))
 - Réponse : le 25 : l'`input` est un texte constant, rejoué tel quel chaque matin ; la date doit être calculée à l'exécution.
 
 ## 23. rate() : un intervalle, pas une heure
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-rate-intervalle
+- Sous-thème : scheduler
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Voir aussi : sqs-eventbridge-at-une-fois
 - Source : data-platform · S1-08
-- Définition : `rate(valeur unité)` (`minutes`, `hours`, `days`) répète la cible à intervalle fixe, à partir de `start_date`, ou tout de suite sans `start_date`.
-- Contexte : Un `rate` ne vise aucune heure de l'horloge : `rate(1 days)` part 24 h après la dernière invocation, même un jour de 23 ou 25 h au changement d'heure (doc). Créée à 14:37, la planification part donc vers 14:37, pas à 06:00. Pour une heure fixe, `cron` avec fuseau.
+- Définition : `rate(valeur unité)` (`minute(s)`, `hour(s)`, `day(s)`) répète la cible à intervalle fixe, à partir de `start_date`, ou tout de suite sans `start_date`.
+- Contexte : Un `rate` ne vise aucune heure de l'horloge : `rate(1 day)` part 24 h après la dernière invocation, même un jour de 23 ou 25 h au changement d'heure (doc). Créée à 14:37, la planification part donc vers 14:37, pas à 06:00. Pour une heure fixe, `cron` avec fuseau.
 - Usage : ✅ tâche périodique sans heure imposée (toutes les 15 min, toutes les 2 h) · ❌ « chaque jour à 6 h » : `cron(0 6 * * ? *)` + `schedule_expression_timezone`.
 
 ```bash
 # Exemple 1 : rate ou cron
 # rate(15 minutes) → toutes les 15 min
-# rate(1 days)     → toutes les 24 h,
+# rate(1 day)      → toutes les 24 h,
 #   depuis la création ou start_date
 # cron(0 6 * * ? *) + Europe/Paris
 #   → 06:00 Paris, été comme hiver
 ```
 
-- Quiz : `rate(1 days)` sans `start_date`, appliquée à 14:37 : quand part la première invocation ?
+- Quiz : `rate(1 day)` sans `start_date`, appliquée à 14:37 : quand part la première invocation ?
 - [ ] Le lendemain à 00:00 UTC
 - [ ] Le lendemain à 14:37
 - [x] Tout de suite
@@ -698,8 +785,11 @@ resolve_day({}, datetime(2026, 10, 27, 5, tzinfo=U))
 - Réponse : tout de suite : sans `start_date`, une planification `rate` commence à invoquer dès sa création et son activation (doc Scheduler).
 
 ## 24. at() : une seule fois, puis à supprimer
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-at-une-fois
+- Sous-thème : scheduler
+- Type : piège
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-08
 - Définition : `at(aaaa-mm-jjThh:mm:ss)` invoque la cible une seule fois, dans le fuseau donné ; `action_after_completion = "DELETE"` supprime la planification ensuite.
 - Contexte : Une planification `at()` terminée reste en place et compte dans le quota du compte (doc) : sans suppression, des milliers de tâches ponctuelles finissent par bloquer les créations. `start_date` et `end_date` sont ignorés. Usage typique : un rejeu ou une relance programmés, créés par du code plutôt que par Terraform.
@@ -725,8 +815,12 @@ resource "aws_scheduler_schedule" "r" {
 - Réponse : elle existe encore : la doc précise qu'une planification ponctuelle terminée compte toujours dans le quota ; `DELETE` ou une suppression explicite.
 
 ## 25. SQS : visibility timeout
+- Id : sqs-eventbridge-visibility-timeout
 - Sous-thème : sqs
+- Type : concept
 - Niveau : 3
+- Profils : data, expert
+- Voir aussi : lambda-timeout-15-minutes, sqs-eventbridge-dlq-max-receive
 - Définition : Le visibility timeout cache un message lu aux autres consommateurs ; s'il n'est pas supprimé à temps, il redevient visible et sera relu.
 - Contexte : SQS ne sait pas qu'un consommateur travaille : il attend la suppression. Si le traitement dure plus que le visibility timeout, un second consommateur reçoit le même message, d'où des doublons. Avec Lambda, AWS conseille 6 fois le timeout de la fonction, pour laisser la place aux retries du poller sur throttling. La valeur va de 0 s à 12 h.
 - Usage : ✅ visibility timeout ≥ 6 × timeout Lambda, traitement idempotent quand même · ❌ visibility par défaut (30 s) devant une Lambda de plusieurs minutes.
@@ -761,8 +855,13 @@ relu  # → True : traité deux fois
 - Réponse : il échoue avec `InvalidParameterValueException` : le visibility timeout de la file doit être au moins égal au timeout de la fonction.
 
 ## 26. SQS : échec partiel d'un lot
+- Id : sqs-eventbridge-echec-partiel-lot
 - Sous-thème : sqs
+- Type : recette
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : sqs-eventbridge-mapping-lot-fenetre
+- Voir aussi : dynamodb-streams-item-empoisonne
 - Définition : Avec `ReportBatchItemFailures`, le handler renvoie les `messageId` en échec ; seuls ceux-là reviennent dans la file, les autres sont supprimés.
 - Contexte : Par défaut, un lot SQS réussit ou échoue en entier : une exception remet tous les messages dans la file, y compris ceux déjà traités, qui le seront deux fois. La réponse partielle évite ce rejeu. Une exception levée reste un échec du lot entier ; une liste vide signifie « tout a réussi ».
 - Usage : ✅ `batch_size` > 1 avec traitement message par message · ❌ `batch_size = 1` : rien à gagner ; réponse partielle sans le réglage sur le mapping.
@@ -803,8 +902,12 @@ resource "aws_lambda_event_source_mapping" "m" {
 - Réponse : supprimé comme réussi : sans ce réglage, la valeur renvoyée est ignorée ; une invocation sans exception vaut succès de tout le lot.
 
 ## 27. input_transformer : remodeler l'événement
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-input-transformer
+- Sous-thème : cibles
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : sqs-eventbridge-event-target
 - Définition : `input_transformer` extrait des champs de l'événement (`input_paths`) et les place dans un gabarit (`input_template`) : la cible reçoit ce JSON au lieu de l'événement.
 - Contexte : Jusqu'à 100 variables, en JSONPath simple (`$.detail.siren`). Une chaîne reçoit ses guillemets automatiquement, un objet ou un tableau s'insère tel quel ; `<aws.events.event.json>` insère l'événement entier. Utile quand la cible attend un format fixe (Step Functions, API tierce, `sourceVersion` de CodeBuild) : pas de Lambda de traduction.
 - Usage : ✅ adapter l'événement au contrat de la cible · ❌ condition ou calcul : une Lambda ou EventBridge Pipes.
@@ -832,8 +935,12 @@ input_transformer {
 - Réponse : elle disparaît : un chemin absent ne crée pas de variable et rien n'est validé (doc AWS) ; vérifier le JSON produit avant de s'y fier.
 
 ## 28. archive et replay : rejouer des événements
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-archive-replay
+- Sous-thème : événements
+- Type : concept
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : sqs-eventbridge-bus-personnalise
 - Définition : Une archive garde les événements d'un bus (tous ou filtrés) N jours ; un replay les renvoie sur ce bus pour une plage de dates.
 - Contexte : Après un bug d'un consommateur, on corrige puis on rejoue la journée d'événements, vers toutes les règles ou certaines seulement. Les événements rejoués portent un champ `replay-name`, ce qui permet de les exclure d'une règle (alertes déjà envoyées). Le replay n'est ni instantané ni ordonné : les consommateurs doivent être idempotents. L'archive se paie au Go.
 - Usage : ✅ rejouer les `AnnoncePubliee` d'une journée vers une règle corrigée · ❌ archive comme source de vérité : la zone raw du lake reste la référence.
@@ -865,8 +972,12 @@ aws events start-replay \
 - Réponse : sans limite : `0` signifie une rétention indéfinie (doc AWS) ; fixer une durée pour borner le coût de stockage.
 
 ## 29. motifs : anything-but, numeric, exists
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-operateurs-motif
+- Sous-thème : règles
+- Type : concept
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : sqs-eventbridge-event-pattern
 - Définition : Les opérateurs de motif filtrent au-delà de l'égalité : `anything-but` (tout sauf), `numeric` (comparaisons), `exists` (présence d'un champ), `prefix`.
 - Contexte : Mesuré avec `aws events test-event-pattern` : `"capital": "150000"` (chaîne) ne matche pas `numeric`, seul un nombre JSON passe ; `exists: true` accepte un champ à `null`. Le matching est sensible à la casse : `"tc paris"` ne matche pas `"TC Paris"` (`equals-ignore-case` existe). Si l'événement contient un tableau, il matche dès qu'un élément matche.
 - Usage : ✅ tester chaque motif avec `test-event-pattern` avant de déployer · ❌ filtrer dans le code de la Lambda : invocations payées pour rien.
@@ -896,8 +1007,12 @@ procol, 150000, sans siren → false
 - Réponse : non (mesuré) : comme toute condition sur une valeur, `anything-but` ne matche qu'un champ présent.
 
 ## 30. heure d'été : l'heure sautée n'est pas rattrapée
-- Sous-thème : eventbridge
+- Id : sqs-eventbridge-heure-ete-sautee
+- Sous-thème : scheduler
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : sqs-eventbridge-fuseau-horaire
 - Source : data-platform · S1-08
 - Définition : Une planification calée dans l'heure qui n'existe pas au printemps est sautée ce jour-là ; dans l'heure doublée à l'automne, elle ne part qu'une fois.
 - Contexte : À Paris, la nuit du passage à l'heure d'été, 02:00 devient 03:00 : `cron(30 2 * * ? *)` ne part pas ce jour-là, puis reprend le lendemain (doc). À l'automne, 02:00-02:59 existe deux fois : une seule invocation. D'où la règle : jamais d'ingestion quotidienne entre 02:00 et 03:00 heure locale. 06:00 est hors de danger.

@@ -2,20 +2,26 @@
 title: "Cartes · Logging Python"
 type: cartes
 langage: Python
+chapitre: Qualité et outillage
 cours: Logging
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · Logging Python
 Python · Logging : loggers, niveaux, handlers, messages, lambda (format spec v3 de revision-pwa).
 
-## 1. logging : le niveau par défaut
+## 1. logging : WARNING par défaut
+- Id : logging-warning-par-defaut
 - Sous-thème : niveaux
+- Type : piège
 - Niveau : 1
-- Définition : `logging.getLogger(nom)` donne un logger nommé par module ; son niveau filtre les messages avant les handlers (≈ `console.*` filtrable).
-- Contexte : Les loggers forment un arbre : `bodacc.client` hérite de `bodacc`, qui hérite du root. Un logger sans niveau prend celui de son parent. Dans une Lambda, tout ce qui sort sur stdout ou stderr part dans CloudWatch Logs. Passer les valeurs en arguments (`log.info("dt=%s", jour)`) plutôt qu'en f-string : le formatage n'a lieu que si le message est émis.
-- Usage : ✅ un logger par module (`getLogger(__name__)`), niveaux `info` / `warning` / `error` · ❌ `print` dans une Lambda : pas de niveau, pas de filtrage.
+- Profils : débutant, ops
+- Prérequis : logging-niveaux-entiers
+- Voir aussi : logging-basicconfig-une-fois
+- Définition : Un logger sans niveau hérite de celui du root, `WARNING` par défaut : `info` et `debug` sont filtrés sans réglage (≈ `console.*` filtrable).
+- Contexte : Piège en venant de `console.log` : `log.info(…)` n'écrit rien dans un script non configuré. Les loggers forment un arbre (`bodacc.client` → `bodacc` → root) ; un logger sans niveau prend celui du premier parent réglé. `log.setLevel(logging.INFO)` ou `basicConfig(level=…)` abaisse le seuil. Dans une Lambda, tout ce qui sort sur stdout ou stderr part dans CloudWatch Logs.
+- Usage : ✅ régler le niveau au démarrage (`setLevel`, variable `LOG_LEVEL`) · ❌ `print` dans une Lambda : pas de niveau, pas de filtrage.
 
 ```python
 # Exemple 1 : niveau INFO explicite
@@ -31,8 +37,26 @@ buf.getvalue()
 # → "début dt=2026-10-23\n"
 ```
 
+- Quiz : Dans l'exemple 1, sans `log.setLevel(logging.INFO)`, que vaut `buf.getvalue()` ?
+- [x] `""`
+- [ ] `"début dt=2026-10-23\n"`
+- [ ] `"INFO:ingest8:début dt=2026-10-23\n"`
+- Réponse : `""` : le logger hérite du niveau du root, `WARNING` par défaut ; `info` est filtré.
+
+## 2. messages : des arguments, pas une f-string
+- Id : logging-arguments-pas-fstring
+- Sous-thème : messages
+- Type : recette
+- Niveau : 1
+- Profils : débutant, ops, data
+- Voir aussi : logging-erreur-format-silencieuse
+- Source : data-platform · S1-07
+- Définition : `log.info("lu %d annonces", n)` passe les valeurs en arguments : le message n'est formaté que s'il est émis, par le handler.
+- Contexte : logging utilise le style `%` (pas `{}`). Une f-string est formatée avant l'appel, même si le niveau filtre la ligne, et chaque ligne devient un texte différent : les outils qui regroupent les messages par modèle ne s'y retrouvent plus. Le record garde le modèle (`msg`) et les valeurs (`args`). Ruff signale la f-string (`G004`).
+- Usage : ✅ `%s`, `%d` dans le message, valeurs en arguments · ❌ f-string ou `.format` dans un appel de log ; calcul coûteux en argument : `isEnabledFor`.
+
 ```python
-# Exemple 2 : arguments formatés à l'émission
+# Exemple 1 : formaté à l'émission
 import io, logging
 
 buf = io.StringIO()
@@ -44,15 +68,33 @@ log.info("lu %d annonces", 1423)
 buf.getvalue()  # → "lu 1423 annonces\n"
 ```
 
-- Quiz : Dans l'exemple 1, sans `log.setLevel(logging.INFO)`, que vaut `buf.getvalue()` ?
-- [x] `""`
-- [ ] `"début dt=2026-10-23\n"`
-- [ ] `"INFO:ingest8:début dt=2026-10-23\n"`
-- Réponse : `""` : le logger hérite du niveau du root, `WARNING` par défaut ; `info` est filtré.
+```python
+# Exemple 2 : le modèle reste dans le record
+import logging
+recs = []
+h = logging.Handler()
+h.emit = recs.append  # garde les records
+log = logging.getLogger("ingest8c")
+log.addHandler(h)
+log.propagate = False
+log.warning("lu %d annonces", 1423)
+recs[0].msg           # → 'lu %d annonces'
+recs[0].getMessage()  # → 'lu 1423 annonces'
+```
 
-## 2. getLogger(__name__) : un logger par module
+- Quiz : `log.warning("taux 100%")`, sans argument : qu'est-ce qui est écrit ?
+- [x] `taux 100%`
+- [ ] Ligne perdue, `--- Logging error ---`
+- [ ] `TypeError` dans l'appelant
+- [ ] `taux 100`
+- Réponse : `taux 100%` (mesuré) : sans arguments, logging n'applique pas `%` au message ; avec des arguments, il faudrait écrire `%%`.
+
+## 3. getLogger(__name__) : un logger par module
+- Id : logging-getlogger-name
 - Sous-thème : loggers
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-07
 - Définition : `logging.getLogger(__name__)` renvoie le logger nommé d'après le module (`ingest_bodacc.handler`) ; le même nom rend toujours le même objet.
 - Contexte : Le registre des loggers est global au processus : deux `getLogger("ingest_bodacc.handler")` donnent le même objet, configuré une fois, sans le passer en paramètre. `__name__` suit l'arborescence des paquets : le logger se range sous `ingest_bodacc` dans la hiérarchie, et son nom apparaît dans chaque ligne (`%(name)s`).
@@ -82,9 +124,12 @@ h.parent is p  # → True
 - [ ] `"root"`
 - Réponse : `"__main__"` : un fichier lancé comme script s'appelle `__main__`, pas du nom de son fichier ; importé, il redevient `handler`.
 
-## 3. niveaux : des entiers comparés
+## 4. niveaux : des entiers comparés
+- Id : logging-niveaux-entiers
 - Sous-thème : niveaux
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-07
 - Définition : Les niveaux sont des entiers (`DEBUG` 10, `INFO` 20, `WARNING` 30, `ERROR` 40, `CRITICAL` 50) ; un message passe s'il atteint le seuil.
 - Contexte : `setLevel` accepte l'entier ou le nom en majuscules (`"INFO"`), pratique pour une variable `LOG_LEVEL`. Un logger sans niveau vaut `NOTSET` (0) et prend celui du premier parent qui en a un : `getEffectiveLevel()` donne le seuil réel. `isEnabledFor(niveau)` dit si un message de ce niveau passerait.
@@ -117,9 +162,13 @@ e.getEffectiveLevel()  # → 40
 - [ ] `TypeError` : un entier est attendu
 - Réponse : `ValueError` (mesuré) : seuls les noms en majuscules sont reconnus ; avec une variable d'environnement, `.upper()` avant `setLevel`.
 
-## 4. basicConfig : configurer le root une fois
+## 5. basicConfig : configurer le root une fois
+- Id : logging-basicconfig-une-fois
 - Sous-thème : handlers
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : logging-warning-par-defaut
 - Source : data-platform · S1-07
 - Définition : `logging.basicConfig(level=…, format=…)` pose un handler stderr sur le logger racine, seulement s'il n'en a encore aucun.
 - Contexte : Pensé pour un script : un appel au démarrage suffit. Un second appel ne fait rien si le root a déjà un handler, sans erreur ni avertissement ; `force=True` retire les handlers existants et reconfigure. Une bibliothèque ne l'appelle jamais : c'est l'application qui configure. Piège : `logging.info(…)` appelé avant fait lui-même un `basicConfig()` implicite.
@@ -148,9 +197,12 @@ root.setLevel(sauve[1])
 - [ ] `0` : `NOTSET`
 - Réponse : `30` (mesuré) : `logging.info` a déjà fait un `basicConfig()` sans niveau, qui a posé un handler ; le second appel, avec `DEBUG`, est ignoré.
 
-## 5. Formatter : choisir les champs de la ligne
+## 6. Formatter : choisir les champs de la ligne
+- Id : logging-formatter-champs
 - Sous-thème : handlers
+- Type : recette
 - Niveau : 1
+- Profils : ops
 - Source : data-platform · S1-07
 - Définition : `logging.Formatter("%(levelname)s %(name)s %(message)s")`, posé sur un handler, choisit les champs du record écrits sur chaque ligne.
 - Contexte : Un `StreamHandler` sans formatter n'écrit que le message. Champs utiles : `asctime`, `levelname`, `name`, `funcName`, `lineno`, `message` (le texte formaté avec ses arguments). `basicConfig` utilise `logging.BASIC_FORMAT`. Un champ absent du record (`%(siren)s` sans `extra`) ne lève pas dans l'appelant : la ligne est perdue et une trace part sur stderr.
@@ -185,9 +237,13 @@ logging.BASIC_FORMAT
 - [ ] Rien : `KeyError` levé dans l'appelant
 - Réponse : `""` (mesuré) : le formatage échoue dans le handler (Formatting field not found in record: 'siren'), qui l'attrape et écrit `--- Logging error ---` sur stderr.
 
-## 6. messages : une erreur de format ne lève pas
+## 7. messages : une erreur de format ne lève pas
+- Id : logging-erreur-format-silencieuse
 - Sous-thème : messages
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : logging-arguments-pas-fstring
 - Source : data-platform · S1-07
 - Définition : Un message aux arguments faux (`log.warning("%d", "deux")`) ne lève rien : `logging` écrit `--- Logging error ---` sur stderr et perd la ligne.
 - Contexte : Le formatage `msg % args` a lieu dans le handler, au moment d'écrire ; son erreur est attrapée par `Handler.handleError`, qui imprime la trace sur stderr puis continue. Le code appelant ne voit rien et les tests passent. Ruff repère le nombre d'arguments faux (`PLE1205`, `PLE1206`) ; une f-string dans le message plus des arguments est l'erreur classique.
@@ -212,9 +268,14 @@ buf.getvalue()  # → ""  (ligne perdue)
 - [x] Ligne perdue, `--- Logging error ---` sur stderr
 - Réponse : ligne perdue (mesuré) : le message n'a plus de `%s`, `msg % args` lève « not all arguments converted », attrapé par le handler.
 
-## 7. logger.exception : le message et la trace
+## 8. logger.exception : le message et la trace
+- Id : logging-exception-trace
 - Sous-thème : messages
+- Type : recette
 - Niveau : 2
+- Profils : ops, data
+- Prérequis : exceptions-try-except-type
+- Voir aussi : exceptions-raise-seul-relancer
 - Source : data-platform · S1-07
 - Définition : `logger.exception("échec %s", jour)` dans un `except` journalise au niveau `ERROR`, avec la trace complète de l'exception en cours.
 - Contexte : Équivaut à `logger.error(…, exc_info=True)`. La trace fait partie du même événement de log (une seule entrée dans CloudWatch). Il ne relance pas : `raise` derrière si l'appelant (Lambda, Step Functions) doit voir l'échec. Hors d'un `except`, aucune exception n'est en cours : la trace écrite vaut `NoneType: None`.
@@ -260,9 +321,13 @@ recs[0].exc_info[0].__name__  # → "KeyError"
 - [ ] Le message seul, sans trace
 - Réponse : le message suivi de `NoneType: None` (mesuré) : `exc_info=True` lit `sys.exc_info()`, vide hors d'un `except`, et le formatter écrit cette « trace » vide.
 
-## 8. propagate : le message remonte aux parents
+## 9. propagate : le message remonte aux parents
+- Id : logging-propagate-doublons
 - Sous-thème : handlers
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : logging-getlogger-name
 - Source : data-platform · S1-07
 - Définition : Après ses propres handlers, un logger passe le message aux handlers de ses parents jusqu'au root, sauf `propagate = False`.
 - Contexte : Le seuil n'est vérifié qu'une fois, sur le logger d'origine : le niveau d'un logger parent ne filtre pas un message propagé, seul celui de ses handlers le fait. D'où les lignes en double : un handler sur `ingest_bodacc` et un sur le root (celui du runtime Lambda) écrivent chacun la ligne. Règle : des handlers sur le root seulement ; les modules font `getLogger` et `setLevel`.
@@ -302,9 +367,13 @@ buf.getvalue()  # → "fin\n"
 - [ ] `"fin\nfin\n"`
 - Réponse : `"fin\n"` : `e` écrit avec son propre handler, puis ne transmet plus à `p` ; une seule ligne.
 
-## 9. lastResort : sans handler, seulement WARNING
+## 10. lastResort : sans handler, seulement WARNING
+- Id : logging-lastresort
 - Sous-thème : handlers
+- Type : piège
 - Niveau : 2
+- Profils : ops, expert
+- Prérequis : logging-warning-par-defaut
 - Source : data-platform · S1-07
 - Définition : Si aucun handler n'existe sur la chaîne d'un logger, `logging.lastResort` écrit sur stderr, mais seulement à partir de `WARNING`.
 - Contexte : C'est pourquoi un `logger.warning` s'affiche dans un script sans configuration, alors qu'un `logger.info` disparaît même après `logger.setLevel(INFO)` : il passe le seuil du logger, mais le handler de dernier recours a son propre seuil, `WARNING`, et n'écrit que le texte, sans format. Il faut un vrai handler : `basicConfig`, ou celui que pose le runtime Lambda.
@@ -329,9 +398,13 @@ err.getvalue()  # → "lent\n"
 - [x] `""`
 - Réponse : `""` (mesuré) : un `NullHandler` compte comme un handler, donc `lastResort` n'est plus utilisé ; c'est le réglage conseillé aux bibliothèques.
 
-## 10. Lambda : le root est déjà configuré
+## 11. Lambda : le root est déjà configuré
+- Id : logging-lambda-root-configure
 - Sous-thème : lambda
+- Type : piège
 - Niveau : 2
+- Profils : ops, data
+- Prérequis : logging-basicconfig-une-fois
 - Source : data-platform · S1-07
 - Définition : Le runtime Python de Lambda pose un handler sur le logger racine, réglé sur `WARNING` : `basicConfig` n'a plus d'effet et `logger.info` reste filtré.
 - Contexte : Comportement du runtime (doc AWS, simulé ici). Comme le root a déjà un handler, `logging.basicConfig(level=INFO)` est ignoré sans bruit. Ce qui marche : `logger.setLevel(logging.INFO)` sur le logger du module (le message propage jusqu'au handler du root, dont le niveau ne filtre pas), ou `application_log_level` dans `logging_config` avec le format `JSON`, qui règle le root côté Lambda.
@@ -363,9 +436,13 @@ root.setLevel(sauve[1])
 - [ ] `ValueError` : le root est géré par Lambda
 - Réponse : les `info` de httpx aussi (mesuré : `HTTP Request: GET … "HTTP/1.1 200 OK"`) : les loggers sans niveau héritent du root ; régler son propre logger limite le bruit.
 
-## 11. handler : son propre seuil
+## 12. handler : son propre seuil
+- Id : logging-seuil-handler
 - Sous-thème : handlers
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : logging-niveaux-entiers
 - Source : data-platform · S1-07
 - Définition : Un handler a aussi un niveau (`h.setLevel(logging.ERROR)`) : un message doit passer le seuil du logger, puis celui de chaque handler.
 - Contexte : Permet d'envoyer tout vers un flux, mais seulement les erreurs vers une alerte. Les deux filtres s'enchaînent : un logger en `DEBUG` avec un handler en `ERROR` n'écrit que les erreurs dans ce handler. Contrairement au niveau d'un logger parent, le niveau d'un handler filtre aussi les messages propagés depuis les enfants.
@@ -394,9 +471,13 @@ alertes.getvalue()  # → "coupé\n"
 - [ ] `"lu 2\ncoupé\n"`
 - Réponse : `""` : le seuil du logger passe en premier ; `ERROR` (40) est sous `CRITICAL` (50), le message n'atteint aucun handler.
 
-## 12. isEnabledFor : ne pas calculer pour rien
+## 13. isEnabledFor : ne pas calculer pour rien
+- Id : logging-isenabledfor
 - Sous-thème : messages
+- Type : recette
 - Niveau : 2
+- Profils : data, expert
+- Prérequis : logging-arguments-pas-fstring
 - Source : data-platform · S1-07
 - Définition : Les arguments d'un appel de log sont évalués avant l'appel, même filtré : `log.debug("%s", cher())` exécute `cher()` ; `isEnabledFor` évite ce coût.
 - Contexte : Le `%s` retarde le formatage, pas l'évaluation des expressions passées : Python évalue tous les arguments avant d'appeler la fonction, comme JS. Un calcul coûteux (`json.dumps` d'une journée) ou destructeur (`sum(1 for _ in flux)` consomme un générateur) se garde derrière `if log.isEnabledFor(logging.DEBUG):`.
@@ -436,9 +517,14 @@ len(appels)  # → 0
 - [ ] La dernière annonce seule
 - Réponse : `[]` (mesuré) : `sum(…)` s'exécute avant `debug`, filtré ou non, et épuise le générateur.
 
-## 13. Filter : ajouter un champ à chaque ligne
+## 14. Filter : ajouter un champ à chaque ligne
+- Id : logging-filter-request-id
 - Sous-thème : handlers
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : logging-formatter-champs
+- Voir aussi : logging-loggeradapter, AWS/lambda-aws-request-id
 - Source : data-platform · S1-07
 - Définition : Un `logging.Filter` posé sur un handler voit chaque record : il peut y ajouter un champ (`request_id`) et renvoie vrai pour le laisser passer.
 - Contexte : Injecte l'identifiant de l'invocation Lambda dans toutes les lignes sans le passer à chaque appel : le handler le range (variable, `contextvars.ContextVar`), le filtre l'ajoute au record, le format l'écrit (`%(request_id)s`). Un filtre posé sur un logger ne voit pas les messages propagés depuis ses enfants ; sur le handler, si. Une valeur fausse renvoyée (`None`, `False`) supprime la ligne.
@@ -470,9 +556,13 @@ buf.getvalue()  # → "req-123 fin\n"
 - [ ] `TypeError` à l'appel de `warning`
 - Réponse : `""` (mesuré) : la fonction renvoie `None`, valeur fausse, que `logging` lit comme « rejeter le record ».
 
-## 14. dictConfig : il désactive les loggers existants
+## 15. dictConfig : il désactive les loggers existants
+- Id : logging-dictconfig-desactive
 - Sous-thème : handlers
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : logging-getlogger-name
 - Source : data-platform · S1-07
 - Définition : `logging.config.dictConfig(cfg)` désactive par défaut les loggers déjà créés qu'il ne nomme pas : `disable_existing_loggers` vaut `True`.
 - Contexte : Un module importé avant la configuration (son `getLogger(__name__)` tourne à l'import) se tait ensuite, sans erreur : `logger.disabled` passe à `True`. Piège classique quand la config est chargée dans `main()`, après les imports. `"disable_existing_loggers": False` dans le dict l'évite ; les enfants d'un logger nommé dans `loggers` sont gardés, mais remis à `NOTSET` sans handler.
@@ -495,9 +585,14 @@ log.disabled  # → False
 - [ ] Oui, sauf s'il a déjà un handler
 - Réponse : non (mesuré) : un descendant d'un logger configuré reste actif, mais son niveau repasse à `NOTSET` et ses handlers sont retirés.
 
-## 15. LoggerAdapter : un contexte fixe
+## 16. LoggerAdapter : un contexte fixe
+- Id : logging-loggeradapter
 - Sous-thème : loggers
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : logging-getlogger-name
+- Voir aussi : logging-filter-request-id
 - Source : data-platform · S1-07
 - Définition : `logging.LoggerAdapter(logger, {"request_id": …})` enveloppe un logger et ajoute ces champs à chaque record qu'il émet.
 - Contexte : Alternative au `Filter` quand le contexte est connu à un endroit précis (début d'invocation) : on crée l'adapter dans le handler et on le passe aux fonctions. Les champs arrivent comme avec `extra`, le format les lit. Jusqu'à Python 3.12, le dict de l'adapter remplace l'`extra` passé à l'appel ; 3.13 ajoute `merge_extra=True` pour fusionner.

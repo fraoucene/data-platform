@@ -2,17 +2,22 @@
 title: "Cartes · Variables Terraform"
 type: cartes
 langage: Terraform
+chapitre: Configurer
 cours: Variables
 created: 2026-10-24
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · Variables Terraform
-Terraform · Variables : conditions, déclaration, options, types, validation (format spec v3 de revision-pwa).
+Terraform · Variables : conditions, déclaration, types, validation (format spec v4 de revision-pwa).
 
 ## 1. variable : déclarer et valider
+- Id : variables-declarer-valider
 - Sous-thème : déclaration
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : variables-validation-condition, langage-hcl-locals-nommer-calcul
 - Définition : `variable` déclare une entrée du module, typée, avec défaut et règle `validation` vérifiée avant le plan (≈ paramètre typé + garde).
 - Contexte : On la lit avec `var.nom`. Sans `default`, elle est obligatoire : `plan` la demande au clavier, ou échoue avec `-input=false` (`No value for required variable`). La valeur vient de `-var`, d'un `.tfvars` (`envs/dev/dev.tfvars`) ou de `TF_VAR_nom`. `validation` rejette une valeur hors règle avec un message clair, avant tout appel AWS.
 - Usage : ✅ ce qui change d'un env à l'autre (`environment`, région, rétention) · ❌ valeur calculée dans le module : `locals` ; secret en clair dans un `.tfvars` commité.
@@ -47,8 +52,13 @@ terraform plan -var environment=qa
 - Réponse : `Error: Invalid value for variable` : `contains` compare les chaînes exactement, `"Prod"` n'est pas dans la liste.
 
 ## 2. bool : conversion depuis la CLI
+- Id : variables-bool-conversion
 - Sous-thème : types
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : variables-declarer-valider
+- Voir aussi : langage-hcl-conversion-types
 - Définition : `type = bool` impose un booléen ; la chaîne reçue par `-var` ou un `.tfvars` est convertie si Terraform sait la lire.
 - Contexte : En ligne de commande, tout arrive sous forme de chaîne : Terraform la convertit vers le type déclaré, ou refuse avec `a bool is required`. Seules quelques écritures passent, en minuscules : `TRUE` est refusé avec le conseil d'écrire `true`. Sans `type`, la variable garde la chaîne `"true"`, et un test `var.actif == true` devient faux.
 - Usage : ✅ interrupteur d'option (activer les logs, le versioning) · ❌ plus de deux états (`off`, `lecture`, `complet`) : une `string` validée.
@@ -81,8 +91,13 @@ resource "aws_s3_bucket" "logs" {
 - Réponse : `true` : `"1"` et `"0"` font partie des chaînes que Terraform convertit en booléen.
 
 ## 3. number : le SIREN qui perd son zéro
+- Id : variables-number-zero-tete
 - Sous-thème : types
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops, data
+- Prérequis : variables-declarer-valider
+- Voir aussi : langage-hcl-conversion-types
 - Définition : `type = number` convertit la valeur reçue en nombre, sans garder sa forme d'origine (zéros de tête, format d'écriture).
 - Contexte : Un `number` Terraform est une valeur, pas un texte : `012345678` devient `12345678`, sans erreur ni avertissement. Un identifiant qui ressemble à un nombre (SIREN, code postal, ID de compte AWS à 12 chiffres qui peut commencer par 0) se type donc `string`, validé par un `regex`. `number` est réservé aux quantités : rétention en jours, taille, nombre de réplicas.
 - Usage : ✅ quantité qu'on compare ou calcule (`expiration_days`) · ❌ identifiant (SIREN, compte AWS, code postal) : `string` + `validation`.
@@ -116,8 +131,12 @@ output "siren" {
 - Réponse : `1000` : la notation scientifique est lue comme un nombre ; seule la valeur compte, pas l'écriture.
 
 ## 4. set : ni ordre ni doublon
+- Id : variables-set-sans-ordre
 - Sous-thème : types
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : langage-hcl-toset-dedoublonner
 - Définition : `set(string)` est une collection sans doublon ni ordre (≈ `Set<string>` en TS), affichée triée.
 - Contexte : Les doublons d'une valeur reçue disparaissent à la conversion, sans erreur. L'affichage trié ne garantit rien au code. Un set se parcourt avec `for`, se teste avec `contains`, se convertit avec `tolist`. C'est le type naturel d'une entrée destinée à `for_each`, qui refuse les listes.
 - Usage : ✅ liste de noms uniques à passer à `for_each` (buckets, tribunaux) · ❌ ordre ou position significatifs : `list`.
@@ -150,8 +169,13 @@ locals {
 - Réponse : `Error: Invalid index` : un set n'a pas d'index ; passer par `tolist()` ou une boucle `for`.
 
 ## 5. object : un schéma d'attributs
+- Id : variables-object-schema
 - Sous-thème : types
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : variables-declarer-valider
+- Voir aussi : variables-optional-defaut
 - Définition : `object({...})` fixe les attributs attendus et leur type (≈ une `interface` TS) ; la valeur reçue est convertie vers ce schéma.
 - Contexte : Contrairement à TS, un attribut en trop ne lève pas d'erreur : il est retiré en silence à la conversion, et une faute de frappe (`nmo` pour `nom`) passe inaperçue. Chaque attribut est lu par `var.x.attr`. Un objet regroupe des réglages liés d'un bucket ou d'un env en une seule entrée.
 - Usage : ✅ réglages structurés (`{ nom, jours, versioning }`) passés à un module · ❌ nombre de clés variable : `map(object(…))`.
@@ -187,8 +211,13 @@ variable "bucket" {
 - Réponse : `Error: attribute "nom" is required` : l'excédent est jeté en silence, mais un attribut manquant bloque, sauf s'il est `optional`.
 
 ## 6. optional : défaut d'attribut
+- Id : variables-optional-defaut
 - Sous-thème : types
+- Type : recette
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : variables-object-schema
+- Voir aussi : variables-optional-null
 - Définition : `optional(type, défaut)` rend un attribut d'objet facultatif et lui donne une valeur quand il manque (≈ `actif?: boolean = true`).
 - Contexte : Sans `optional`, l'appelant doit fournir tous les attributs de l'objet. Le défaut s'écrit dans le type, attribut par attribut, et pas dans le `default` de la variable, qui ne sert que si la variable entière manque. Pratique pour un module qui reçoit une liste d'objets où seuls quelques champs changent.
 - Usage : ✅ objets de configuration aux réglages facultatifs (`versioning`, `jours`) · ❌ attribut toujours requis : le laisser obligatoire.
@@ -213,8 +242,13 @@ variable "entreprise" {
 - Réponse : `true` : pour un attribut `optional`, `null` est remplacé par le défaut, comme une absence.
 
 ## 7. validation : condition booléenne
+- Id : variables-validation-condition
 - Sous-thème : validation
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : variables-declarer-valider
+- Voir aussi : variables-plusieurs-validations, variables-regex-ancree
 - Définition : Un bloc `validation` vérifie la valeur d'une variable avant le plan ; si `condition` est faux, `error_message` s'affiche.
 - Contexte : La règle est évaluée dès que la valeur est connue, avant tout appel AWS : une faute de saisie échoue en une seconde. `error_message` accepte l'interpolation, utile pour rappeler la valeur reçue. Le message s'affiche sous `Error: Invalid value for variable`, avec la valeur fautive. La condition doit renvoyer un vrai booléen.
 - Usage : ✅ liste fermée (`dev`, `prod`), format (SIREN, compte AWS), bornes (rétention) · ❌ règle qui dépend d'une ressource créée à l'apply : `precondition` ou `postcondition`.
@@ -242,8 +276,12 @@ variable "env" {
 - Réponse : `Error: Invalid variable validation result` : `regex` renvoie la chaîne trouvée, pas un booléen ; l'envelopper dans `can()`.
 
 ## 8. Ternaire : conversion silencieuse
+- Id : variables-ternaire-type-commun
 - Sous-thème : conditions
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : langage-hcl-condition-type-commun
 - Définition : `cond ? a : b` choisit une valeur selon une condition ; Terraform convertit `a` et `b` vers un type commun avant de choisir.
 - Contexte : Le type du résultat est fixé avant l'évaluation de la condition, à partir des deux branches. Si elles diffèrent, Terraform cherche une conversion qui les réunit ; la branche choisie arrive donc parfois dans un autre type que celui écrit. Le ternaire sert surtout à moduler une valeur par env ou à rendre une ressource facultative avec `count`.
 - Usage : ✅ valeur qui dépend de l'env (réplicas, rétention), `count = cond ? 1 : 0` · ❌ plus de deux cas : `map` indexée par env.
@@ -267,8 +305,13 @@ output "replicas" {
 - Réponse : `"3"` (chaîne) : le type commun de `number` et `string` est `string`, même la branche choisie est convertie.
 
 ## 9. sensitive : contagieux jusqu'aux outputs
-- Sous-thème : options
+- Id : variables-sensitive-contagieux
+- Sous-thème : déclaration
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : variables-declarer-valider
+- Voir aussi : langage-hcl-data-source-dans-etat
 - Définition : `sensitive = true` masque la valeur d'une variable dans le plan et marque comme sensible toute expression qui en dérive.
 - Contexte : Le marquage se propage : un local, un argument ou un output calculé à partir de la variable devient sensible à son tour. Un output racine qui contient une valeur sensible doit le confirmer avec `sensitive = true`, sinon le plan échoue. Le masque ne chiffre rien : la valeur reste en clair dans le state.
 - Usage : ✅ mot de passe, jeton d'API passés en variable · ❌ protéger vraiment un secret : Secrets Manager, lu à l'exécution par la Lambda.
@@ -294,8 +337,13 @@ output "pwd" {
 - Réponse : `Error: Output refers to sensitive values` : `length` d'une valeur sensible est sensible aussi, et un output racine doit le déclarer.
 
 ## 10. variable : qui gagne ?
+- Id : variables-priorite-sources
 - Sous-thème : déclaration
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : variables-declarer-valider
+- Voir aussi : variables-auto-tfvars
 - Définition : Une variable peut venir du défaut, de `TF_VAR_x`, de `terraform.tfvars`, de `*.auto.tfvars`, de `-var-file` ou de `-var` ; la plus prioritaire gagne.
 - Contexte : `terraform.tfvars` et `*.auto.tfvars` sont chargés sans rien demander ; `-var` et `-var-file` passent après eux, dans l'ordre de la ligne de commande : le dernier gagne. Le défaut ne sert qu'en l'absence de toute autre source. Dans data-platform, chaque env a son fichier (`envs/dev/dev.tfvars`) passé par le Makefile selon `ENV`, pour qu'aucun fichier racine ne s'applique à tous les envs.
 - Usage : ✅ un `.tfvars` par env passé explicitement, `-var` pour une surcharge ponctuelle · ❌ un `terraform.tfvars` racine partagé par tous les envs.
@@ -324,8 +372,12 @@ terraform plan \
 - Réponse : `"dev"` : `terraform.tfvars` passe avant les variables d'environnement `TF_VAR_*`, qui ne battent que le défaut.
 
 ## 11. optional sans défaut : null
+- Id : variables-optional-null
 - Sous-thème : types
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : variables-optional-defaut
 - Définition : `optional(type)` sans second argument laisse l'attribut à `null` quand il manque, pas à une valeur vide.
 - Contexte : Un attribut `optional(string)` absent vaut `null`, jamais `""` : contrairement à TS, il n'y a pas d'`undefined` distinct. `null` passé à un argument de ressource revient à ne pas l'écrire (le provider prend son défaut), mais beaucoup de fonctions le refusent. Tester `!= null` avant usage, ou donner un défaut dans `optional`.
 - Usage : ✅ attribut vraiment facultatif transmis tel quel à une ressource · ❌ attribut passé à une fonction (`upper`, `length`) : `optional(string, "")`.
@@ -359,8 +411,11 @@ locals {
 - Réponse : `Error: Invalid function argument` : `upper` refuse `null` (argument must not be null) ; défaut `optional(string, "")` ou test `!= null`.
 
 ## 12. list(any) : un seul type d'élément
+- Id : variables-list-any
 - Sous-thème : types
+- Type : piège
 - Niveau : 2
+- Profils : ops
 - Définition : `any` laisse Terraform déduire le type de la valeur reçue ; dans `list(any)`, il choisit un type commun unique pour tous les éléments.
 - Contexte : `any` n'est pas le `any` de TS : ce n'est pas « tout est permis », c'est « devine le type ». Seul, `type = any` garde la valeur telle quelle, même un mélange (un tuple). Dans un conteneur, `list(any)` impose un seul type d'élément : Terraform cherche une conversion commune, ou échoue si aucune n'existe.
 - Usage : ✅ module générique qui transmet une valeur sans la lire · ❌ entrée qu'on lit champ par champ : type explicite (`list(object(…))`).
@@ -385,8 +440,13 @@ output "x" {
 - Réponse : `["1", "a"]` : une liste a un seul type d'élément, `1` est converti en `string`, le type commun.
 
 ## 13. nullable = false : null interdit
-- Sous-thème : options
+- Id : variables-nullable-false
+- Sous-thème : déclaration
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : variables-declarer-valider
+- Voir aussi : modules-null-pas-absent
 - Définition : `nullable = false` empêche `null` d'arriver dans la variable : un `null` reçu est remplacé par le défaut.
 - Contexte : Par défaut, une variable accepte `null` comme valeur à part entière, même si elle a un `default` : passer `null` n'est pas « ne rien passer ». Avec `nullable = false`, le code du module n'a plus à tester `null`. Utile quand l'appelant transmet une valeur calculée, peut-être `null`, venue d'une autre variable.
 - Usage : ✅ variable de module avec défaut, que le code lit sans test `null` · ❌ variable où `null` veut dire « laisser le provider choisir » : garder `nullable = true`.
@@ -414,8 +474,12 @@ module "m" {
 - Réponse : `Error: Required variable not set` (`required variable may not be set to null`) : sans défaut, il n'y a rien pour remplacer `null`.
 
 ## 14. can(regex) : ancrer le motif
+- Id : variables-regex-ancree
 - Sous-thème : validation
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : variables-validation-condition, langage-hcl-can-erreur-booleen
 - Définition : `can(regex(motif, v))` vaut `true` si le motif trouve une correspondance, `false` sinon : la forme standard d'une validation de format.
 - Contexte : `regex` échoue quand rien ne correspond ; `can` transforme cet échec en `false`, ce que `condition` attend. Le motif suit la syntaxe RE2 (pas de lookahead). Les accolades d'une répétition (`{9}`) n'entrent pas en conflit avec l'interpolation `${…}`, qui exige un `$` devant.
 - Usage : ✅ format d'identifiant (SIREN, compte AWS, nom de bucket) · ❌ liste fermée de valeurs : `contains`, plus lisible.
@@ -442,8 +506,11 @@ variable "siren" {
 - Réponse : `true` : sans `^` et `$`, `regex` cherche une sous-chaîne ; seul le motif ancré valide la valeur entière.
 
 ## 15. Plusieurs validation : toutes évaluées
+- Id : variables-plusieurs-validations
 - Sous-thème : validation
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Définition : Une variable peut porter plusieurs blocs `validation`, un par règle, chacun avec son message dédié.
 - Contexte : Découper une règle complexe en plusieurs blocs donne un message précis pour chaque cas, au lieu d'un « valeur invalide » générique. L'ordre des blocs n'a pas d'importance. Chaque message est suivi de l'emplacement de la règle (`checked by the validation rule at main.tf:3,3`), utile pour retrouver laquelle a échoué.
 - Usage : ✅ plusieurs contraintes indépendantes (longueur, caractères, préfixe) · ❌ une seule règle simple : un bloc suffit.
@@ -471,8 +538,12 @@ variable "siren" {
 - Réponse : Deux : chaque bloc est évalué, Terraform ne s'arrête pas au premier échec et liste les deux messages.
 
 ## 16. alltrue : la liste vide passe
+- Id : variables-alltrue-liste-vide
 - Sous-thème : validation
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : variables-validation-condition, langage-hcl-for-liste
 - Définition : `alltrue([for … : cond])` vérifie une règle sur chaque élément d'une liste (≈ `arr.every(...)` en TS).
 - Contexte : Une `validation` ne s'écrit pas en boucle : on fabrique une liste de booléens avec `for`, puis `alltrue` les réunit. `anytrue` est l'équivalent de `.some()`. Le message ne dit pas quel élément échoue : pour le montrer, construire la liste des fautifs dans `error_message`. Les deux fonctions acceptent aussi des chaînes `"true"`/`"false"`.
 - Usage : ✅ valider chaque SIREN d'une liste, chaque nom de bucket · ❌ règle sur la liste entière (taille, doublons) : `length`, `distinct`.
@@ -500,8 +571,12 @@ variable "sirens" {
 - Réponse : Il passe : `alltrue([])` vaut `true` (comme `[].every()`) ; ajouter `length(var.sirens) > 0` pour exiger un élément.
 
 ## 17. coalesce : vide ≠ null
+- Id : variables-coalesce-vs-ternaire
 - Sous-thème : conditions
+- Type : comparaison
 - Niveau : 2
+- Profils : ops
+- Prérequis : variables-ternaire-type-commun
 - Définition : `coalesce(a, b, …)` renvoie le premier argument ni `null` ni chaîne vide (≈ `a || b` pour des chaînes, pas `a ?? b`).
 - Contexte : `coalesce` sert de valeur de repli pour une entrée facultative. Il saute `null` **et** `""`, ce qui le rapproche de `||` en JS. Pour un repli sur `null` seulement, écrire un ternaire `v != null ? v : repli`. Tous les arguments sont convertis vers un type commun ; s'ils sont tous vides, `coalesce` échoue.
 - Usage : ✅ repli pour une chaîne facultative (nom, ville, suffixe) · ❌ `""` est une valeur voulue : ternaire sur `null`.
@@ -526,8 +601,13 @@ output "v" {
 - Réponse : `"AUCUNE"` puis `""` : `coalesce` saute aussi la chaîne vide, le ternaire ne teste que `null`.
 
 ## 18. precondition : avant l'action
+- Id : variables-precondition
 - Sous-thème : conditions
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : variables-validation-condition
+- Voir aussi : variables-postcondition, variables-check-sans-bloquer
 - Définition : `precondition` dans `lifecycle` vérifie une hypothèse avant de créer ou modifier une ressource, et bloque le plan si elle est fausse.
 - Contexte : Contrairement à `validation`, liée à une seule entrée, une `precondition` vit à côté de la ressource qu'elle protège et peut combiner variables, locals et attributs d'autres ressources. Si une valeur n'est connue qu'à l'apply, le contrôle est repoussé à l'apply. L'échec affiche `Resource precondition failed` suivi du message.
 - Usage : ✅ hypothèse propre à une ressource (rétention minimale du bucket de prod, région attendue) · ❌ contrôle d'une seule entrée : `validation` sur la variable.
@@ -555,8 +635,12 @@ resource "terraform_data" "raw" {
 - Réponse : Dans un `output` (et une data source) : un échec donne `Module output value precondition failed`.
 
 ## 19. tfvars : *.auto.tfvars chargé seul
+- Id : variables-auto-tfvars
 - Sous-thème : déclaration
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : variables-priorite-sources
 - Définition : Terraform charge seul `terraform.tfvars` et tout `*.auto.tfvars` du root ; un autre fichier de valeurs exige `-var-file`.
 - Contexte : Le bootstrap lit l'account id dans `local.auto.tfvars`, gitignoré : `apply` le trouve sans option, et rien de propre au compte n'est commité (un `.example` sert de modèle). Le root `infra/` fait l'inverse : `dev.tfvars` et `local.tfvars` sont passés par `-var-file` dans le Makefile, car les valeurs d'un environnement ne doivent pas être chargées partout. En cas de conflit, `-var` et `-var-file` l'emportent sur les fichiers `auto`.
 - Usage : ✅ `*.auto.tfvars` pour un root à un seul jeu de valeurs (bootstrap) · ❌ `auto` dans un root multi-environnement : les valeurs de dev seraient chargées en prod.
@@ -584,8 +668,11 @@ terraform -chdir=infra plan \
 - Réponse : `No value for required variable` : seuls `terraform.tfvars` et `*.auto.tfvars` sont chargés d'office ; sinon `-var-file=local.tfvars`.
 
 ## 20. validation : aux limites du service
+- Id : variables-validation-limites-aws
 - Sous-thème : validation
+- Type : recette
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-08
 - Définition : Un bloc `validation` qui reprend les limites de l'API AWS arrête une valeur impossible au `plan`, avant tout appel à AWS.
 - Contexte : Sans lui, `maximum_retry_attempts = 3` passe le `plan` et échoue pendant l'`apply`, parfois après la création d'autres ressources. Sur une variable `object`, la condition lit chaque attribut (`var.async_retry.max_attempts`) ; un attribut absent est refusé avant même la validation (`attribute "max_event_age" is required`), sauf `optional()`. Une chaîne `"2"` est convertie en nombre sans erreur.
@@ -622,10 +709,15 @@ terraform plan -var \
 - Réponse : erreur de type (mesuré) : un attribut d'`object` sans `optional()` est obligatoire ; la validation ne s'exécute même pas.
 
 ## 21. null dans une condition
+- Id : variables-null-dans-condition
 - Sous-thème : validation
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : variables-validation-condition
+- Voir aussi : variables-nullable-false
 - Définition : Une variable `default = null` doit être testée avant tout appel de fonction ; `||` court-circuite et protège le reste.
-- Contexte : Une condition de validation est une expression comme une autre : si elle échoue (fonction appelée sur `null`), Terraform affiche une erreur technique au lieu de `error_message`. En 1.14, `||` et `&&` court-circuitent : avec `var.x == null || …`, le côté droit n'est pas évalué si la variable est nulle. Les anciennes versions évaluaient les deux côtés, d'où des `try` ou des ternaires dans du code plus ancien.
+- Contexte : Une condition de validation est une expression comme une autre : si elle échoue (fonction appelée sur `null`), Terraform affiche une erreur technique au lieu de `error_message`. Depuis Terraform 1.12, `||` et `&&` court-circuitent : avec `var.x == null || …`, le côté droit n'est pas évalué si la variable est nulle. Avant 1.12, les deux côtés étaient évalués, d'où des `try` ou des ternaires dans du code plus ancien.
 - Usage : ✅ variable facultative (`default = null`) validée seulement quand elle est fournie · ❌ variable obligatoire : pas de `default`, pas de test `null`.
 
 ```hcl
@@ -650,8 +742,11 @@ variable "sirens" {
 - Réponse : `Error: Invalid function argument` : `length(null)` échoue avant même que `error_message` puisse s'afficher.
 
 ## 22. validation croisée
+- Id : variables-validation-croisee
 - Sous-thème : validation
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
 - Définition : La `condition` d'une validation peut lire d'autres variables pour imposer une règle entre plusieurs entrées.
 - Contexte : Avant Terraform 1.9, une validation ne pouvait lire que sa propre variable, et les règles entre entrées passaient par une `precondition`. Désormais, elle peut citer d'autres variables, des locals, et même des objets du module. Une règle « si prod alors… » s'écrit avec `||` : non-prod passe, prod doit respecter la contrainte.
 - Usage : ✅ règle qui lie deux entrées (rétention minimale en prod, taille selon l'env) · ❌ règle sur le résultat d'une ressource : `postcondition`.
@@ -679,8 +774,12 @@ variable "retention" {
 - Réponse : Oui : depuis 1.9, une validation peut citer d'autres objets du module ; une valeur connue au plan est vérifiée dès le plan.
 
 ## 23. postcondition : après coup
+- Id : variables-postcondition
 - Sous-thème : conditions
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : variables-precondition
 - Définition : `postcondition` vérifie le résultat d'une ressource via `self` ; si la valeur n'est connue qu'après création, le contrôle a lieu à l'apply.
 - Contexte : `self` désigne l'objet tel que le provider le renvoie, avec ses attributs calculés (ARN, ID, `output`). Une postcondition garantit à ce qui en dépend une propriété du résultat : si elle échoue, l'apply s'arrête là et les ressources dépendantes ne sont pas traitées. Elle sert aussi sur une data source, pour vérifier ce qu'on a lu.
 - Usage : ✅ vérifier un attribut calculé (chiffrement actif, région du bucket lu) · ❌ contrôle d'une entrée : `validation` ; simple alerte : `check`.
@@ -710,8 +809,12 @@ resource "terraform_data" "raw" {
 - Réponse : Oui : elle est créée et enregistrée dans le state ; la postcondition échoue après coup, elle n'annule rien.
 
 ## 24. check : avertir sans bloquer
+- Id : variables-check-sans-bloquer
 - Sous-thème : conditions
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : variables-precondition
 - Définition : Un bloc `check` porte des `assert` évalués à chaque plan et apply, hors de tout cycle de vie de ressource.
 - Contexte : `check` sert à la surveillance continue : une hypothèse sur l'infra qui peut dériver (nom, certificat, endpoint qui répond via une data source locale au bloc). Il est évalué en dernier, après les ressources, et ne bloque jamais rien. Contrairement à `precondition`, il n'empêche ni la création ni la suite du plan.
 - Usage : ✅ vérification de santé ou de convention (suffixe, tag présent) qu'on veut voir sans bloquer · ❌ règle à faire respecter : `validation` ou `precondition`.

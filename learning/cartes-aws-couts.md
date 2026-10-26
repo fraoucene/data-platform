@@ -2,17 +2,22 @@
 title: "Cartes · Coûts AWS"
 type: cartes
 langage: AWS
+chapitre: Exploitation
 cours: Coûts
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Cartes · Coûts AWS
-AWS · Coûts : réflexes, réseau (format spec v3 de revision-pwa).
+AWS · Coûts : coût fixe, réseau (format spec v4 de revision-pwa).
 
 ## 1. coût au repos : le réflexe
-- Sous-thème : réflexes
+- Id : couts-cout-au-repos
+- Sous-thème : coût fixe
+- Type : choisir
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : lambda-quand-la-choisir
 - Définition : Avant tout choix, on demande ce que le service coûte quand personne ne l'utilise : à faible volume, le serverless facturé à l'usage gagne.
 - Contexte : Avec un budget d'environ 35 $/mois pour data-platform, un seul service à coût fixe (NAT Gateway, environnement MWAA, base RDS) peut le consommer en entier. Les services à l'usage coûtent quelques centimes à ce volume. Le raisonnement s'inverse à forte charge constante : une capacité réservée devient moins chère que le paiement à l'unité.
 - Usage : ✅ lister le coût fixe mensuel de chaque brique avant de la proposer · ❌ choisir sur le prix unitaire seul, sans regarder ce qui tourne 24 h/24.
@@ -44,8 +49,12 @@ nat > budget           # → True
 - Réponse : pas forcément : à charge élevée et stable, une capacité réservée (Redshift provisionné, Savings Plans, débit provisionné DynamoDB) coûte moins que le paiement à l'unité.
 
 ## 2. NAT Gateway : le coût caché
+- Id : couts-nat-gateway-endpoint
 - Sous-thème : réseau
-- Niveau : 3
+- Type : piège
+- Niveau : 2
+- Profils : data, ops
+- Prérequis : couts-cout-au-repos
 - Définition : Une Lambda en VPC privé sort vers S3 par une NAT Gateway payante, sauf avec un endpoint VPC de type Gateway pour S3, gratuit.
 - Contexte : À Paris, une NAT coûte 0,05 $ par heure et 0,05 $ par Go traité : plus que tout le budget de data-platform avant le premier octet. Un endpoint Gateway ajoute une route vers S3 dans la table de routage, sans frais ; les endpoints Interface (autres services) sont, eux, facturés à l'heure. Une Lambda qui n'a pas besoin du VPC n'y va pas : elle sort directement.
 - Usage : ✅ endpoint Gateway S3 dans tout VPC data, Lambda hors VPC quand rien ne l'y oblige · ❌ NAT Gateway pour joindre S3 depuis un VPC.

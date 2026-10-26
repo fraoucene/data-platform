@@ -2,17 +2,21 @@
 title: "Cartes · Générateurs Python"
 type: cartes
 langage: Python
+chapitre: Python idiomatique
 cours: Générateurs
 created: 2026-10-24
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · Générateurs Python
 Python · Générateurs : bases, composer, paresse, pièges (format spec v3 de revision-pwa).
 
 ## 1. yield : la fonction génératrice
-- Sous-thème : bases
+- Id : generateurs-yield-a-la-demande
+- Sous-thème : yield
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
 - Définition : Une fonction contenant `yield` renvoie un générateur, dont le corps s'exécute à la demande, une valeur à la fois (≈ `function*` en TS).
 - Contexte : L'appel `lots()` n'exécute aucune ligne du corps : il crée un objet générateur. Chaque `next(g)` reprend le corps là où il s'était arrêté, jusqu'au `yield` suivant, et rend sa valeur. Les variables locales sont conservées entre deux reprises. Différence avec TS : pas d'astérisque, c'est la seule présence de `yield` dans le corps qui change la nature de la fonction.
 - Usage : ✅ produire une suite de valeurs sans la stocker (lignes d'un fichier, annonces d'une API) · ❌ petit résultat relu plusieurs fois : renvoyer une `list`.
@@ -48,8 +52,12 @@ next(c)   # → 2
 - Réponse : Rien : l'appel crée le générateur sans exécuter le corps ; `go` ne s'affiche qu'au premier `next(g)`.
 
 ## 2. next : la fin du flux
-- Sous-thème : bases
+- Id : generateurs-next-stopiteration
+- Sous-thème : itérateurs
+- Type : concept
 - Niveau : 1
+- Profils : débutant
+- Prérequis : generateurs-yield-a-la-demande
 - Définition : `next(g)` reprend le générateur jusqu'au prochain `yield` ; quand le corps se termine, il lève `StopIteration`.
 - Contexte : `for` appelle `next` en boucle et s'arrête proprement sur `StopIteration` : on ne voit jamais l'exception. Appelé à la main, `next` la laisse remonter. Son second argument est une valeur par défaut renvoyée à la place de l'exception : l'idiome « le premier élément ou rien », sans `try`. En TS, `it.next()` renvoie `{ done: true }` au lieu de lever.
 - Usage : ✅ lire le premier élément d'un flux (`next(g, None)`), avancer pas à pas dans un test · ❌ parcourir tout le flux : une boucle `for`.
@@ -80,8 +88,13 @@ next(g, None)   # → None  (épuisé)
 - Réponse : `StopIteration` : le `yield`, même inatteignable, fait de `f` un générateur, et `return` le termine avant tout `yield`.
 
 ## 3. Générateur : une seule passe
-- Sous-thème : bases
+- Id : generateurs-une-seule-passe
+- Sous-thème : itérateurs
+- Type : piège
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : generateurs-iterable-ou-iterateur
+- Voir aussi : generateurs-in-consomme
 - Définition : Un générateur se parcourt une seule fois : `for`, `list` ou une compréhension le consomment jusqu'au bout.
 - Contexte : Un générateur ne garde pas ses valeurs : une fois émise, une valeur est perdue. Un deuxième parcours ne lève aucune erreur, il ne produit simplement rien, ce qui rend le bug silencieux (une somme à 0, une boucle qui ne tourne pas). Pour relire, rappeler la fonction pour obtenir un générateur neuf, ou matérialiser une fois avec `list(g)`.
 - Usage : ✅ un seul parcours (écrire les annonces dans S3, agréger) · ❌ données lues deux fois (compter puis traiter) : `list(g)` d'abord, ou rappeler la fonction.
@@ -115,8 +128,12 @@ sirens() is sirens()  # → False
 - Réponse : `ValueError` (max() iterable argument is empty) : un générateur épuisé se comporte comme une séquence vide.
 
 ## 4. Expression génératrice : la syntaxe
-- Sous-thème : bases
+- Id : generateurs-expression-syntaxe
+- Sous-thème : expressions
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : listes-comprehensions
 - Définition : `(expr for x in it)` crée un générateur en une ligne, comme une compréhension de liste mais sans construire la liste.
 - Contexte : Seule différence d'écriture avec `[...]` : les parenthèses. Rien n'est calculé à la création : chaque valeur l'est au moment où on la demande, alors que les crochets calculent tout de suite la liste entière. Le résultat se parcourt une seule fois mais occupe une mémoire constante, quel que soit le volume.
 - Usage : ✅ transformer ou filtrer un flux qu'on parcourt une fois (`sum`, `join`, écriture) · ❌ résultat relu, indexé ou mesuré : compréhension de liste `[...]`.
@@ -145,8 +162,13 @@ list(g)   # → [18000, 2400]
 - Réponse : `TypeError` ('generator' object is not subscriptable) : pas d'index ; utiliser `next(g)`.
 
 ## 5. Expression génératrice : dans un appel
-- Sous-thème : bases
+- Id : generateurs-expression-dans-un-appel
+- Sous-thème : expressions
+- Type : recette
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : generateurs-expression-syntaxe
+- Voir aussi : listes-any-all
 - Définition : Seul argument d'un appel, une expression génératrice se passe de ses parenthèses : celles de l'appel suffisent.
 - Contexte : `sum(c for c in capitaux)` est l'idiome : aucune liste intermédiaire, contrairement à `sum([c for c in capitaux])` qui construit la liste entière avant d'additionner. Marche avec toute fonction qui consomme un itérable : `sum`, `max`, `any`, `all`, `set`, `"".join`. Avec `any` et `all`, le parcours s'arrête dès que le résultat est connu.
 - Usage : ✅ agréger un flux en une valeur (total, test, chaîne jointe) · ❌ résultat réutilisé ensuite : le matérialiser dans une variable `list`.
@@ -175,8 +197,13 @@ any(len(s) != 9 for s in sirens)
 - Réponse : `SyntaxError` (Generator expression must be parenthesized) : avec un 2e argument, écrire `sum((c for c in capitaux), 0)`.
 
 ## 6. Paresse : la mémoire
+- Id : generateurs-paresse-memoire
 - Sous-thème : paresse
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : generateurs-yield-a-la-demande
+- Voir aussi : compression-lire-gros-gz-en-flux
 - Définition : Un générateur ne stocke pas ses valeurs, il les calcule une à une : sa taille mémoire ne dépend pas du volume.
 - Contexte : Une liste de 100 000 éléments garde tous ses éléments en mémoire ; le générateur équivalent ne garde que son état (position, variables locales), quelques centaines d'octets. C'est ce qui permet de traiter une journée de ~32 000 annonces BODACC, ou un fichier de plusieurs Go, ligne à ligne dans une Lambda à 128 Mo. Le prix : une seule passe, pas d'accès direct.
 - Usage : ✅ gros volumes lus en flux (fichier, pages d'API, objets S3) · ❌ petit volume relu souvent : une `list` est plus simple et aussi rapide.
@@ -207,8 +234,11 @@ next(lignes)   # → "A2"
 - Réponse : `[0, 1, 2]` deux fois : `range` est paresseux mais réutilisable, c'est un itérable, pas un itérateur à usage unique.
 
 ## 7. yield from : déléguer
+- Id : generateurs-yield-from
 - Sous-thème : composer
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
 - Définition : `yield from it` émet une à une les valeurs d'un autre itérable ou générateur (≈ `yield*` en TS).
 - Contexte : Remplace la boucle `for x in it: yield x`. Il accepte tout itérable : liste, chaîne, `range`, autre générateur. Avec un sous-générateur, il récupère en plus sa valeur de `return` (`n = yield from sous()`). C'est la brique pour composer : un générateur par niveau (jour, page, annonce), assemblés par délégation.
 - Usage : ✅ enchaîner plusieurs sources, déléguer à un sous-générateur par page ou par jour · ❌ une seule source sans transformation : la renvoyer telle quelle.
@@ -242,9 +272,56 @@ list(semaine(["lun", "mar"]))[1:3]
 - [ ] `SyntaxError`
 - Réponse : `[["A1", "A2"], "B1"]` : `yield` émet la liste entière comme une seule valeur, `yield from` la déroule.
 
-## 8. islice : prélever dans un flux infini
-- Sous-thème : paresse
+## 8. itérateur : la différence avec un itérable
+- Id : generateurs-iterable-ou-iterateur
+- Sous-thème : itérateurs
+- Type : comparaison
 - Niveau : 2
+- Profils : débutant, data
+- Prérequis : generateurs-next-stopiteration
+- Voir aussi : generateurs-une-seule-passe
+- Définition : Un itérable (liste) fournit un itérateur via `iter()` ; seul un itérateur (générateur) accepte `next()` et s'épuise.
+- Contexte : `for x in obj` appelle `iter(obj)` puis `next` en boucle. Une liste renvoie un itérateur neuf à chaque `iter` : on la relit autant de fois que voulu. Un générateur est son propre itérateur (`iter(g) is g`) : d'où l'usage unique. Une classe dont `__iter__` est un générateur donne un itérable réutilisable, qui produit un flux neuf à chaque parcours.
+- Usage : ✅ exposer une collection relisible avec `__iter__` générateur · ❌ passer un générateur à du code qui le parcourt deux fois : passer l'itérable ou une liste.
+
+```python
+# Exemple 1 : tester l'un et l'autre
+from collections.abc import Iterator
+g = (s for s in ["A1"])
+isinstance(g, Iterator)       # → True
+isinstance(["A1"], Iterator)  # → False
+iter(g) is g                  # → True
+```
+
+```python
+# Exemple 2 : un itérable réutilisable
+class Journee:
+    def __init__(self, ids):
+        self.ids = ids
+
+    def __iter__(self):   # flux neuf
+        yield from self.ids
+
+j = Journee(["A1", "A2"])
+list(j)   # → ["A1", "A2"]
+list(j)   # → ["A1", "A2"]  (relu)
+```
+
+- Quiz : Que fait `next(["A1", "A2"])` ?
+- [ ] Renvoie `"A1"`
+- [x] `TypeError`
+- [ ] `StopIteration`
+- [ ] `AttributeError`
+- Réponse : `TypeError` ('list' object is not an iterator) : une liste est itérable, pas itérateur ; passer par `iter()`.
+
+## 9. islice : prélever dans un flux infini
+- Id : generateurs-islice-flux-infini
+- Sous-thème : paresse
+- Type : recette
+- Niveau : 2
+- Profils : data
+- Prérequis : generateurs-yield-a-la-demande
+- Voir aussi : generateurs-batched-lots
 - Définition : `itertools.islice(g, n)` prélève les `n` premières valeurs d'un générateur, même infini, sans calculer la suite (≈ `take(n)`).
 - Contexte : Un générateur peut ne jamais finir (`while True`, `itertools.count`) : `list(g)` bouclerait alors sans fin. Comme un générateur n'a ni longueur ni index, la tranche `g[:3]` est impossible : `islice` en est l'équivalent paresseux et accepte aussi `start, stop, step`. Il renvoie lui-même un itérateur, à matérialiser avec `list`.
 - Usage : ✅ tester un générateur sur ses premières valeurs, sauter un en-tête, limiter un flux infini · ❌ sur une liste : une tranche `l[:n]` suffit.
@@ -273,9 +350,12 @@ list(islice(lignes, 1, 3))
 - [ ] `StopIteration`
 - Réponse : `["A0004", "A0005", "A0006"]` : `islice` consomme `ids`, qui reprend là où il s'était arrêté.
 
-## 9. batched : écrire par lots
+## 10. batched : écrire par lots
+- Id : generateurs-batched-lots
 - Sous-thème : paresse
+- Type : recette
 - Niveau : 2
+- Profils : data, ops
 - Définition : `itertools.batched(it, n)` (Python 3.12) découpe un flux en tuples de `n` éléments, le dernier pouvant être plus court.
 - Contexte : L'outil des écritures groupées : `put_records` de Kinesis accepte 500 enregistrements au plus, `batch_write_item` de DynamoDB 25. Combiné à un générateur, il ne garde jamais plus d'un lot en mémoire. Les lots sont des tuples, pas des listes. Avant Python 3.12, on l'écrivait à la main avec `islice` dans une boucle.
 - Usage : ✅ envoyer un flux par paquets (API batch, insertions en base, fichiers découpés) · ❌ Python < 3.12 : boucle avec `islice`.
@@ -309,9 +389,13 @@ for lot in batched(annonces(), 2):
 - [ ] `MemoryError`
 - Réponse : Renvoie `(0, 1)` immédiatement : `batched` est paresseux, il ne lit que deux éléments, même d'une source infinie.
 
-## 10. return : arrêter le flux
-- Sous-thème : composer
+## 11. return : arrêter le flux
+- Id : generateurs-return-arrete-flux
+- Sous-thème : yield
+- Type : concept
 - Niveau : 2
+- Profils : data
+- Prérequis : generateurs-next-stopiteration
 - Définition : `return` dans un générateur termine le flux ; sa valeur éventuelle part dans `StopIteration.value`, pas dans les valeurs émises.
 - Contexte : `return` sans valeur suffit à finir le flux, comme la fin du corps : le `next` suivant lève `StopIteration`. Utile pour s'arrêter sur un marqueur sans parcourir le reste de la source. Une valeur `return x` n'est pas un `yield` : elle voyage dans l'exception de fin, et `n = yield from sous()` permet de la récupérer depuis un générateur appelant.
 - Usage : ✅ couper le flux sur un marqueur (`FIN`, date dépassée, page vide) · ❌ renvoyer un résultat à l'appelant : l'émettre avec `yield`, ou le compter à part.
@@ -348,9 +432,14 @@ list(tout(["A1", "FIN"]))
 - [ ] `99`
 - Réponse : `["A1"]` : `list` et `for` ignorent la valeur de `return` ; seul `yield from` (ou un `except StopIteration`) la récupère.
 
-## 11. Pipeline : une valeur à la fois
+## 12. Pipeline : une valeur à la fois
+- Id : generateurs-pipeline
 - Sous-thème : composer
+- Type : concept
 - Niveau : 2
+- Profils : data
+- Prérequis : generateurs-yield-a-la-demande
+- Voir aussi : generateurs-paresse-memoire
 - Définition : Des générateurs chaînés forment un pipeline : chaque valeur traverse toutes les étapes avant que la suivante soit lue.
 - Contexte : Chaque étape prend la précédente en entrée et ne demande une valeur qu'au moment où l'étape suivante en réclame une. Rien ne s'exécute avant le consommateur final (`list`, `for`, écriture S3). Contrairement à `.map().map()` sur un tableau JS, qui produit un tableau complet à chaque étape, aucune liste intermédiaire n'existe : la mémoire reste constante.
 - Usage : ✅ lecture → nettoyage → validation → écriture sur un gros flux (annonces BODACC) · ❌ étape qui a besoin de tout voir (tri, déduplication globale) : elle matérialise de toute façon.
@@ -382,9 +471,14 @@ lus       # → ["A1"]
 - [x] `["A1", "A2", "A3"]`
 - Réponse : `["A1", "A2", "A3"]` : la compréhension de liste lit toute la source dès la création de `g`, le pipeline n'est plus paresseux.
 
-## 12. Pagination en streaming
+## 13. pagination : un flux d'annonces
+- Id : generateurs-pagination-api
 - Sous-thème : composer
+- Type : recette
 - Niveau : 2
+- Profils : data, web
+- Prérequis : generateurs-yield-a-la-demande
+- Voir aussi : generateurs-yield-from, http-params-query-string
 - Définition : Un générateur cache la pagination d'une API : l'appelant itère sur les annonces, les pages sont demandées au fil de l'eau.
 - Contexte : C'est le patron du client BODACC : la boucle `offset`/`limit` vit dans le générateur, l'appelant ne voit qu'un flux d'annonces. Une page n'est demandée que lorsque la précédente est entièrement consommée : un appelant qui s'arrête tôt (`islice`, `break`) n'appelle jamais les pages suivantes. Une page vide (ou plus courte que `limit`) termine la boucle.
 - Usage : ✅ client d'API paginée (BODACC, S3 `list_objects_v2`), lecture de grosses exports · ❌ besoin du total avant de commencer : lire `total_count` d'abord.
@@ -421,9 +515,13 @@ appels             # → [0, 2]
 - [ ] `[0, 2, 3]`
 - Réponse : `[0]` : le générateur s'arrête au premier `yield` ; la page 2 n'est demandée qu'au troisième `next`.
 
-## 13. in : ça consomme
-- Sous-thème : pièges
+## 14. in : ça consomme
+- Id : generateurs-in-consomme
+- Sous-thème : itérateurs
+- Type : piège
 - Niveau : 2
+- Profils : data
+- Prérequis : generateurs-une-seule-passe
 - Définition : `x in g` parcourt le générateur jusqu'à trouver `x` et consomme tout ce qui précède, `x` compris.
 - Contexte : Sur une liste, `in` est une lecture sans effet. Sur un générateur, c'est un parcours : il appelle `next` jusqu'à trouver la valeur, et ces valeurs sont perdues. Si `x` est absent, le générateur est entièrement épuisé. Deux tests `in` successifs sur le même générateur donnent donc des résultats faux sans erreur.
 - Usage : ✅ un seul test « au moins un » sur un flux qu'on jette ensuite · ❌ tests d'appartenance répétés : construire un `set` une fois.
@@ -448,9 +546,12 @@ sirens = set(s for s in ["A1", "A2"])
 - [ ] `[]`
 - Réponse : `["A3"]` : `in` a avancé le générateur jusqu'à `"A2"` inclus ; il ne reste que la suite.
 
-## 14. Générateur : toujours vrai
-- Sous-thème : pièges
+## 15. Générateur : toujours vrai
+- Id : generateurs-toujours-vrai
+- Sous-thème : itérateurs
+- Type : piège
 - Niveau : 2
+- Profils : data
 - Définition : Une liste vide est fausse en booléen, mais un générateur reste vrai même s'il ne produira rien.
 - Contexte : La vérité d'un objet vient de `__bool__`, ou à défaut de `__len__`. Un générateur n'a ni l'un ni l'autre : il est donc toujours vrai, et `if g:` passe même pour un flux vide. Pour savoir s'il produit quelque chose, il faut lire une valeur avec `next(g, None)`, et ne pas la perdre ensuite.
 - Usage : ✅ tester un flux avec `next(g, None) is None` · ❌ `if g:` ou `if not g:` sur un générateur : toujours vrai, bug silencieux.
@@ -478,9 +579,14 @@ list(g)           # → ["A2"]
 - [ ] `TypeError`
 - Réponse : `False` : `range` est paresseux mais connaît sa longueur (`__len__`), donc un `range` vide est faux.
 
-## 15. Iterator[T] : annoter un générateur
-- Sous-thème : bases
+## 16. Iterator[T] : annoter un générateur
+- Id : generateurs-annoter-iterator
+- Sous-thème : itérateurs
+- Type : recette
 - Niveau : 2
+- Profils : data, web
+- Prérequis : generateurs-yield-a-la-demande
+- Voir aussi : listes-annotation-non-controlee
 - Définition : Une fonction génératrice s'annote `-> Iterator[T]`, où `T` est le type de chaque valeur émise (≈ `Generator<T>` en TS).
 - Contexte : Ce que l'appel renvoie est un itérateur, pas une liste : `-> list[str]` serait faux, et Python ne le vérifie pas à l'exécution (seuls mypy ou pyright le signalent). `Iterator[T]` suffit dans 95 % des cas, comme pour `fetch_day(...) -> Iterator[dict[str, Any]]`. `Generator[Y, S, R]` précise en plus le type reçu par `send` et celui du `return` ; `Iterable[T]` convient pour un paramètre qu'on se contente de parcourir.
 - Usage : ✅ `-> Iterator[T]` pour une génératrice, `Iterable[T]` pour un paramètre parcouru · ❌ `-> list[T]` sur un générateur ; `Generator[…]` complet quand ni `send` ni `return` ne servent.
@@ -517,9 +623,13 @@ list(g)   # → ["A1", "A2"]
 - [ ] `SyntaxError` à l'import
 - Réponse : Un générateur : les annotations ne sont pas vérifiées à l'exécution ; seul un vérificateur de types (mypy, pyright) signale l'erreur.
 
-## 16. Plage de dates : bornes incluses
-- Sous-thème : bases
+## 17. Plage de dates : bornes incluses
+- Id : generateurs-plage-de-dates
+- Sous-thème : yield
+- Type : recette
 - Niveau : 2
+- Profils : data
+- Prérequis : generateurs-yield-a-la-demande, dates-timedelta-ecart
 - Source : data-platform · S1-08
 - Définition : Un générateur `while day <= end: yield day; day += timedelta(days=1)` produit chaque jour d'une plage, fin incluse.
 - Contexte : `range` ne connaît pas les dates. Le générateur ne garde qu'un jour à la fois et s'arrête à `end` compris : du 1er au 19, 19 jours. Valider `start <= end` avant la boucle évite une plage vide silencieuse. Le nombre de jours vaut `(end - start).days + 1`, pas `.days`.
@@ -547,9 +657,14 @@ j[-1]            # → date(2026, 10, 19)
 - [ ] `20`
 - Réponse : `18` : c'est l'écart entre les deux dates ; le nombre de jours de la plage, bornes incluses, est `18 + 1`.
 
-## 17. close et finally
-- Sous-thème : composer
+## 18. close : exécuter les finally
+- Id : generateurs-close-finally
+- Sous-thème : yield
+- Type : concept
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : generateurs-yield-a-la-demande, exceptions-else-finally
+- Voir aussi : context-managers-with-dans-generateur
 - Définition : `g.close()` arrête un générateur en cours et exécute ses blocs `finally` : le moyen de libérer un fichier ou une connexion.
 - Contexte : `close` lève `GeneratorExit` à l'endroit du `yield` en pause : les `finally` et les `with` du corps se déroulent normalement. CPython l'appelle aussi quand le générateur est détruit (plus aucune référence), mais sans garantie de moment hors CPython. Un `with` à l'intérieur du générateur ne ferme donc sa ressource qu'à la fin du flux, à `close`, ou à la destruction.
 - Usage : ✅ générateur qui tient une ressource (fichier, session HTTP) abandonné avant la fin · ❌ compter sur le ramasse-miettes pour fermer : `close()` explicite ou `contextlib.closing`.
@@ -559,7 +674,8 @@ j[-1]            # → date(2026, 10, 19)
 def lire():
     try: yield "A1"; yield "A2"
     finally: print("fermé")
-g = lire(); next(g)   # → "A1"
+g = lire()
+next(g)     # → "A1"
 g.close()   # affiché : fermé
 ```
 
@@ -582,9 +698,14 @@ list(lire())   # → ["A1"]
 - [x] `StopIteration`
 - Réponse : `StopIteration` : un générateur fermé est épuisé pour de bon, il ne reprend pas à `"A2"`.
 
-## 18. Évaluation tardive de la condition
-- Sous-thème : pièges
+## 19. expression génératrice : condition lue tard
+- Id : generateurs-condition-evaluee-tard
+- Sous-thème : expressions
+- Type : piège
 - Niveau : 3
+- Profils : expert
+- Prérequis : generateurs-expression-syntaxe
+- Voir aussi : fonctions-closure-capture-tardive
 - Définition : Dans `(x for x in it if cond)`, seul `it` est évalué à la création ; `cond` est évaluée pendant la consommation.
 - Contexte : Python évalue immédiatement le premier itérable pour détecter les erreurs tôt ; tout le reste (condition, expression, `for` imbriqués) est différé au parcours. Une variable lue dans la condition prend donc sa valeur au moment du `next`, pas de la création : bug classique quand le générateur est construit dans une fonction et consommé plus tard, après réaffectation.
 - Usage : ✅ savoir pourquoi un filtre « change » entre création et lecture · ❌ dépendre d'une variable modifiée entre les deux : figer avant (`frozenset`, argument de fonction).
@@ -614,46 +735,13 @@ l   # → ["483609327"]
 - [ ] `NameError`
 - Réponse : `["483609327"]` : le premier itérable est capturé dès la création, la réaffectation de `sirens` n'y change rien.
 
-## 19. Itérable ou itérateur ?
-- Sous-thème : pièges
-- Niveau : 3
-- Définition : Un itérable (liste) fournit un itérateur via `iter()` ; seul un itérateur (générateur) accepte `next()` et s'épuise.
-- Contexte : `for x in obj` appelle `iter(obj)` puis `next` en boucle. Une liste renvoie un itérateur neuf à chaque `iter` : on la relit autant de fois que voulu. Un générateur est son propre itérateur (`iter(g) is g`) : d'où l'usage unique. Une classe dont `__iter__` est un générateur donne un itérable réutilisable, qui produit un flux neuf à chaque parcours.
-- Usage : ✅ exposer une collection relisible avec `__iter__` générateur · ❌ passer un générateur à du code qui le parcourt deux fois : passer l'itérable ou une liste.
-
-```python
-# Exemple 1 : tester l'un et l'autre
-from collections.abc import Iterator
-g = (s for s in ["A1"])
-isinstance(g, Iterator)       # → True
-isinstance(["A1"], Iterator)  # → False
-iter(g) is g                  # → True
-```
-
-```python
-# Exemple 2 : un itérable réutilisable
-class Journee:
-    def __init__(self, ids):
-        self.ids = ids
-
-    def __iter__(self):   # flux neuf
-        yield from self.ids
-
-j = Journee(["A1", "A2"])
-list(j)   # → ["A1", "A2"]
-list(j)   # → ["A1", "A2"]  (relu)
-```
-
-- Quiz : Que fait `next(["A1", "A2"])` ?
-- [ ] Renvoie `"A1"`
-- [x] `TypeError`
-- [ ] `StopIteration`
-- [ ] `AttributeError`
-- Réponse : `TypeError` ('list' object is not an iterator) : une liste est itérable, pas itérateur ; passer par `iter()`.
-
 ## 20. send : envoyer une valeur au générateur
-- Sous-thème : composer
+- Id : generateurs-send
+- Sous-thème : yield
+- Type : concept
 - Niveau : 3
+- Profils : expert
+- Prérequis : generateurs-next-stopiteration
 - Définition : `g.send(v)` reprend le générateur comme `next`, mais `v` devient la valeur de l'expression `yield` en cours ; `next(g)` équivaut à `g.send(None)`.
 - Contexte : `x = yield s` fait deux choses : émettre `s` vers l'appelant, puis recevoir dans `x` ce qu'il enverra. Le générateur doit d'abord être amorcé par un `next` pour atteindre ce premier `yield`. C'est la base historique des coroutines ; en pratique, on le croise surtout dans `@contextmanager` (qui renvoie l'exception au `yield`) et dans du code ancien.
 - Usage : ✅ lire du code de coroutines anciennes ou de `contextlib` ; accumulateur piloté de l'extérieur · ❌ code neuf : une classe avec une méthode, ou `async def`, bien plus lisibles.
@@ -692,9 +780,14 @@ next(g)        # → ["A1", None]
 - [ ] Lève `StopIteration`
 - Réponse : `TypeError` (can't send non-None value to a just-started generator) : aucun `yield` n'attend encore de valeur ; il faut amorcer par `next(g)`.
 
-## 21. StopIteration dans un générateur
-- Sous-thème : pièges
+## 21. StopIteration : changée en RuntimeError
+- Id : generateurs-stopiteration-runtimeerror
+- Sous-thème : itérateurs
+- Type : piège
 - Niveau : 3
+- Profils : expert
+- Prérequis : generateurs-next-stopiteration
+- Voir aussi : generateurs-return-arrete-flux
 - Définition : Une `StopIteration` qui s'échappe du corps d'un générateur, par un `next()` interne sur un itérateur vide, devient `RuntimeError` (PEP 479).
 - Contexte : Avant Python 3.7, ce `StopIteration` terminait le générateur en silence : les données restantes disparaissaient sans erreur. Désormais, Python le transforme en `RuntimeError` pour rendre le bug visible. Le réflexe : `next(it, defaut)` dans un générateur, ou un `for` qui s'arrête proprement. Pour arrêter volontairement : `return`, jamais `raise StopIteration`.
 - Usage : ✅ `next(iter(lot), None)` pour lire le premier élément d'un lot peut-être vide · ❌ `next(it)` sans défaut dans un générateur ; `raise StopIteration` pour terminer : `return`.

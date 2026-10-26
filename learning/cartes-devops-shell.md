@@ -2,17 +2,21 @@
 title: "Cartes · Shell"
 type: cartes
 langage: DevOps
+chapitre: Terminal
 cours: Shell
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · Shell
-DevOps · Shell (zsh, bash) : redirections, guillemets, expansion, enchaînement, variables, scripts (format spec v3 de revision-pwa).
+DevOps · Shell (zsh, bash) : redirections, guillemets, expansion, enchaînement, variables, scripts (format spec v4 de revision-pwa).
 
 ## 1. < : lire un fichier en entrée
+- Id : shell-redirection-entree
 - Sous-thème : redirections
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-07
 - Définition : `cmd < fichier` branche le fichier sur l'entrée standard de la commande ; le shell l'ouvre avant de lancer la commande.
 - Contexte : Le `<` est lu par le shell, pas par la commande : où qu'il soit dans la ligne, le mot collé derrière est un nom de fichier. Un placeholder de doc comme `<raw>` devient donc « lire le fichier `raw` », et zsh échoue avant même d'appeler `aws` : `no such file or directory: raw`. Remplacer le placeholder, ou le mettre entre guillemets s'il doit rester littéral.
@@ -42,8 +46,12 @@ aws s3api head-object \
 - Réponse : crée `--key` : `<raw` lit le fichier `raw`, puis `>` redirige la sortie vers le mot suivant, `--key`, créé ou vidé (mesuré).
 
 ## 2. > et >> : écraser ou ajouter
+- Id : shell-ecraser-ou-ajouter
 - Sous-thème : redirections
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : shell-ordre-redirection-stderr
 - Source : data-platform · S1-07
 - Définition : `cmd > f` écrit la sortie standard dans `f` en l'écrasant ; `cmd >> f` l'ajoute à la fin.
 - Contexte : Le fichier est vidé par le shell avant que la commande démarre : `sort f > f` donne un fichier vide, car `sort` lit un fichier déjà tronqué. Seule la sortie standard est redirigée ; les erreurs (stderr) restent à l'écran. zsh peut refuser d'écraser avec `setopt noclobber` (`>|` force).
@@ -67,8 +75,12 @@ cat g
 - Réponse : rien : le shell vide `f` en ouvrant la redirection, avant que `sort` ne le lise.
 
 ## 3. /dev/null : jeter une sortie
+- Id : shell-dev-null
 - Sous-thème : redirections
+- Type : recette
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : shell-ecraser-ou-ajouter
 - Source : data-platform · S1-07
 - Définition : `/dev/null` est un fichier spécial qui avale tout ce qu'on y écrit ; `2>/dev/null` fait taire les erreurs d'une commande.
 - Contexte : `2` est le numéro de stderr, `1` celui de stdout. Jeter stderr cache le message, pas l'échec : le code de sortie `$?` reste non nul. Jeter les erreurs d'une commande dont le résultat sert ensuite masque souvent la vraie cause d'un bug.
@@ -95,8 +107,12 @@ aws s3 ls s3://"$B"/bodacc/ \
 - Réponse : affiche l'erreur : `>` ne redirige que stdout (1) ; le message passe par stderr (2).
 
 ## 4. guillemets simples : rien n'est interprété
+- Id : shell-guillemets-simples
 - Sous-thème : guillemets
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : shell-guillemets-doubles
 - Source : data-platform · S1-07
 - Définition : Entre guillemets simples, le shell ne touche à rien : `$`, `` ` ``, `*`, `[` et `"` restent des caractères ordinaires.
 - Contexte : C'est l'écriture des payloads JSON et des requêtes JMESPath : leurs `"`, `[` et `` ` `` passent intacts à la commande. Revers : impossible d'y insérer une variable, ni un guillemet simple (on ferme, on écrit `\'`, on rouvre). Contrairement à JS, `'` et `"` ne sont pas interchangeables.
@@ -126,8 +142,12 @@ echo '$B' "$B"
 - Réponse : `{"date":"$D"}` : rien n'est développé entre guillemets simples ; Lambda reçoit la chaîne `$D`.
 
 ## 5. $( ) : le résultat d'une commande
+- Id : shell-substitution-commande
 - Sous-thème : expansion
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : make-shell-capter-sortie
 - Source : data-platform · S1-07
 - Définition : `$(cmd)` est remplacé par ce que `cmd` écrit sur stdout, sans le retour à la ligne final (≈ un `await exec()` inline).
 - Contexte : Sert à lire une valeur calculée ailleurs : nom de bucket dans les outputs Terraform, branche git, date. Seul stdout est capturé : un message d'erreur s'affiche, la variable reste vide et la ligne suivante tourne quand même (sauf `set -e`). Entourer de guillemets (`"$(…)"`) garde les espaces. L'ancienne écriture `` `cmd` `` fait la même chose mais s'imbrique mal.
@@ -156,8 +176,12 @@ echo "$B"
 - Réponse : une chaîne vide : l'erreur part sur stderr, non capturée ; `$?` vaut le code de la commande (mesuré : `1`), mais rien ne s'arrête.
 
 ## 6. && et || : enchaîner selon le résultat
+- Id : shell-enchainer-et-ou
 - Sous-thème : enchaînement
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : shell-code-de-sortie
 - Source : data-platform · S1-07
 - Définition : `a && b` lance `b` si `a` réussit (code 0), `a || b` si `a` échoue, `a ; b` dans tous les cas.
 - Contexte : Réussite = code de sortie 0, échec = tout le reste : l'inverse de la vérité en JS, où `0` est faux. `a && b || c` n'est pas un if/else : `c` part aussi si `b` échoue. Dans un Makefile, chaque ligne s'arrête déjà au premier échec.
@@ -183,8 +207,12 @@ aws lambda invoke … out.json \
 - Réponse : affiche `X` : `false` échoue, donc le `||` s'applique, même si la première commande a réussi.
 
 ## 7. $? : le code de sortie
+- Id : shell-code-de-sortie
 - Sous-thème : enchaînement
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : shell-pipe-code-du-dernier
 - Source : data-platform · S1-07
 - Définition : `$?` vaut le code de sortie de la dernière commande : `0` en cas de succès, de `1` à `255` sinon.
 - Contexte : Il est écrasé par chaque commande, `echo` compris : le lire tout de suite, ou le copier (`rc=$?`). Le code ne dit pas toujours ce qui a échoué : `aws s3api` renvoie `254` pour une erreur de service, `252` pour un paramètre invalide (mesurés), `grep` renvoie `1` quand rien ne correspond, sans erreur.
@@ -205,8 +233,11 @@ echo $?   # → 0  (code du echo)
 - Réponse : `1` : pour `grep`, 1 = aucune ligne trouvée, 2 = vraie erreur (fichier illisible).
 
 ## 8. column -t : aligner des colonnes
+- Id : shell-column-aligner
 - Sous-thème : scripts
+- Type : recette
 - Niveau : 1
+- Profils : débutant, data
 - Source : data-platform · S1-09
 - Définition : `column -t` aligne en tableau un texte dont les champs sont séparés par des espaces, pour une sortie lisible par un humain.
 - Contexte : Les valeurs de longueurs différentes (`0`, `15874`) décalent les colonnes ; `column -t` calcule la largeur de chaque colonne sur toutes les lignes, donc il lit toute l'entrée avant d'écrire. `-s ','` change le séparateur d'entrée (CSV simple). La sortie reste du texte : un humain la lit, un script préfère du JSON ou `@tsv`.
@@ -227,8 +258,12 @@ printf '2026-10-01 15874 1746812\n2026-10-03 0 20\n' \
 - Réponse : après la dernière : il doit connaître la largeur maximale de chaque colonne avant d'écrire.
 
 ## 9. 2>&1 : l'ordre compte
+- Id : shell-ordre-redirection-stderr
 - Sous-thème : redirections
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : shell-ecraser-ou-ajouter
 - Source : data-platform · S1-07
 - Définition : `2>&1` envoie stderr là où va stdout **à ce moment** ; les redirections s'appliquent de gauche à droite.
 - Contexte : `cmd > f 2>&1` : stdout va dans `f`, puis stderr suit stdout, donc dans `f`. `cmd 2>&1 > f` : stderr copie stdout quand il pointe encore vers l'écran, puis seul stdout part dans `f`. Raccourci zsh et bash : `cmd &> f`. Pour un pipe, `cmd 2>&1 | tail` capture les deux.
@@ -250,8 +285,12 @@ wc -c < f2   # → 0
 - Réponse : les deux : `2>&1` est appliqué après le branchement du pipe, stderr suit donc stdout dans le pipe.
 
 ## 10. guillemets doubles : $ et ` restent actifs
+- Id : shell-guillemets-doubles
 - Sous-thème : guillemets
+- Type : piège
 - Niveau : 2
+- Profils : débutant, ops
+- Prérequis : shell-guillemets-simples
 - Source : data-platform · S1-07
 - Définition : Entre guillemets doubles, le shell développe `$VAR`, `$(cmd)` et `` `cmd` `` ; espaces et `*` restent littéraux.
 - Contexte : Piège JMESPath : `--query "Versions[?IsLatest==`false`]"` lance la commande `false` à cause des accents graves ; le littéral devient vide et la CLI refuse la requête. Règle : guillemets simples pour JSON et JMESPath, doubles pour insérer une variable. Échapper avec `\$` ou `` \` `` quand il faut mélanger.
@@ -280,8 +319,11 @@ echo 'a==`false`b'
 - Réponse : `ParamValidation` (mesuré) : le shell remplace `` `false` `` par rien, la CLI reçoit `IsLatest==]`, illisible.
 
 ## 11. glob zsh : no matches found
+- Id : shell-glob-zsh-sans-correspondance
 - Sous-thème : expansion
+- Type : piège
 - Niveau : 2
+- Profils : débutant, ops
 - Source : data-platform · S1-07
 - Définition : En zsh, un mot avec `*`, `?` ou `[…]` qui ne correspond à aucun fichier arrête la commande : `no matches found`.
 - Contexte : bash passe le mot tel quel s'il ne trouve rien ; zsh refuse, par sécurité. D'où `uv add --dev "moto[s3]"` entre guillemets : sans eux, zsh cherche un fichier `moto` suivi de `s`, `3`. Même piège avec une URL contenant `?`, une clé S3 avec `*`, un `echo [x]`. Guillemets, ou `noglob` devant la commande.
@@ -310,8 +352,13 @@ zsh -c 'echo moto[s3]'
 - Réponse : `no matches found` : `?` remplace un caractère dans un motif de fichiers ; aucun fichier ne correspond, zsh refuse.
 
 ## 12. pipe : seul le dernier code compte
+- Id : shell-pipe-code-du-dernier
 - Sous-thème : enchaînement
+- Type : piège
 - Niveau : 2
+- Profils : ops, data
+- Prérequis : shell-code-de-sortie
+- Voir aussi : shell-set-euo-pipefail
 - Source : data-platform · S1-07
 - Définition : Le code de sortie d'un pipe `a | b` est celui de `b` ; un échec de `a` passe inaperçu, sauf avec `set -o pipefail`.
 - Contexte : `aws s3 cp … - | zcat | wc -l` peut afficher `0` et réussir alors que le téléchargement a échoué. Avec `pipefail`, le pipe échoue si une commande échoue. Côté Make, GitLab CI ou un script, l'activer (`set -o pipefail`) évite un job vert sur un résultat vide. Bonus zsh : `$pipestatus` donne le code de chaque étage.
@@ -333,8 +380,13 @@ echo $?    # → 1
 - Réponse : `0` : c'est le code de `wc`, qui a bien compté zéro ligne ; l'erreur de `aws` est perdue.
 
 ## 13. heredoc : <<'EOF' fige le texte
+- Id : shell-heredoc-fige
 - Sous-thème : redirections
+- Type : comparaison
 - Niveau : 2
+- Profils : ops
+- Prérequis : shell-guillemets-simples
+- Voir aussi : Terraform/langage-hcl-heredoc-interpole
 - Source : data-platform · S1-07
 - Définition : `<<EOF … EOF` envoie un bloc de texte sur l'entrée standard ; avec `<<'EOF'`, rien n'y est développé.
 - Contexte : Sans guillemets, `$X`, `$(…)` et `` ` `` sont développés dans le bloc ; avec `'EOF'`, le texte part tel quel. Le choix change tout pour un message de commit, un script Python ou un SQL injectés par `cat <<…` : un `$` ou un accent grave du contenu serait sinon remplacé. La ligne de fin doit être `EOF` seul, sans espace.
@@ -361,8 +413,12 @@ EOF
 - Réponse : `make check` est lancé : sans `'EOF'`, `` `…` `` est une substitution de commande.
 
 ## 14. export : visible des commandes lancées
+- Id : shell-export-environnement
 - Sous-thème : variables
+- Type : concept
 - Niveau : 2
+- Profils : débutant, ops
+- Voir aussi : shell-variable-une-commande, make-export-environnement
 - Source : data-platform · S1-07
 - Définition : `A=1` crée une variable du shell seul ; `export A` la passe aux programmes lancés ensuite (≈ `process.env`).
 - Contexte : Sans `export`, `aws`, `terraform` ou `python` ne voient pas la variable : `os.environ["A"]` lève `KeyError`. `export` vaut pour le reste de la session, pas pour les autres terminaux. `AWS_PROFILE`, `TF_VAR_x` ou `RAW_BUCKET` doivent être exportés (ou passés en préfixe) pour servir.
@@ -385,8 +441,12 @@ zsh -c 'echo "A=$A"'
 - Réponse : oui : `source` lit le fichier dans le shell courant ; `export` ne compte que pour les programmes lancés ensuite.
 
 ## 15. VAR=x cmd : une variable pour une seule commande
+- Id : shell-variable-une-commande
 - Sous-thème : variables
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : shell-export-environnement
 - Source : data-platform · S1-07
 - Définition : `VAR=x cmd` passe `VAR` dans l'environnement de `cmd` seulement ; le shell courant ne la garde pas.
 - Contexte : C'est la forme du Makefile pour DuckDB (`RAW_BUCKET=$$(terraform output …) duckdb`) : la variable n'existe que pour ce processus, rien ne fuit dans la session. Plusieurs affectations peuvent précéder la commande. Piège : `B=x echo $B` affiche vide, car `$B` est développé par le shell avant que l'affectation n'existe.
@@ -407,8 +467,12 @@ echo "B=$B"
 - Réponse : une ligne vide : `"$D"` est développé avant le lancement d'`echo`, quand `D` n'existe pas encore.
 
 ## 16. ~ : jamais entre guillemets
+- Id : shell-tilde-entre-guillemets
 - Sous-thème : expansion
+- Type : piège
 - Niveau : 2
+- Profils : débutant
+- Prérequis : shell-guillemets-doubles
 - Source : data-platform · S1-07
 - Définition : `~` devient le dossier personnel seulement s'il est hors guillemets et en début de mot ; `"~/x"` reste un tilde littéral.
 - Contexte : `cd "~/Desktop"` cherche un dossier nommé `~` dans le dossier courant. Dans un script ou un `.env`, préférer `$HOME`, développé aussi entre guillemets doubles. Python ne développe pas non plus `~` : `Path("~/x").exists()` est faux sans `.expanduser()`.
@@ -438,8 +502,12 @@ str(Path("~/x").expanduser()).startswith("~")
 - Réponse : erreur : entre guillemets, `~` est un caractère ordinaire ; `ls` cherche `./~/Desktop`.
 
 ## 17. cd "$(dirname "$0")" : partir du dossier du script
+- Id : shell-dossier-du-script
 - Sous-thème : scripts
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : shell-substitution-commande, shell-guillemets-doubles
 - Source : data-platform · S1-09
 - Définition : `cd "$(dirname "$0")"` en tête de script se place dans le dossier du script, quel que soit le dossier d'où on le lance.
 - Contexte : Un chemin relatif (`file://invocations.json`, `> partitions-raw.txt`) se résout depuis le dossier courant de l'appelant, pas depuis le script : lancé depuis la racine, il écrit au mauvais endroit. `$0` est le chemin du script tel qu'il a été appelé ; `dirname` en garde le dossier. Guillemets obligatoires : un chemin avec une espace casserait le `cd`. ≈ `__dirname` en Node.
@@ -460,8 +528,12 @@ bash a/b/t.sh   # → …   (dossier de l'appelant)
 - Réponse : à la racine : une redirection relative se résout depuis le dossier courant de l'appelant, pas depuis le script.
 
 ## 18. zsh ne découpe pas $VAR
+- Id : shell-decoupage-zsh-bash
 - Sous-thème : variables
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : shell-guillemets-doubles
 - Source : data-platform · S1-07
 - Définition : En zsh, `$VAR` contenant des espaces reste un seul argument ; bash le découpe en plusieurs mots si on oublie les guillemets.
 - Contexte : Un script testé dans le terminal zsh d'un Mac peut casser en CI, où `sh` ou `bash` découpe `$FICHIER` sur les espaces. Toujours écrire `"$VAR"` : correct dans les deux shells. Le shebang (`#!/usr/bin/env bash`) décide du shell, pas le terminal d'où on lance.
@@ -483,8 +555,12 @@ printf '[%s]\n' $V
 - Réponse : `mes` puis `notes.txt` : le shebang lance bash, qui découpe `$F` non protégé en deux arguments.
 
 ## 19. set -euo pipefail : échouer tôt
+- Id : shell-set-euo-pipefail
 - Sous-thème : enchaînement
+- Type : recette
 - Niveau : 3
+- Profils : ops
+- Prérequis : shell-code-de-sortie, shell-pipe-code-du-dernier
 - Source : data-platform · S1-07
 - Définition : En tête de script : `set -e` arrête au premier échec, `-u` refuse une variable non définie, `-o pipefail` propage l'échec d'un étage de pipe.
 - Contexte : Par défaut, un script continue après une erreur et `$NOPE` vaut vide : `aws s3 rm s3://$B/$PREFIX --recursive` avec `PREFIX` vide vise tout le bucket. `-u` coupe avant. `-e` ne s'applique pas à une commande testée (`if`, `&&`, `||`). En CI, l'écrire explicitement plutôt que supposer les options du runner.
@@ -512,8 +588,12 @@ echo apres   # jamais affiché
 - Réponse : `X` puis `Y` : une commande suivie de `||` est testée, `set -e` ne s'applique pas à elle.
 
 ## 20. set -e dans une boucle : protéger chaque tour
+- Id : shell-set-e-boucle
 - Sous-thème : scripts
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : shell-set-euo-pipefail, shell-enchainer-et-ou
 - Source : data-platform · S1-09
 - Définition : Sous `set -e`, un échec dans une boucle arrête tout le script ; `cmd || repli` traite l'échec du tour et passe au suivant.
 - Contexte : Mesuré : `set -euo pipefail`, une boucle sur des partitions, un `grep` qui ne trouve rien au premier tour → script terminé, code 1, aucune ligne écrite. Avec `|| echo "absent $x"`, l'échec est testé, `set -e` ne s'applique plus à lui, et chaque tour s'exécute. Dans `generer.sh`, une partition sans manifest donne une ligne « pas de manifest » au lieu d'arrêter le livrable.
@@ -546,8 +626,12 @@ echo fin
 - Réponse : `début` puis `après` (mesuré) : appelée dans un `||`, toute la fonction s'exécute sans `set -e`, et elle réussit grâce au dernier `echo`.
 
 ## 21. pipe et while : la variable perdue en bash
+- Id : shell-pipe-while-sous-shell
 - Sous-thème : variables
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Voir aussi : shell-decoupage-zsh-bash
 - Source : data-platform · S1-09
 - Définition : En bash, `cmd | while read` tourne dans un sous-shell : les variables modifiées dans la boucle sont perdues ensuite ; zsh les garde.
 - Contexte : Chaque étage d'un pipe bash tourne dans son propre processus. Mesuré : un compteur incrémenté dans `printf … | while read` vaut 0 après la boucle en bash, 2 en zsh (zsh exécute le dernier étage dans le shell courant). Un script testé dans le terminal zsh d'un Mac casse donc sous `#!/usr/bin/env bash`. Correctif bash : `while … done < <(cmd)`.

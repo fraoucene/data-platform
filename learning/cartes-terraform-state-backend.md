@@ -2,17 +2,23 @@
 title: "Cartes · State et backend Terraform"
 type: cartes
 langage: Terraform
+chapitre: Configurer
 cours: State et backend
 created: 2026-10-24
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · State et backend Terraform
-Terraform · State et backend : backend, bucket, garde-fous, principe, state (format spec v3 de revision-pwa).
+Terraform · State et backend : backend, bucket, couches, garde-fous, state (format spec v4 de revision-pwa).
 
 ## 1. bootstrap : l'œuf et la poule
-- Sous-thème : principe
+- Id : state-backend-bootstrap-oeuf-poule
+- Sous-thème : couches
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : state-backend-contenu-etat
+- Voir aussi : state-backend-couches-duree-de-vie, state-backend-bootstrap-contenu
 - Définition : Un root Terraform `bootstrap` séparé crée le bucket S3 d'état avant le root principal, qui y range ensuite le sien.
 - Contexte : Le backend S3 doit exister dès le `terraform init` : un root ne peut pas créer le bucket qui contient son propre état. On isole donc 4 ressources quasi immuables (bucket, versioning, chiffrement, accès public) dans `infra/bootstrap/`, appliqué une fois par compte, à la main. Le root `infra/` ne fait ensuite que pointer vers ce bucket via `backend.hcl`. Chaque dépôt a son bucket : data-platform et revision-pwa ne partagent pas d'état.
 - Usage : ✅ premier déploiement d'un dépôt sur un compte AWS, nouveau compte de dev · ❌ y ajouter d'autres ressources (clé KMS, IAM du projet) : elles vont dans `infra/`.
@@ -46,8 +52,13 @@ make plan ENV=dev
 - Réponse : `init` échoue : le backend S3 ne crée jamais son bucket, il le lit dès l'initialisation (erreur « S3 bucket does not exist »).
 
 ## 2. état : ce que contient terraform.tfstate
+- Id : state-backend-contenu-etat
 - Sous-thème : state
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : langage-hcl-resource-adresse
+- Voir aussi : state-backend-state-pull-sauvegarde
 - Définition : L'état est un fichier JSON qui relie chaque bloc `resource` à l'objet réel (id, attributs) ; `plan` compare code, état et réalité.
 - Contexte : Sans état, Terraform ne saurait pas quel bucket AWS correspond à `aws_s3_bucket.tfstate` : il voudrait tout recréer. L'état garde tous les attributs lus, et on ne l'édite jamais à la main : `terraform state list`, `state show` et `import` le manipulent. Le perdre ne détruit rien sur AWS, mais Terraform ne gère plus ces ressources. Sans bloc `backend`, il est écrit en local, dans `terraform.tfstate` du root.
 - Usage : ✅ `state list` pour savoir ce qu'un root gère, `state show` pour lire un attribut · ❌ éditer le JSON ou le commiter : gitignoré, ou dans un bucket privé et chiffré.
@@ -80,8 +91,11 @@ terraform -chdir=infra/bootstrap \
 - Réponse : oui, en clair : `sensitive` ne masque que l'affichage du plan et des sorties ; d'où un état gitignoré, ou dans un bucket privé et chiffré.
 
 ## 3. bucket : un nom unique au monde
+- Id : state-backend-nom-bucket-unique
 - Sous-thème : bucket
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops
 - Définition : Un nom de bucket S3 est unique dans toute la partition AWS, tous comptes confondus : on y ajoute l'account id lu par `aws_caller_identity`.
 - Contexte : Les noms de bucket forment un espace global : si un autre compte a déjà pris `data-platform-tfstate`, `apply` échoue avec `BucketAlreadyExists`. Le suffixe account id rend le nom propre au compte, sans le taper : la data source `aws_caller_identity` le lit depuis les credentials. Règles S3 : 3 à 63 caractères, minuscules, chiffres, points et tirets.
 - Usage : ✅ tout bucket créé par Terraform (état, contenu, logs), préfixé par le projet · ❌ un nom en dur copié d'un autre compte ou d'un tutoriel : collision probable.
@@ -109,12 +123,16 @@ locals {
 - [ ] `terraform validate`
 - [ ] `terraform plan`
 - [ ] Jamais : S3 passe le nom en minuscules
-- [x] `terraform apply`, refusé par AWS
-- Réponse : `apply` : le provider ne vérifie que la longueur, `validate` et `plan` passent ; c'est l'API S3 qui rejette le nom (`InvalidBucketName`).
+- [x] `terraform apply`, à la création
+- Réponse : `apply` : le schéma du provider ne contrôle pas les caractères du nom, `validate` et `plan` passent ; le nom n'est refusé qu'à la création du bucket.
 
 ## 4. versioning : garder chaque version de l'état
+- Id : state-backend-versioning-etat
 - Sous-thème : bucket
+- Type : recette
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : AWS/s3-version-id
 - Définition : Le versioning S3 garde chaque version écrite d'un objet : chaque `apply` crée une nouvelle version de l'état, les anciennes restent récupérables.
 - Contexte : Un état écrasé ou abîmé (mauvaise `key`, `state rm` de trop) se restaure en relisant une version précédente. Depuis le provider AWS v4, le versioning est une ressource à part, `aws_s3_bucket_versioning`, et non plus un bloc de `aws_s3_bucket`. Une fois activé, il ne se désactive plus : on peut seulement le suspendre, et les versions déjà écrites restent.
 - Usage : ✅ tout bucket d'état Terraform, données brutes qu'on ne veut pas perdre · ❌ fichiers temporaires très réécrits : chaque version est facturée, prévoir une règle de cycle de vie.
@@ -145,8 +163,11 @@ aws s3api list-object-versions \
 - Réponse : `BucketNotEmpty` : S3 refuse de supprimer un bucket qui contient des objets ou des versions ; `force_destroy = true` les viderait (à éviter pour un état).
 
 ## 5. chiffrement : SSE-S3 sans KMS
+- Id : state-backend-chiffrement-sse-s3
 - Sous-thème : bucket
+- Type : choisir
 - Niveau : 1
+- Profils : débutant, ops
 - Définition : `sse_algorithm = "AES256"` (SSE-S3) chiffre chaque objet au repos avec des clés gérées par S3, sans clé KMS à créer ni autoriser.
 - Contexte : Depuis janvier 2023, S3 chiffre déjà tout nouvel objet en SSE-S3 par défaut ; le déclarer rend la règle explicite et visible au `plan`. Avec `aws:kms`, chaque lecteur de l'état devrait aussi avoir `kms:Decrypt`. Surtout, la clé KMS du projet est créée par le root `infra/`, donc par l'état que ce bucket stocke : dépendance circulaire.
 - Usage : ✅ bucket d'état, tout bucket de bootstrap qui doit exister avant le reste · ❌ données soumises à un audit des accès aux clés : `aws:kms` avec une clé dédiée.
@@ -179,8 +200,13 @@ aws s3api head-object --bucket "$B" \
 - Réponse : chiffrement côté serveur : Terraform demande à S3 de chiffrer l'objet d'état au repos ; le fichier reste du JSON lisible pour qui peut le télécharger.
 
 ## 6. backend : configuration partielle
+- Id : state-backend-configuration-partielle
 - Sous-thème : backend
+- Type : recette
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : cli-init-preparer-dossier
+- Voir aussi : state-backend-backend-sans-variables, state-backend-backend-hcl-absent
 - Définition : Un bloc `backend "s3"` presque vide se complète à l'`init` par `-backend-config=fichier.hcl` : un seul code, une config d'état par environnement.
 - Contexte : On garde dans `backend.tf` ce qui ne change jamais (`encrypt = true`) ; bucket, key, région, profil et verrou viennent de `envs/<env>/backend.hcl`, gitignoré car il contient l'account id (un `.example` sert de modèle). `-backend-config` accepte aussi `clé=valeur` en ligne de commande. Les valeurs finales sont mémorisées dans `.terraform/` jusqu'au prochain `init`.
 - Usage : ✅ même code pour dev et prod, rien de propre au compte dans git · ❌ bucket et key en dur dans `backend.tf` : un seul environnement possible, account id commité.
@@ -216,8 +242,13 @@ terraform -chdir=infra init \
 - Réponse : `Missing Required Value` (`"key" is required`) : le backend S3 exige `bucket` et `key` ; sans `-input=false`, `init` demanderait la valeur au clavier.
 
 ## 7. backend : une clé d'état par environnement
+- Id : state-backend-cle-par-environnement
 - Sous-thème : backend
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : state-backend-configuration-partielle
+- Voir aussi : state-backend-workspace-vs-cle, state-backend-init-reconfigure
 - Définition : `key` est le chemin de l'état dans le bucket : un bucket d'état par dépôt, une clé par environnement.
 - Contexte : Dev et prod partagent le bucket mais pas l'état : chaque `backend.hcl` porte sa propre `key`. Le verrou se pose à côté (`dev/terraform.tfstate.tflock`), donc un `apply` en dev ne bloque pas la prod. Le préfixe est libre : S3 n'a pas de vrais dossiers, `dev/` n'est qu'un début de nom d'objet, créé à la première écriture.
 - Usage : ✅ préfixe = nom de l'environnement, recopié depuis `backend.hcl.example` · ❌ un bucket d'état par environnement sur le même compte : plus de bootstrap pour rien.
@@ -246,8 +277,12 @@ aws s3 ls "s3://$B" --recursive
 - Réponse : de toucher à dev : même clé = même état ; Terraform compare le code de prod aux ressources de dev et veut les renommer, donc les remplacer.
 
 ## 8. couches : une ressource, sa durée de vie
-- Sous-thème : principe
+- Id : state-backend-couches-duree-de-vie
+- Sous-thème : couches
+- Type : choisir
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : state-backend-make-down-test-couche, state-backend-couches-entreprise
 - Source : data-platform · S1-07
 - Définition : Chaque ressource vit dans le root Terraform qui a sa durée de vie : bootstrap pour le compte, `infra/` pour l'environnement jetable.
 - Contexte : La question n'est pas « à quoi ressemble la ressource » mais « quand doit-elle disparaître ». Un environnement de dev se détruit (`make down`) et se recrée (`make up`) : tout ce dont `make up` a besoin pour réussir doit lui survivre (état, zips publiés). Ces ressources vont dans `infra/bootstrap/`, appliqué une fois par compte. L'erreur de S1-04 : `artifacts` rangé avec les autres buckets parce qu'il leur ressemblait.
@@ -273,8 +308,12 @@ make deploy  # repart des zips intacts
 - Réponse : le `plan` échoue : le data source lit `current.json` dès le plan, dans un bucket détruit avec l'environnement ; aucun `apply` ne peut le recréer avant cette lecture.
 
 ## 9. bootstrap : ce qui y va
-- Sous-thème : principe
+- Id : state-backend-bootstrap-contenu
+- Sous-thème : couches
+- Type : choisir
 - Niveau : 1
+- Profils : ops
+- Prérequis : state-backend-bootstrap-oeuf-poule
 - Source : data-platform · S1-07
 - Définition : Le bootstrap porte ce que `make up` suppose déjà là : bucket d'état, bucket d'artefacts, plus tard dépôt ECR et rôle OIDC de la CI.
 - Contexte : Critère : l'environnement en dépend, elle ne dépend pas de lui. Le bootstrap reste petit, appliqué à la main avec des droits élevés, rarement modifié : chaque ajout doit se justifier. Tout le reste (clé KMS du projet, buckets de données, Lambdas, rôles d'exécution) suit l'environnement et se recrée avec lui.
@@ -301,8 +340,13 @@ locals {
 - Réponse : rien sur AWS : `make down` a détruit le rôle qu'elle endosse ; seul un humain avec des droits admin peut refaire `make up`. D'où le rôle de la CI dans le bootstrap.
 
 ## 10. bucket d'artefacts : un par compte
-- Sous-thème : principe
+- Id : state-backend-bucket-artefacts-par-compte
+- Sous-thème : couches
+- Type : choisir
 - Niveau : 1
+- Profils : ops
+- Prérequis : state-backend-nom-bucket-unique
+- Voir aussi : state-backend-nom-sans-environnement
 - Source : data-platform · S1-07
 - Définition : Le bucket d'artefacts est nommé par compte (`data-platform-artifacts-<account_id>`), sans environnement : tous les environnements du compte lisent les mêmes zips.
 - Contexte : Le bootstrap n'a pas de variable `environment` : il existe une fois par compte. Les zips étant rangés sous leur hash, dev et int du même compte partagent les octets sans conflit. Le suffixe `<account_id>` rend le nom unique au monde (espace de noms global de S3) et évite la collision avec le même projet sur un autre compte. `infra/` recalcule ce nom par la même convention.
@@ -330,8 +374,13 @@ locals {
 - Réponse : deux, cloisonnés : un bootstrap par compte ; la prod ne lit le zip de dev que si une politique de bucket l'ouvre à son compte, sinon on copie le zip.
 
 ## 11. backend.hcl absent : Failed to read file
+- Id : state-backend-backend-hcl-absent
 - Sous-thème : backend
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : state-backend-configuration-partielle
+- Voir aussi : DevOps/documentation-fichier-example
 - Source : data-platform · S1-09
 - Définition : Dans un clone neuf, `init -backend-config=envs/dev/backend.hcl` échoue : le fichier est gitignoré, il faut d'abord le créer depuis son `.example`.
 - Contexte : Le backend partiel lit bucket, key, région et profil dans `backend.hcl`, qui contient le numéro de compte : il n'est jamais commité. Toute cible qui dépend de `tf-init` échoue donc, `make tf-validate` compris, avant même de lire le code. C'est l'un des implicites d'un README écrit depuis son poste : la doc de démarrage doit dire `cp backend.hcl.example backend.hcl` et quoi y remplir.
@@ -363,8 +412,11 @@ terraform -chdir=infra/bootstrap \
 - Réponse : `init -backend=false` : il installe providers et modules sans backend ; `make tf-validate` passe par `tf-init`, qui lit `backend.hcl` (mesuré : `Failed to read file`).
 
 ## 12. accès public : tout bloquer
+- Id : state-backend-acces-public-bloque
 - Sous-thème : bucket
+- Type : recette
 - Niveau : 2
+- Profils : ops
 - Définition : `aws_s3_bucket_public_access_block` interdit tout accès public au bucket, quelles que soient ses ACL ou sa politique.
 - Contexte : Les 4 options couvrent deux portes. Les ACL : `block_public_acls` refuse d'en poser une publique, `ignore_public_acls` neutralise celles qui existent. La politique : `block_public_policy` refuse une politique publique, `restrict_public_buckets` coupe l'accès anonyme d'un bucket déjà public. Un état Terraform contient des secrets en clair : aucune fuite tolérée.
 - Usage : ✅ tout bucket privé : état, données brutes, site servi par CloudFront avec OAC · ❌ ouvrir le bucket pour un site statique : CloudFront + OAC à la place.
@@ -395,8 +447,12 @@ aws s3api get-public-access-block \
 - Réponse : non : un principal de service restreint à un ARN précis n'est pas public ; seul un `Principal: "*"` sans condition restrictive est bloqué.
 
 ## 13. backend : ni variable ni local
+- Id : state-backend-backend-sans-variables
 - Sous-thème : backend
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : state-backend-configuration-partielle
 - Définition : Le bloc `backend` est lu avant les variables : il n'accepte que des valeurs littérales, jamais `var.` ni `local.`.
 - Contexte : Terraform configure le backend dès `init`, avant d'évaluer le reste du code, pour savoir où lire l'état : aucune expression n'est encore disponible. Venant de TS, on voudrait un template `"${var.env}/…"` : refusé avec `Variables not allowed`. La valeur propre à l'environnement passe par `-backend-config` (fichier ou `clé=valeur`), et le Makefile choisit le fichier avec `ENV`.
 - Usage : ✅ `-backend-config=envs/$(ENV)/backend.hcl` depuis le Makefile · ❌ générer `backend.tf` par script (`sed`) avant `init` : fragile, un `backend.hcl` par environnement suffit.
@@ -430,8 +486,13 @@ terraform -chdir=infra init \
 - Réponse : `Variables not allowed` : même une `local` littérale est une expression, évaluée après le backend ; seul un littéral passe.
 
 ## 14. init -reconfigure : changer d'environnement
+- Id : state-backend-init-reconfigure
 - Sous-thème : backend
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : state-backend-cle-par-environnement
+- Voir aussi : state-backend-init-migrate-state
 - Définition : `init -reconfigure` réinitialise le backend avec une nouvelle configuration sans copier l'état : indispensable pour passer d'un environnement à l'autre.
 - Contexte : `init` mémorise la config du backend dans `.terraform/terraform.tfstate`, un fichier local qui n'est pas l'état. Si `-backend-config` change, Terraform refuse de deviner : soit on oublie l'ancienne config (`-reconfigure`), soit on copie l'état de l'ancien emplacement vers le nouveau (`-migrate-state`). Changer d'environnement, c'est le premier cas : chaque environnement a déjà son état.
 - Usage : ✅ `make tf-init ENV=…` à chaque changement d'environnement · ❌ `-migrate-state` pour basculer de dev à prod : copierait l'état de dev dans la clé de prod.
@@ -456,8 +517,12 @@ tf-init:
 - Réponse : `Backend configuration changed` : Terraform exige de choisir entre `-reconfigure` (oublier l'ancienne config) et `-migrate-state` (copier l'état).
 
 ## 15. init -backend=false : valider hors AWS
+- Id : state-backend-init-sans-backend
 - Sous-thème : backend
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : cli-validate-sans-valeurs
 - Source : revision-pwa · pwa-revision
 - Définition : `terraform init -backend=false` installe providers et modules sans configurer le backend : `validate` tourne ensuite sans identifiants ni état.
 - Contexte : Un `init` normal lit `backend.hcl`, contacte le bucket d'état et demande région et identifiants. Pour vérifier syntaxe, types et références (cycles compris), le backend est inutile : `validate` ne lit ni l'état ni AWS. C'est le premier contrôle, en local comme en CI, avant `plan` qui a besoin des deux.
@@ -482,8 +547,13 @@ terraform init   # backend "s3" {}
 - Réponse : il échoue (mesuré) : le bloc `backend "s3"` exige un `init` complet ; Terraform refuse plutôt que de planifier contre un état vide, qui recréerait tout.
 
 ## 16. terraform_remote_state : lire les outputs d'un autre root
+- Id : state-backend-remote-state-outputs
 - Sous-thème : state
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : langage-hcl-output-exposer
+- Voir aussi : state-backend-convention-de-nom
 - Définition : La data source `terraform_remote_state` lit les `output` de l'état d'un autre root (bootstrap, réseau), sans gérer ses ressources.
 - Contexte : Seuls les outputs racine sont exposés, sous `.outputs` : les ressources de l'autre état restent invisibles. Mais il faut le droit de lire tout le fichier d'état (`s3:GetObject`), secrets compris. Le lien est aussi implicite : renommer un output casse le lecteur au `plan`. data-platform préfère reporter les sorties du bootstrap à la main dans `backend.hcl`.
 - Usage : ✅ root qui consomme un socle partagé (VPC, zone DNS) dans le même compte · ❌ donner l'accès à un état contenant des secrets : un paramètre SSM, ou une data source sur la ressource elle-même.
@@ -522,8 +592,11 @@ data "terraform_remote_state" "net" {
 - Réponse : `Unsupported attribute` (mesuré) : les outputs ne sont accessibles que sous l'attribut `outputs` de la data source.
 
 ## 17. state pull : sauvegarder avant d'opérer
+- Id : state-backend-state-pull-sauvegarde
 - Sous-thème : state
+- Type : recette
 - Niveau : 2
+- Profils : ops
 - Définition : `terraform state pull` affiche l'état courant en JSON, quel que soit le backend : la sauvegarde à faire avant toute commande `state`.
 - Contexte : Avec un backend S3, aucun `terraform.tfstate` n'existe sur le poste : `pull` le télécharge. On garde la copie hors du dépôt avant un `state mv`, un `state rm` ou un `import`. `state push` la renverrait, mais refuse un état plus ancien (`serial` plus petit) ou d'une autre lignée (`lineage`) : `-force` passe outre, en écrasant tout ce qui a changé depuis.
 - Usage : ✅ copie avant une opération sur l'état, lecture avec `jq` · ❌ `state push -force` d'une vieille copie : le versioning du bucket est la vraie restauration.
@@ -544,8 +617,12 @@ jq -c '{serial, n: (.resources|length)}' \
 - Réponse : refusé (`cannot import state with serial 1 over newer state`, mesuré) : `push` protège les écritures récentes ; seul `-force` écraserait.
 
 ## 18. workspace : plusieurs états, un seul backend
+- Id : state-backend-workspace-vs-cle
 - Sous-thème : backend
+- Type : comparaison
 - Niveau : 2
+- Profils : ops
+- Prérequis : state-backend-cle-par-environnement
 - Définition : `terraform workspace new prod` crée un état séparé sous le même backend ; `terraform.workspace` donne son nom dans le code.
 - Contexte : En local, l'état d'un workspace va dans `terraform.tfstate.d/<nom>/` ; en S3, sous `env:/<nom>/<key>` (doc). Le workspace choisi est mémorisé dans `.terraform/environment` : rien dans le code ni dans la commande ne le montre, d'où des `apply` sur le mauvais environnement. data-platform choisit une `key` par env, explicite dans `backend.hcl`, et `ENV=` dans le Makefile.
 - Usage : ✅ copies jetables d'un même env (une branche, un test) · ❌ séparer dev et prod : même backend, mêmes droits, environnement invisible ; une `key` ou un compte par env.
@@ -570,8 +647,12 @@ find . -name '*.tfstate'
 - Réponse : de tout créer (mesuré) : `default` a son propre état, vide ; les ressources de `prod` lui sont invisibles.
 
 ## 19. états séparés : destroy ne traverse pas
+- Id : state-backend-destroy-etats-separes
 - Sous-thème : state
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : cli-destroy-etat-vide, state-backend-couches-duree-de-vie
 - Source : data-platform · S1-07
 - Définition : `terraform destroy` ne détruit que les ressources de son propre état : un root séparé est hors de portée de `make down`, même sans `prevent_destroy`.
 - Contexte : Terraform ne connaît d'AWS que ce que son état référence. Le bucket d'artefacts, dans l'état local du bootstrap, n'apparaît jamais dans le plan de `infra/`. C'est la vraie protection ; `prevent_destroy` n'est qu'une seconde ceinture contre un `destroy` lancé par erreur dans le bootstrap lui-même. Contrepartie : chaque root se planifie et s'applique à part, dans le bon ordre.
@@ -595,8 +676,12 @@ terraform -chdir=infra/bootstrap \
 - Réponse : non : un data source est seulement lu ; `destroy` ne supprime que les blocs `resource` de son état, la lecture disparaît sans toucher au bucket.
 
 ## 20. dépendance : jamais vers une couche plus courte
-- Sous-thème : principe
+- Id : state-backend-dependance-couche-courte
+- Sous-thème : couches
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : state-backend-couches-duree-de-vie
 - Source : data-platform · S1-07
 - Définition : Une ressource durable ne doit rien utiliser d'une couche plus éphémère : le bucket d'artefacts chiffré par la clé KMS de l'environnement mourrait avec elle.
 - Contexte : Les références vont dans un seul sens : l'environnement lit le bootstrap, jamais l'inverse. D'où SSE-S3 sur `artifacts` : la clé KMS du projet vit dans `infra/` ; après `make down`, elle passe en `PendingDeletion` et tout objet qu'elle chiffre devient illisible, même si le bucket survit. Le test : le bootstrap doit pouvoir s'appliquer sur un compte où `infra/` n'existe pas encore.
@@ -622,8 +707,12 @@ rule {
 - Réponse : non : IAM enregistre l'identifiant interne du rôle (`AROA…`) ; le rôle recréé en a un autre, et la politique affiche l'ancien identifiant à la place de l'ARN.
 
 ## 21. make down : le test de la couche
-- Sous-thème : principe
+- Id : state-backend-make-down-test-couche
+- Sous-thème : couches
+- Type : choisir
 - Niveau : 2
+- Profils : ops
+- Prérequis : state-backend-couches-duree-de-vie
 - Source : data-platform · S1-07
 - Définition : Une ressource peut rester dans `infra/` si `make down` puis `make up` la recréent sans perte qui compte ; sinon elle monte au bootstrap.
 - Contexte : Le test se fait ressource par ressource. Rôles, log groups, Lambdas : recréés à l'identique. `raw` de dev : son contenu disparaît, mais BODACC se rejoue par backfill, donc perte acceptable (en prod, `force_destroy = false` bloque). L'état et les zips, eux, sont lus par `make up` lui-même : impossible de les reconstruire après coup. Une perte acceptable se décide et s'écrit dans le README, elle ne se découvre pas.
@@ -647,8 +736,12 @@ rule {
 - Réponse : hors de l'environnement jetable (bootstrap ou root de données durable) : `make up` recréerait un bucket vide, et ces corrections ne se rejouent pas comme BODACC.
 
 ## 22. for_each : grouper par forme, le piège
-- Sous-thème : principe
+- Id : state-backend-for-each-cycles-de-vie
+- Sous-thème : couches
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : langage-hcl-for-each-cle, state-backend-couches-duree-de-vie
 - Source : data-platform · S1-07
 - Définition : Un `for_each` sur une liste de noms crée des ressources jumelles : des buckets de durées de vie différentes y subissent le même sort.
 - Contexte : L'erreur de S1-04 : `names = ["raw", "processed", "out", "artifacts", "logs"]` dans `modules/s3-buckets`, même clé KMS, même `force_destroy` en dev. La forme commune cachait une différence de cycle de vie. Une boucle est saine quand chaque élément se crée, se modifie et se détruit avec les autres ; dès qu'un élément demande un réglage à part, il sort de la boucle.
@@ -677,8 +770,13 @@ resource "aws_s3_bucket" "this" {
 - Réponse : `Variables not allowed` (vérifié avec `terraform validate`) : les arguments de `lifecycle` doivent être des littéraux ; la ressource à protéger sort de la boucle.
 
 ## 23. couches : se retrouver par convention
-- Sous-thème : principe
+- Id : state-backend-convention-de-nom
+- Sous-thème : couches
+- Type : choisir
 - Niveau : 2
+- Profils : ops
+- Prérequis : state-backend-bucket-artefacts-par-compte
+- Voir aussi : state-backend-remote-state-outputs
 - Source : data-platform · S1-07
 - Définition : `infra/` retrouve le bucket du bootstrap en recalculant son nom (`data-platform-artifacts-<account_id>`), sans lire l'état du bootstrap.
 - Contexte : Trois façons de relier deux roots : une convention de nom (rien à lire, mais deux endroits à garder alignés), `terraform_remote_state` (lit les outputs, mais exige l'accès à l'état de l'autre root), un data source (`aws_s3_bucket`) qui vérifie l'existence au plan. L'output `artifacts_bucket` du bootstrap sert aux humains et aux scripts (`build_lambda.py --publish`).
@@ -703,8 +801,13 @@ grep artifacts_bucket infra/lambdas.tf
 - Réponse : l'état du bootstrap est local, sur le poste qui l'a appliqué : la CI ne peut pas le lire ; la convention de nom ne dépend d'aucun fichier.
 
 ## 24. nom global : un préfixe d'environnement
-- Sous-thème : principe
+- Id : state-backend-nom-sans-environnement
+- Sous-thème : couches
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : state-backend-nom-bucket-unique
+- Voir aussi : langage-hcl-prefixe-par-environnement
 - Source : data-platform · S1-09
 - Définition : Une ressource dont le nom ne contient pas l'environnement entre en collision dès qu'un second environnement est déployé dans le même compte.
 - Contexte : `data-platform-monthly-cost` (budget) et `data-platform-budget-alerts` (topic SNS) n'ont pas d'env. Un `prod` dans le même compte : le budget échoue (doublon), mais le topic est pire, car `CreateTopic` sur un nom existant renvoie le topic déjà là, sans erreur : deux états gèrent le même objet, et le `destroy` de l'un le supprime pour l'autre. Renommer après coup recrée la ressource : préfixer avant le second env, ou un compte par env.
@@ -727,8 +830,13 @@ resource "aws_sns_topic" "alerts" {
 - Réponse : il réussit et reprend le topic de `dev` : `CreateTopic` est idempotent sur le nom ; deux états pointent alors vers le même topic.
 
 ## 25. moved : renommer sans recréer
+- Id : state-backend-moved-renommer
 - Sous-thème : state
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-contenu-etat
+- Voir aussi : state-backend-state-mv-vs-moved, modules-moved-renommer-appel
 - Définition : Un bloc `moved` déclare qu'une adresse a changé (`from` → `to`) : Terraform déplace l'objet dans le state au lieu de le recréer.
 - Contexte : Renommer un label, passer à `for_each` ou ranger une ressource dans un module change son adresse ; sans `moved`, le plan détruit puis recrée, ce qui vide un bucket de données. Le bloc est revu dans le plan (`has moved to`) et appliqué avec le reste. Après l'apply partout, il peut être retiré, ou gardé pour les autres envs pas encore à jour.
 - Usage : ✅ refactoring d'adresses (renommage, entrée dans un module, `count` → `for_each`) · ❌ objet à ne plus gérer : `removed` ; objet existant hors state : `import`.
@@ -763,8 +871,13 @@ moved {
 - Réponse : `raw has moved to raw[0]` : Terraform déduit seul ce déplacement entre l'adresse sans index et l'index `[0]`.
 
 ## 26. state rm : oublier sans détruire
+- Id : state-backend-state-rm-vs-removed
 - Sous-thème : state
+- Type : comparaison
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-contenu-etat
+- Voir aussi : state-backend-import-existant
 - Définition : `terraform state rm` retire une ressource du state sans la toucher dans AWS : Terraform cesse simplement de la gérer.
 - Contexte : Utile pour confier une ressource à un autre state (autre dossier, bootstrap) ou pour la sortir de Terraform. La commande agit tout de suite sur le state partagé, sans plan relu : depuis Terraform 1.7, le bloc `removed` fait la même chose de façon déclarative, revue dans le plan et dans la MR.
 - Usage : ✅ déplacer une ressource vers un autre state, abandonner sa gestion · ❌ la supprimer pour de vrai : retirer le bloc et `apply` ; renommer : `moved`.
@@ -797,8 +910,13 @@ removed {
 - Réponse : `will be created` : Terraform ne connaît plus le bucket ; l'apply échouera car le nom existe déjà dans AWS (`import` pour le reprendre).
 
 ## 27. verrou : use_lockfile natif S3
+- Id : state-backend-use-lockfile
 - Sous-thème : backend
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-configuration-partielle
+- Voir aussi : DevOps/ci-cd-concurrence-deploiement
 - Définition : `use_lockfile = true` pose un objet `<key>.tflock` à côté de l'état pendant `plan` et `apply`, pour qu'une seule exécution l'écrive à la fois.
 - Contexte : Avant Terraform 1.10, le verrou S3 exigeait une table DynamoDB (`dynamodb_table`, désormais dépréciée). Le lockfile natif s'appuie sur l'écriture conditionnelle de S3 : créer le `.tflock` échoue s'il existe déjà. D'où `required_version = ">= 1.10"`. Si un `apply` est tué net, le verrou peut rester : `force-unlock` le retire, après avoir vérifié que personne ne tourne.
 - Usage : ✅ tout backend S3 partagé (poste et CI) · ❌ `-lock=false` pour « débloquer » : deux écritures concurrentes corrompent l'état ; `force-unlock` à la place.
@@ -828,8 +946,12 @@ terraform -chdir=infra \
 - Réponse : il échoue (`Error acquiring the state lock`) : `plan` verrouille aussi, et l'attente par défaut est nulle ; `-lock-timeout=60s` attendrait.
 
 ## 28. prevent_destroy : ce qu'il protège
+- Id : state-backend-prevent-destroy-portee
 - Sous-thème : garde-fous
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : cli-destroy-etat-vide
 - Définition : `lifecycle { prevent_destroy = true }` fait échouer tout plan qui détruirait la ressource, `destroy` compris.
 - Contexte : Le contrôle porte sur le plan, pas sur la commande : tout ce qui finit en suppression est bloqué, y compris un remplacement (`-/+`) causé par un argument qui force la recréation, comme le nom d'un bucket. Il ne protège pas d'une suppression faite dans la console AWS ou en CLI : c'est une règle Terraform, pas une protection AWS. AWS refuse en plus de supprimer un bucket non vide sans `force_destroy`.
 - Usage : ✅ bucket d'état, buckets de données de prod, clé KMS, toute ressource dont la perte est irréversible · ❌ ressources jetables de dev, recréées souvent : bloquerait `make down`.
@@ -867,8 +989,13 @@ resource "aws_s3_bucket" "tfstate" {
 - Réponse : il propose la destruction, sans erreur : avec le bloc disparaît son `lifecycle` ; pour oublier sans détruire, un bloc `removed` avec `destroy = false`.
 
 ## 29. import : rattacher l'existant
+- Id : state-backend-import-existant
 - Sous-thème : state
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-contenu-etat
+- Voir aussi : state-backend-import-sous-ressources, cli-derive-hors-terraform
 - Définition : `terraform import adresse id` rattache une ressource AWS existante à l'état sans la recréer : la parade à un état local perdu.
 - Contexte : L'état du bootstrap est local : perdre le dossier (nouveau poste, `git clean`) laisse le bucket sur AWS, mais Terraform ne le connaît plus et `apply` tenterait de le recréer. `import` écrit l'état ressource par ressource : l'adresse vient du code, l'id dépend du type (le nom du bucket pour les 4 ressources). Depuis Terraform 1.5, un bloc `import { to, id }` fait la même chose au `plan`, relisible en revue.
 - Usage : ✅ reprendre un bootstrap dont l'état est perdu, adopter une ressource créée à la main · ❌ ressource déjà gérée par un autre état : deux roots se la disputeraient.
@@ -903,8 +1030,12 @@ import {
 - Réponse : erreur `resource address … does not exist in the configuration` : `import` remplit un bloc existant ; écrire le code d'abord, ou `plan -generate-config-out` avec un bloc `import`.
 
 ## 30. init -migrate-state : déplacer un état
+- Id : state-backend-init-migrate-state
 - Sous-thème : backend
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-init-reconfigure
 - Définition : `init -migrate-state` copie l'état de l'ancien backend vers le nouveau, pour déplacer un état sans réimporter les ressources.
 - Contexte : Cas typiques : un root démarré en état local qu'on passe sur S3, ou une `key` renommée. Terraform lit l'ancienne config dans `.terraform/`, la nouvelle dans le code et `-backend-config`, puis demande confirmation (`-force-copy` répond oui). Avant, `plan` doit dire `No changes.` ; après, sur le nouveau backend, aussi.
 - Usage : ✅ changer de bucket ou de `key` pour un même environnement, passer du local au S3 · ❌ basculer d'un environnement à l'autre : `-reconfigure`.
@@ -928,8 +1059,12 @@ terraform -chdir=infra plan
 - Réponse : vidé : Terraform efface l'état local migré mais laisse `terraform.tfstate.backup`, l'état complet en clair, à mettre à la corbeille ; entre deux backends (changement de `key`), la source reste intacte (mesuré, Terraform 1.14).
 
 ## 31. state mv : déplacer tout de suite
+- Id : state-backend-state-mv-vs-moved
 - Sous-thème : state
+- Type : comparaison
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-moved-renommer
 - Définition : `terraform state mv A B` change l'adresse d'un objet dans l'état immédiatement, sans plan : la version impérative du bloc `moved`.
 - Contexte : Elle écrit l'état partagé tout de suite, sans revue ni trace dans le dépôt, et ne touche pas le code : le renommage doit y être fait à la main, sinon le plan suivant détruit et recrée. `-dry-run` montre ce qui serait déplacé. En zsh, une adresse avec `["raw"]` se met entre apostrophes, sinon le shell la prend pour un motif (`no matches found`).
 - Usage : ✅ correction ponctuelle sur un poste, état local du bootstrap · ❌ refactoring d'un root partagé : un bloc `moved`, relu en MR et appliqué partout.
@@ -955,8 +1090,13 @@ terraform state mv -dry-run \
 - Réponse : détruire `brut`, créer `raw` (mesuré) : le code déclare toujours `raw` ; l'état a bougé, pas la configuration.
 
 ## 32. changer de couche : moved ne traverse pas
+- Id : state-backend-moved-entre-etats
 - Sous-thème : state
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-moved-renommer, state-backend-couches-duree-de-vie
+- Voir aussi : state-backend-state-rm-vs-removed, state-backend-import-existant
 - Source : data-platform · S1-07
 - Définition : `moved` ne déplace une ressource qu'à l'intérieur d'un même état ; vers un autre root, il faut la sortir d'un état puis l'importer dans l'autre.
 - Contexte : Un bloc `moved` réécrit une adresse dans l'état courant : il ne voit aucun autre root. Pour garder un bucket en changeant de couche : bloc `removed` avec `destroy = false` dans `infra/`, puis `import` dans le bootstrap, en deux `apply`. Ici, rien à garder (un zip se republie) : détruire et recréer était plus simple, et changeait au passage nom et chiffrement.
@@ -985,8 +1125,12 @@ import {
 - Réponse : il le détruit : les deux états le référencent, chacun se croit propriétaire ; `prevent_destroy` du bootstrap ne joue que dans le bootstrap. Une ressource, un seul état.
 
 ## 33. couches : au-delà de deux
-- Sous-thème : principe
+- Id : state-backend-couches-entreprise
+- Sous-thème : couches
+- Type : choisir
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-couches-duree-de-vie
 - Source : data-platform · S1-07
 - Définition : En entreprise, les roots s'empilent par durée de vie et rythme de changement : socle du compte, réseau, données, applications.
 - Contexte : Chaque couche a son état, ses droits de déploiement et son rythme : le socle (état, artefacts, OIDC) bouge une fois par an, le réseau rarement, les Lambdas à chaque commit. Séparer réduit le rayon d'explosion : un `apply` raté sur une Lambda ne peut pas toucher un VPC. Le coût : des valeurs à passer d'une couche à l'autre (convention de nom, paramètre SSM, `terraform_remote_state`) et un ordre de déploiement à tenir.
@@ -1011,8 +1155,12 @@ import {
 - Réponse : une couche données, sous les applications : elle a la durée de vie des données, ses propres droits, et la refonte des Lambdas ne touche plus son état.
 
 ## 34. état perdu : importer chaque sous-ressource
+- Id : state-backend-import-sous-ressources
 - Sous-thème : state
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : state-backend-import-existant
 - Source : data-platform · S1-09
 - Définition : Reconstruire un état perdu demande un `terraform import` par bloc `resource` du code, sous-ressources comprises, jusqu'à un `plan` à « No changes ».
 - Contexte : Un bucket du provider AWS v4+ se décrit en plusieurs ressources : `aws_s3_bucket`, `_versioning`, `_server_side_encryption_configuration`, `_public_access_block`, `_lifecycle_configuration`. Chacune a son adresse et s'importe à part, souvent avec le nom du bucket comme id. Oublier les 5 ressources du bucket d'artefacts laissait le `plan` final avec 5 créations : la procédure n'était pas finie, et « No changes » est la seule preuve qu'elle l'est.

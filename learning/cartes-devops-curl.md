@@ -2,17 +2,21 @@
 title: "Cartes · curl"
 type: cartes
 langage: DevOps
+chapitre: Terminal
 cours: curl
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Cartes · curl
 DevOps · curl : compression, en-têtes (format spec v3 de revision-pwa).
 
 ## 1. --compressed : décompresser la réponse
+- Id : curl-compressed-decompresser
 - Sous-thème : compression
+- Type : piège
 - Niveau : 1
+- Profils : débutant, web, data
 - Source : data-platform · S1-05
 - Définition : `curl --compressed` demande une réponse compressée et la décompresse ; sans l'option, curl écrit les octets reçus tels quels.
 - Contexte : Le navigateur, `fetch` et `httpx` décompressent seuls, curl non. Certains serveurs (OpenDataSoft, donc BODACC) envoient du gzip même sans `Accept-Encoding` : la sortie commence par les octets `1f 8b`, et le `json.load` derrière le pipe plante. L'en-tête `content-encoding: gzip` le confirme. Sur un JSON répétitif, gzip divise le transfert par 5 à 10.
@@ -20,6 +24,7 @@ DevOps · curl : compression, en-têtes (format spec v3 de revision-pwa).
 
 ```bash
 # Exemple 1 : sans l'option, du binaire
+# serveur qui envoie toujours du gzip
 U="$BODACC/records?limit=1&select=id"
 curl -s "$U" | head -c 4 | xxd
 # 00000000: 1f8b 0800   (gzip)
@@ -46,8 +51,11 @@ r.json()   # → {"n": 1}
 - Réponse : des octets gzip bruts : l'en-tête demande la compression, seul `--compressed` fait décompresser par curl.
 
 ## 2. -D - : les en-têtes sans le corps
+- Id : curl-entetes-sans-corps
 - Sous-thème : en-têtes
+- Type : recette
 - Niveau : 2
+- Profils : web, data, ops
 - Source : data-platform · S1-05
 - Définition : `curl -D - -o /dev/null` affiche les en-têtes de réponse et jette le corps ; `-w "%{http_code}"` imprime le statut HTTP.
 - Contexte : Les en-têtes disent ce que le corps tait : quota (`x-ratelimit-*`), compression (`content-encoding`), cache (`cache-control: max-age=60`), type annoncé (`content-type`, parfois faux). `-D -` écrit les en-têtes sur la sortie standard, `-o /dev/null` supprime le corps, `-w` imprime des variables après la requête (`%{http_code}`, `%{time_total}`, `%{url_effective}`). `-I` envoie un HEAD, que certains serveurs traitent autrement qu'un GET.

@@ -2,17 +2,21 @@
 title: "Cartes · Git"
 type: cartes
 langage: DevOps
+chapitre: Versionner et documenter
 cours: Git
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Cartes · Git
-DevOps · Git : config, gitignore, commit, branches, historique, remote (format spec v3 de revision-pwa).
+DevOps · Git : config, gitignore, commit, branches, historique, remote (format spec v4 de revision-pwa).
 
 ## 1. git config : global ou local
+- Id : git-config-global-ou-local
 - Sous-thème : config
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-01
 - Définition : `git config --global` écrit dans `~/.gitconfig` pour tous les dépôts ; sans `--global`, dans `.git/config` du dépôt courant, qui l'emporte.
 - Contexte : Trois niveaux, du plus large au plus précis : `--system`, `--global`, local. Git lit les trois et garde la valeur la plus précise. D'où une identité perso en global (alias noreply GitHub) et une surcharge locale dans chaque dépôt client. `--show-origin` dit quel fichier a fourni chaque valeur : premier réflexe quand un commit part avec le mauvais email.
@@ -21,10 +25,11 @@ DevOps · Git : config, gitignore, commit, branches, historique, remote (format 
 ```bash
 # Exemple 1 : le local gagne
 git config --global user.email \
-  "123+fraoucene@users.noreply.github.com"
+  "123+moi@users.noreply.github.com"
 cd ~/client && git config user.email \
-  "f.g@client.fr"
-git config user.email  # → f.g@client.fr
+  "f.g@client.example"
+git config user.email
+# → f.g@client.example
 ```
 
 ```bash
@@ -32,19 +37,23 @@ git config user.email  # → f.g@client.fr
 git config --show-origin --get-all \
   user.email
 # file:~/.gitconfig  123+…@users.noreply…
-# file:.git/config   f.g@client.fr
+# file:.git/config   f.g@client.example
 ```
 
 - Quiz : Dans le dépôt client, que renvoie `git config --global --get user.email` ?
-- [ ] `f.g@client.fr`
+- [ ] `f.g@client.example`
 - [x] L'alias noreply GitHub
 - [ ] Les deux emails
 - [ ] Rien : la valeur locale masque la globale
 - Réponse : l'alias noreply : `--global` ne lit que `~/.gitconfig`, la surcharge du dépôt n'entre pas en compte.
 
 ## 2. .gitignore : trop tard pour un fichier suivi
+- Id : git-gitignore-fichier-deja-suivi
 - Sous-thème : gitignore
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : git-status-ignores-ou-non-suivis, git-gitignore-derniere-regle
 - Source : data-platform · S1-01
 - Définition : `.gitignore` n'agit que sur les fichiers non suivis : un fichier déjà commité reste suivi, et dans l'historique, même ajouté ensuite.
 - Contexte : Un fichier présent dans l'index est suivi, quel que soit le `.gitignore`. Pour arrêter de le suivre : `git rm --cached` (il reste sur le disque), puis commit. L'historique garde l'ancienne version : un secret poussé sur un dépôt public se révoque, il ne suffit pas de le retirer. D'où le `.gitignore` dès le premier commit, avant `.venv/`, `.terraform/` ou un `*.tfstate`.
@@ -77,8 +86,11 @@ git log --oneline -- .env
 - Réponse : rien, code 1 : `check-ignore` ne consulte pas les règles pour un fichier présent dans l'index ; `--no-index` les teste quand même.
 
 ## 3. git status --ignored : !! ou ??
+- Id : git-status-ignores-ou-non-suivis
 - Sous-thème : gitignore
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-01
 - Définition : `git status --short --ignored` marque `??` les fichiers non suivis, donc commitables, et `!!` ceux que le `.gitignore` exclut.
 - Contexte : `??` ne protège de rien : un `git add .` l'embarque. Seul `!!` garantit qu'un `terraform.tfstate` ou un `local.auto.tfvars` ne partira pas. Un dossier entièrement non suivi s'affiche replié (`?? infra/`), `-uall` liste chaque fichier. Git suit des fichiers, pas des dossiers : d'où un `README.md` (ou un `.gitkeep`) pour qu'un dossier encore vide existe dans le dépôt.
@@ -93,16 +105,20 @@ git status --short --ignored infra/
 # !! infra/local.auto.tfvars
 ```
 
-- Quiz : Après `mkdir jobs` (dossier vide), que montre `git status --short --ignored` ?
-- [ ] `?? jobs/`
-- [ ] `!! jobs/`
-- [x] Rien
-- [ ] `A  jobs/`
-- Réponse : rien : git n'indexe que des fichiers, un dossier vide n'existe pas pour lui ; d'où `jobs/README.md`.
+- Quiz : `git status --short --ignored` affiche `?? infra/tfplan` : que fait ensuite `git add infra/` ?
+- [x] Stage `infra/tfplan` (`A  infra/tfplan`)
+- [ ] L'ignore : `??` vaut exclusion
+- [ ] Refuse : fichier non suivi
+- [ ] Le stage avec un avertissement `ignored`
+- Réponse : il le stage : `??` = non suivi mais commitable, seul `!!` protège ; ajouter `tfplan` au `.gitignore` (mesuré).
 
 ## 4. git add : ciblé, jamais -A
+- Id : git-add-chemins-explicites
 - Sous-thème : commit
+- Type : recette
 - Niveau : 1
+- Profils : débutant
+- Voir aussi : git-diff-disque-index-head
 - Source : data-platform · S1-03
 - Définition : `git add <fichier>` stage ce que tu as décidé d'inclure ; `git add -A` stage tout le non-ignoré, oublis compris.
 - Contexte : Le `.gitignore` liste ce à quoi tu as pensé : un `tfplan` pas encore listé (ARN, ID de compte) part avec `-A`. Un commit = un sujet : `-A` mélange `infra/`, `learning/` et le scaffold. Réflexe avant de commiter : `git status --short`, rien que des `A` et `M` voulus. Un fichier stagé par erreur se retire de l'index sans toucher au disque.
@@ -133,10 +149,13 @@ git status --short infra/tfplan
 - [ ] Rien, sans message
 - Réponse : erreur : `restore --staged` recopie la version de `HEAD` dans l'index, et `HEAD` n'existe pas encore ; `git rm --cached f` marche.
 
-
 ## 5. git diff : disque, index ou HEAD
+- Id : git-diff-disque-index-head
 - Sous-thème : commit
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant
+- Voir aussi : git-add-chemins-explicites
 - Définition : `git diff` compare le disque à l'index, `git diff --staged` l'index au dernier commit, `git diff HEAD` le disque au dernier commit.
 - Contexte : Git a trois états d'un fichier : le dernier commit (`HEAD`), l'index (ce qui partira au prochain commit) et le disque. Après `git add`, `git diff` devient vide alors que rien n'est commité : c'est le piège quand on cherche « ce que je vais commiter ». Le réflexe avant un commit : `git diff --staged`, qui montre exactement le contenu du prochain commit.
 - Usage : ✅ `git diff --staged` avant chaque commit, `--stat` pour un résumé · ❌ `git diff` seul pour relire un commit à venir : il ignore ce qui est déjà stagé.
@@ -169,8 +188,12 @@ git diff HEAD --stat      # disque / HEAD
 - Réponse : la version stagée : `commit` enregistre l'index tel qu'au `git add` ; la suite reste en ` M f`, à re-stager (mesuré).
 
 ## 6. commit --amend : refaire le dernier commit
+- Id : git-commit-amend
 - Sous-thème : commit
+- Type : recette
 - Niveau : 1
+- Profils : débutant
+- Voir aussi : git-push-force-with-lease, git-reset-trois-modes
 - Définition : `git commit --amend` remplace le dernier commit par un nouveau (index actuel, message corrigé) : son hash change.
 - Contexte : Rien n'est modifié en place : Git crée un commit neuf et déplace la branche dessus, l'ancien n'est plus référencé (le reflog le garde). `--no-edit` garde le message, idéal pour un fichier oublié. Comme le hash change, amender un commit déjà poussé diverge de la branche distante : réservé aux commits encore locaux, sinon il faut forcer le push.
 - Usage : ✅ message mal préfixé, fichier oublié, avant le push · ❌ commit déjà poussé sur une branche partagée : nouveau commit correctif.
@@ -202,8 +225,12 @@ git show --stat HEAD
 - Réponse : refusé (non-fast-forward) : le nouveau commit n'a pas l'ancien pour parent, le distant perdrait un commit ; il faudrait `--force-with-lease` (mesuré).
 
 ## 7. git switch -c : une branche est un pointeur
+- Id : git-branche-pointeur
 - Sous-thème : branches
+- Type : concept
 - Niveau : 1
+- Profils : débutant
+- Voir aussi : git-merge-fast-forward
 - Définition : Une branche est un pointeur mobile vers un commit ; `git switch -c feat` la crée sur le commit courant et s'y place.
 - Contexte : Créer une branche ne copie rien : un fichier `.git/refs/heads/feat` contient un hash, déplacé à chaque commit. Les modifications non commitées n'appartiennent à aucune branche : elles suivent le changement de branche. `switch` (Git 2.23) remplace la moitié « branche » de `checkout` ; `git restore` prend l'autre moitié (fichiers).
 - Usage : ✅ une branche par ticket (`RLINK-123`), `git switch -` pour revenir à la précédente · ❌ `git checkout <nom>` quand un fichier porte le même nom qu'une branche : ambigu, préférer `switch`.
@@ -234,8 +261,12 @@ git status --short       # →  M f
 - Réponse : il refuse : la version de `other` écraserait le travail non commité ; commiter, `git stash` ou `switch -m` d'abord (mesuré).
 
 ## 8. git stash : mettre de côté
+- Id : git-stash-mettre-de-cote
 - Sous-thème : branches
+- Type : recette
 - Niveau : 1
+- Profils : débutant
+- Voir aussi : pre-commit-stash-conflit
 - Définition : `git stash` range les modifications des fichiers suivis dans une pile et remet le dossier propre ; `git stash pop` les réapplique.
 - Contexte : Utile pour changer de branche en urgence (hotfix) sans commit bancal. La pile est locale et se lit avec `git stash list` (`stash@{0}` le plus récent). `pop` applique puis supprime l'entrée ; en cas de conflit, l'entrée est gardée pour ne rien perdre. `apply` applique sans supprimer. Un stash oublié des semaines devient un piège : préférer une branche WIP.
 - Usage : ✅ interruption courte : hotfix sur `main`, `git pull` bloqué par une modif locale · ❌ travail de plusieurs jours : branche et commit WIP, poussés.
@@ -268,8 +299,12 @@ git stash list
 - Réponse : `?? u.txt` : `stash` ne prend que les fichiers suivis ; `git stash -u` embarque aussi les non suivis (mesuré).
 
 ## 9. fetch ou pull : récupérer le distant
+- Id : git-fetch-ou-pull
 - Sous-thème : remote
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant
+- Voir aussi : git-merge-fast-forward, git-rebase-rejouer-commits
 - Définition : `git fetch` télécharge les commits distants et met à jour `origin/main` seulement ; `git pull` = `fetch` puis intégration dans la branche courante.
 - Contexte : `origin/main` est la copie locale, en lecture seule, de la branche distante au dernier fetch. `fetch` ne touche jamais au travail : on regarde (`git log main..origin/main`), puis on choisit merge ou rebase. `git status -sb` dit `ahead`/`behind` par rapport à ce dernier fetch, pas en direct. `pull --rebase` rejoue ses commits locaux au-dessus du distant, sans commit de merge.
 - Usage : ✅ `fetch` puis relecture avant d'intégrer, `pull --rebase` sur sa branche perso · ❌ `pull` aveugle sur une branche partagée en plein travail local.
@@ -301,8 +336,11 @@ git log --oneline -3
 - Réponse : il refuse : Git récent exige de choisir `--rebase`, `--no-rebase` ou `--ff-only` (ou `git config pull.rebase true`) ; mesuré avec Git 2.39.
 
 ## 10. .gitignore : la dernière règle gagne
+- Id : git-gitignore-derniere-regle
 - Sous-thème : gitignore
+- Type : piège
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-04
 - Définition : Dans `.gitignore`, un chemin suit la dernière ligne qui le désigne ; `!motif` ré-inclut ce qu'une ligne précédente excluait.
 - Contexte : Git lit le fichier de haut en bas, sans priorité au motif le plus précis : l'ordre fait la règle, d'où « exclure large, ré-inclure le commitable, re-exclure le secret ». Un fichier sous un dossier exclu ne peut pas être ré-inclus : Git ne descend plus dedans. `git check-ignore` teste un chemin même inexistant ; piège : `-v` affiche aussi la ligne `!` qui ré-autorise, code 0 ; seul `-q` et son code retour tranchent.
@@ -354,8 +392,11 @@ git check-ignore -q \
 - Réponse : non : `envs/` exclut le dossier, Git n'y descend plus et `!` ne peut rien ré-inclure dedans (mesuré : `check-ignore` → `.gitignore:1:envs/`).
 
 ## 11. .gitignore : relatif à son dossier
+- Id : git-gitignore-relatif-dossier
 - Sous-thème : gitignore
+- Type : piège
 - Niveau : 2
+- Profils : web, ops
 - Source : revision-pwa · pwa-revision
 - Définition : Un `.gitignore` de sous-dossier se lit depuis son propre dossier : ses motifs ne partent pas de la racine du dépôt.
 - Contexte : Un motif avec un `/` au début ou au milieu (`/dist/`, `apps/revision/dist/`) est ancré au dossier du `.gitignore`. Recopier dans `apps/revision/.gitignore` un chemin écrit pour la racine vise donc `apps/revision/apps/revision/dist/` : rien n'est ignoré, sans message. Le `/` final seul ne compte pas : il dit seulement « un dossier ».
@@ -387,8 +428,11 @@ git check-ignore -v \
 - Réponse : oui : sans `/` au début ou au milieu (le `/` final ne compte pas), le motif s'applique à tout niveau sous le dossier du `.gitignore` ; `/dist/` l'ancre.
 
 ## 12. credential helper : un par hôte
+- Id : git-credential-helper-par-hote
 - Sous-thème : config
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-01
 - Définition : Un credential helper fournit à git le login d'un dépôt HTTPS ; `gh auth setup-git` déclare `gh` comme helper de `https://github.com` seulement.
 - Contexte : La clé générique `credential.helper` (ici `osxkeychain`) sert à tous les hôtes ; une clé par URL, `credential.https://github.com.helper`, s'ajoute pour un hôte. `gh` y écrit d'abord une valeur vide, qui vide la liste héritée : seul `gh` répond pour GitHub, le keychain reste pour GitLab. Si « Authenticate Git » n'a pas été appliqué au `gh auth login`, `gh auth setup-git` le refait.
@@ -423,8 +467,13 @@ git config --get-urlmatch \
 - Réponse : `osxkeychain` seul : gh écrit sous la clé par URL `credential.https://github.com.helper`, que `--get-all credential.helper` ne lit pas ; vérifier avec `--get-regexp credential`.
 
 ## 13. merge : fast-forward ou commit de merge
+- Id : git-merge-fast-forward
 - Sous-thème : branches
+- Type : comparaison
 - Niveau : 2
+- Profils : ops
+- Prérequis : git-branche-pointeur
+- Voir aussi : git-rebase-rejouer-commits
 - Définition : `git merge feat` avance simplement `main` si elle n'a pas bougé (fast-forward) ; sinon il crée un commit de merge à deux parents.
 - Contexte : Fast-forward : aucun nouveau commit, l'historique reste linéaire et la trace de la branche disparaît. `--no-ff` force un commit de merge même quand l'avance suffirait : la fonctionnalité reste groupée et un seul `revert` l'annule. C'est le comportement d'une MR GitLab par défaut (« merge commit »). `--ff-only` fait l'inverse : avancer ou échouer, jamais de merge.
 - Usage : ✅ `--no-ff` pour intégrer une branche de ticket, `--ff-only` pour suivre `main` en local · ❌ merge de `main` dans sa branche à chaque pull : historique illisible, préférer un rebase local.
@@ -455,8 +504,13 @@ git log --oneline --graph -3
 - Réponse : il échoue : avancer `main` jusqu'à `feat` perdrait le commit de `main` ; `--ff-only` refuse tout merge réel (mesuré).
 
 ## 14. rebase : rejouer ses commits
+- Id : git-rebase-rejouer-commits
 - Sous-thème : branches
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : git-branche-pointeur
+- Voir aussi : git-push-force-with-lease, git-ours-theirs-rebase
 - Définition : `git rebase main` rejoue les commits de la branche courante au-dessus de `main` : historique linéaire, mais chaque commit rejoué reçoit un nouveau hash.
 - Contexte : Git calcule les commits de `feat` absents de `main`, se place sur `main` et réapplique chacun comme un nouveau commit (même message, autre parent, donc autre hash). Les anciens restent dans le reflog. Règle d'or : ne jamais rebaser des commits déjà poussés sur une branche partagée ; sur sa propre branche de MR, c'est courant, suivi d'un `push --force-with-lease`.
 - Usage : ✅ remettre sa branche de ticket à jour de `main` avant la MR · ❌ rebaser `main` ou une branche où d'autres poussent : leurs commits divergent.
@@ -488,8 +542,13 @@ git rebase --abort
 - Réponse : rien : `rebase` ne déplace que la branche courante (`main` garde son hash, mesuré) ; il faut ensuite un merge, fast-forward, dans `main`.
 
 ## 15. conflit : marqueurs et résolution
+- Id : git-conflit-marqueurs
 - Sous-thème : branches
+- Type : recette
 - Niveau : 2
+- Profils : débutant
+- Prérequis : git-merge-fast-forward
+- Voir aussi : git-ours-theirs-rebase, uv-lock-conflit-git
 - Définition : En conflit, Git écrit les deux versions entre `<<<<<<<`, `=======` et `>>>>>>>` ; on édite, puis `git add` marque le fichier résolu.
 - Contexte : Le haut (`HEAD`) est la branche courante, le bas la branche fusionnée. `git status` marque le fichier `UU` (modifié des deux côtés). Résoudre = garder le bon contenu et supprimer les trois marqueurs, puis `git add` et `git commit` (ou `rebase --continue`). `git merge --abort` remet tout comme avant. L'IDE propose « Accept current / incoming » : mêmes deux côtés.
 - Usage : ✅ résoudre fichier par fichier, relancer les tests avant le commit · ❌ `git add .` dès le conflit affiché : les marqueurs partent dans le commit.
@@ -523,8 +582,13 @@ git merge --abort
 - Réponse : le commit passe : `git add` vaut « résolu » sans lire le contenu (mesuré) ; un hook (`check-merge-conflict` de pre-commit) ou les tests l'attrapent.
 
 ## 16. reset : --soft, --mixed, --hard
+- Id : git-reset-trois-modes
 - Sous-thème : historique
+- Type : comparaison
 - Niveau : 2
+- Profils : ops
+- Prérequis : git-diff-disque-index-head, git-branche-pointeur
+- Voir aussi : git-reflog-commit-perdu, git-revert-commit-publie
 - Définition : `git reset <commit>` recule la branche : `--soft` garde index et disque, `--mixed` (défaut) vide l'index, `--hard` écrase le disque.
 - Contexte : Les trois déplacent le pointeur de branche : les commits « annulés » sortent de l'historique visible. `--soft HEAD~1` défait un commit en gardant tout stagé (re-commiter autrement) ; `--mixed` garde les modifs sur le disque, non stagées ; `--hard` perd aussi le travail non commité, sans retour possible pour celui-ci. Réécrire un historique déjà poussé impose un push forcé.
 - Usage : ✅ `--soft HEAD~1` pour refaire le dernier commit local, `--hard` pour repartir de `origin/main` · ❌ `reset` sur un commit déjà partagé : `git revert`.
@@ -554,8 +618,12 @@ git reset --hard origin/main
 - Réponse : toujours là : `reset --hard` ne touche qu'aux fichiers suivis ; `git clean -n` liste les non suivis, `-f` les supprime (mesuré).
 
 ## 17. revert : annuler un commit publié
+- Id : git-revert-commit-publie
 - Sous-thème : historique
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Voir aussi : git-reset-trois-modes
 - Définition : `git revert <commit>` crée un nouveau commit qui applique l'inverse de celui visé : l'historique n'est pas réécrit, le push reste normal.
 - Contexte : C'est l'annulation des branches partagées : `main` déjà poussée, déployée par la CI. Le commit fautif reste visible, suivi de `Revert "…"` : la trace est complète et personne ne diverge. Pour un commit de merge, il faut dire quel parent garder (`-m 1` = la branche où l'on avait fusionné). Le revert d'un revert ré-applique le changement.
 - Usage : ✅ défaire en prod un commit déjà poussé, rollback par Git puis pipeline · ❌ commit encore local : `reset` ou `--amend`, plus propre.
@@ -578,8 +646,11 @@ git push     # sans --force
 - Réponse : erreur : un merge a deux parents, Git doit savoir lequel garder ; `git revert -m 1 HEAD` revient à l'état de `main` avant le merge (mesuré).
 
 ## 18. cherry-pick : recopier un commit
+- Id : git-cherry-pick
 - Sous-thème : historique
+- Type : recette
 - Niveau : 2
+- Profils : ops
 - Définition : `git cherry-pick <hash>` rejoue un commit d'une autre branche sur la branche courante, sous un nouveau hash.
 - Contexte : Cas typique : un correctif fait sur une branche de ticket doit partir tout de suite sur `main` ou une branche de release, sans le reste de la branche. Le commit recopié a le même message et le même diff, mais un autre parent, donc un autre hash : les deux branches portent deux commits distincts. `-x` ajoute « (cherry picked from commit …) » au message pour la traçabilité.
 - Usage : ✅ hotfix à porter sur une branche de release, commit poussé sur la mauvaise branche · ❌ ramener une branche entière commit par commit : `merge` ou `rebase`.
@@ -609,17 +680,22 @@ git log -1 --format=%B
 - Réponse : il s'arrête : le diff est déjà présent, le commit serait vide ; `--skip` passe, `--allow-empty` commite quand même (mesuré).
 
 ## 19. push --force-with-lease : forcer prudemment
+- Id : git-push-force-with-lease
 - Sous-thème : remote
+- Type : comparaison
 - Niveau : 2
+- Profils : ops
+- Prérequis : git-fetch-ou-pull
+- Voir aussi : git-commit-amend
 - Définition : `git push --force-with-lease` écrase la branche distante seulement si elle est encore là où ton dernier fetch l'a vue.
 - Contexte : `--force` écrase sans condition : le commit qu'un collègue vient de pousser disparaît. `--force-with-lease` compare la branche distante à `origin/<branche>` local : si quelqu'un a poussé entre-temps, refus `(stale info)`. Indispensable après un `rebase` ou un `--amend` de sa branche de MR. GitLab protège `main` contre tout push forcé par défaut.
 - Usage : ✅ après rebase ou amend de sa propre branche de MR · ❌ `--force` nu ; tout push forcé sur `main` ou une branche partagée.
 
 ```bash
 # Exemple 1 : un collègue a poussé
-git rebase main     # historique réécrit
+git rebase main     # sur feat : réécrit
 git push --force-with-lease
-# → ! [rejected] main -> main
+# → ! [rejected] feat -> feat
 #   (stale info)  : rien d'écrasé
 ```
 
@@ -628,11 +704,14 @@ git push --force-with-lease
 - [x] Accepté : le commit du collègue est écrasé
 - [ ] Accepté, en gardant le commit du collègue
 - [ ] Refusé : `(fetch first)`
-- Réponse : accepté, et le commit du collègue est perdu : le fetch a mis `origin/main` à jour, la « lease » correspond ; relire `git log ..origin/main` avant de forcer (mesuré).
+- Réponse : accepté, et le commit du collègue est perdu : le fetch a mis `origin/feat` à jour, la « lease » correspond ; relire `git log ..origin/feat` avant de forcer (mesuré).
 
 ## 20. tag : léger ou annoté, poussé à part
+- Id : git-tag-leger-ou-annote
 - Sous-thème : remote
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Définition : Un tag nomme un commit pour toujours (`v1.1.0`) ; annoté (`-a`), c'est un objet avec auteur, date et message ; léger, un simple pointeur.
 - Contexte : Les tags marquent les versions déployées et servent de déclencheur de CI (pipeline de release). Annoté pour une release : `git describe` et `--follow-tags` les utilisent. Piège : `git push` n'envoie aucun tag ; il faut `git push origin v1.1.0` ou `--follow-tags`. Un tag déjà poussé ne se déplace pas : on en crée un nouveau.
 - Usage : ✅ `git tag -a v1.2.0 -m …` à chaque release, poussé explicitement · ❌ déplacer un tag publié (`-f`) : les clones gardent l'ancien.
@@ -661,10 +740,14 @@ git push origin v1.1.0
 - Réponse : `v1.1.0` seulement : `--follow-tags` n'envoie que les tags annotés qui pointent sur des commits poussés ; `--tags` enverrait tout (mesuré).
 
 ## 21. reflog : retrouver un commit perdu
+- Id : git-reflog-commit-perdu
 - Sous-thème : historique
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : git-reset-trois-modes
 - Définition : `git reflog` liste chaque position passée de `HEAD` (commit, reset, rebase) : un commit « perdu » s'y retrouve par `HEAD@{n}`.
-- Contexte : Un commit n'est jamais effacé tout de suite : après `reset --hard` ou un rebase raté, il n'est plus référencé par une branche mais reste dans la base, et le reflog garde son hash (90 jours par défaut). Le reflog est local à ton dépôt : un clone neuf ne connaît pas ton historique de déplacements. C'est le filet de sécurité de `reset`, `amend` et `rebase`.
+- Contexte : Un commit n'est jamais effacé tout de suite : après `reset --hard` ou un rebase raté, il n'est plus référencé par une branche mais reste dans la base, et le reflog garde son hash (30 jours par défaut pour un commit devenu inaccessible, 90 sinon). Le reflog est local à ton dépôt : un clone neuf ne connaît pas ton historique de déplacements. C'est le filet de sécurité de `reset`, `amend` et `rebase`.
 - Usage : ✅ annuler un `reset --hard`, un rebase ou un amend raté · ❌ chercher un travail jamais commité : seul un commit (ou un stash) laisse une trace.
 
 ```bash
@@ -692,8 +775,12 @@ git reset --hard ORIG_HEAD
 - Réponse : non : le reflog ne trace que des commits ; une modif non commitée écrasée par `--hard` est perdue (mesuré : `HEAD@{1}` rend `c3`, pas la modif).
 
 ## 22. conflit : ours et theirs s'inversent en rebase
+- Id : git-ours-theirs-rebase
 - Sous-thème : branches
+- Type : piège
 - Niveau : 3
+- Profils : expert
+- Prérequis : git-conflit-marqueurs, git-rebase-rejouer-commits
 - Définition : En merge, `--ours` est ta branche courante ; en rebase, c'est la branche de base (`main`), car Git rejoue tes commits par-dessus.
 - Contexte : Pendant `git rebase main`, Git se place sur `main` puis applique tes commits un à un : la branche « courante » est alors `main`, et tes commits sont « theirs ». Même inversion dans les marqueurs (`HEAD` = `main`) et dans les boutons « current / incoming » de l'IDE. Résoudre un conflit de rebase en prenant `--ours` par réflexe jette donc ton propre travail.
 - Usage : ✅ vérifier le contenu (`git diff`) avant de choisir un côté · ❌ `git checkout --ours .` en masse pendant un rebase, en croyant garder son code.
@@ -715,8 +802,12 @@ git merge --abort
 - Réponse : la version de `main` : en rebase, « ours » est la base sur laquelle on rejoue ; `--theirs` rend celle de `feat` (mesuré).
 
 ## 23. hook commit-msg : imposer le préfixe
+- Id : git-hook-commit-msg
 - Sous-thème : commit
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Voir aussi : pre-commit-install-par-clone
 - Définition : Un hook est un script de `.git/hooks/` lancé par Git à un moment précis ; `commit-msg` lit le message et annule le commit s'il échoue.
 - Contexte : Hooks locaux et non versionnés (`.git/` ne part jamais) : chaque clone doit les installer, d'où pre-commit, qui les génère depuis un fichier commité. `pre-commit` lit l'index, `commit-msg` le fichier du message (`$1`), `pre-push` les refs à pousser. `--no-verify` saute `pre-commit` et `commit-msg` : le hook est un confort, la CI reste le garde-fou.
 - Usage : ✅ préfixe `RLINK-123: ` imposé, secret détecté avant le commit · ❌ seul contrôle d'une règle obligatoire : la refaire en CI.

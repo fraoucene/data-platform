@@ -2,17 +2,21 @@
 title: "Cartes · Ligne de commande Python"
 type: cartes
 langage: Python
+chapitre: Système et réseau
 cours: Ligne de commande
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · Ligne de commande Python
 Python · Ligne de commande : argparse, arguments, erreurs, script (format spec v3 de revision-pwa).
 
 ## 1. argparse : lire les options
+- Id : ligne-de-commande-argparse-options
 - Sous-thème : argparse
+- Type : recette
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-08
 - Définition : `argparse.ArgumentParser` déclare les options d'un script, puis `parse_args` les lit et renvoie un `Namespace` à champs (≈ `commander` / `yargs`).
 - Contexte : Chaque `add_argument("--to")` crée un champ `args.to`, chaîne par défaut. argparse génère aussi `--help`, les messages d'erreur et le code de sortie 2. `parse_args(liste)` lit une liste fournie : c'est ce qui rend un CLI testable sans terminal. `vars(args)` donne le dictionnaire.
@@ -40,8 +44,13 @@ vars(args)
 - Réponse : `None` : une option facultative sans `default` existe toujours dans le `Namespace`, à `None`.
 
 ## 2. parse_args(None) : lire sys.argv
+- Id : ligne-de-commande-parse-args-none
 - Sous-thème : argparse
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : ligne-de-commande-argparse-options
+- Voir aussi : ligne-de-commande-main-argv-teste
 - Source : data-platform · S1-08
 - Définition : Sans argument (ou avec `None`), `parse_args` lit la vraie ligne de commande, `sys.argv[1:]` (≈ `process.argv.slice(2)`).
 - Contexte : `sys.argv[0]` est le chemin du script, les options suivent. D'où la signature `def parse_args(argv=None)` : en production `main()` passe `None` et argparse lit le terminal ; un test passe sa propre liste. Le même code sert aux deux, sans patcher `sys.argv`.
@@ -66,8 +75,13 @@ p.parse_args(["--to", "y"]).to  # → 'y'
 - Réponse : `SystemExit` : une liste, même vide, remplace `sys.argv` ; seule la valeur `None` le lit.
 
 ## 3. type= : convertir à la lecture
+- Id : ligne-de-commande-type-conversion
 - Sous-thème : arguments
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : ligne-de-commande-argparse-options
+- Voir aussi : ligne-de-commande-type-exceptions
 - Source : data-platform · S1-08
 - Définition : `type=f` applique `f` au texte reçu : `type=int`, `type=date.fromisoformat` rendent directement un `int` ou une `date`.
 - Contexte : Sans `type`, tout arrive en chaîne, comme dans `process.argv`. La conversion a lieu à la lecture, donc une valeur invalide est refusée avant tout traitement : message `invalid fromisoformat value: '2026-13-01'`, code 2. N'importe quelle fonction d'une chaîne convient, y compris la sienne.
@@ -98,8 +112,11 @@ code             # → 2
 - Réponse : `5` (mesuré) : un `default` en chaîne passe aussi par `type` ; un `default` d'un autre type est gardé tel quel.
 
 ## 4. required=True : option obligatoire
+- Id : ligne-de-commande-required
 - Sous-thème : arguments
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-08
 - Définition : `required=True` rend une option `--x` obligatoire : absente, argparse affiche l'usage, l'erreur, et quitte avec le code 2.
 - Contexte : Le message liste toutes les options manquantes d'un coup : `the following arguments are required: --to, --function`. La sortie passe par `SystemExit(2)`, qu'un test attrape avec `pytest.raises(SystemExit)`. Un argument positionnel est obligatoire par nature, sans `required`.
@@ -118,16 +135,21 @@ except SystemExit as e:
 code             # → 2
 ```
 
-- Quiz : Quel code de sortie donne `replay.py --help` ?
-- [x] `0`
-- [ ] `2`
-- [ ] `1`
-- [ ] Aucun : `--help` ne quitte pas
-- Réponse : `0` (mesuré) : afficher l'aide est un succès ; argparse quitte avec `SystemExit(0)`.
+- Quiz : `add_argument("--to", required=True, default="x")`, option absente : résultat ?
+- [ ] `args.to == "x"`
+- [x] `SystemExit` 2 : `--to` manque
+- [ ] `args.to is None`
+- [ ] `ValueError` à la déclaration
+- Réponse : `SystemExit` 2 (mesuré) : `required` l'emporte, le `default` n'est jamais utilisé ; choisir l'un ou l'autre.
 
 ## 5. dest= : le nom du champ
+- Id : ligne-de-commande-dest-mot-reserve
 - Sous-thème : arguments
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : ligne-de-commande-argparse-options
+- Voir aussi : ligne-de-commande-tiret-souligne
 - Source : data-platform · S1-08
 - Définition : `dest="start"` choisit le nom du champ dans le `Namespace`, indépendamment du nom de l'option tapée (`--from`).
 - Contexte : Par défaut le champ reprend l'option sans tirets. Pour `--from`, cela donne un champ `from`, mot réservé de Python : `args.from` est une erreur de syntaxe, seul `getattr(args, "from")` le lit. `dest` règle le problème et donne un nom parlant (`start`, `end`) au code.
@@ -154,12 +176,44 @@ q.parse_args(["--from", "x"]).start  # → 'x'
 - Réponse : `SyntaxError` : `from` est un mot-clé ; le fichier ne compile même pas, avant toute exécution.
 
 ## 6. --dry-run : le tiret devient un souligné
+- Id : ligne-de-commande-tiret-souligne
 - Sous-thème : arguments
+- Type : piège
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-08
 - Définition : Une option `--dry-run` donne le champ `args.dry_run` : argparse remplace les tirets internes par des soulignés.
-- Contexte : Un nom Python ne peut pas contenir `-` (`args.dry-run` = `args.dry` moins `run`). La règle vaut pour toutes les options longues. `action="store_true"` en fait un drapeau : `False` absent, `True` présent, sans valeur à taper.
+- Contexte : Un nom Python ne peut pas contenir `-`. La règle vaut pour toutes les options longues (`--max-days` → `args.max_days`). `dest=` permet de choisir un autre nom si besoin.
 - Usage : ✅ options en kebab-case côté terminal, snake_case côté code · ❌ chercher `args["dry-run"]` : le `Namespace` n'est pas un dictionnaire.
+
+```python
+# Exemple 1 : kebab-case → snake_case
+import argparse
+
+p = argparse.ArgumentParser()
+p.add_argument("--max-days", type=int)
+a = p.parse_args(["--max-days", "3"])
+a.max_days       # → 3
+vars(a)          # → {'max_days': 3}
+```
+
+- Quiz : Que donne `args.dry-run` dans le code ?
+- [ ] La valeur de `--dry-run`
+- [x] `AttributeError` : pas d'attribut `dry`
+- [ ] `SyntaxError`
+- [ ] `NameError` : `dry-run` inconnu
+- Réponse : `AttributeError` (mesuré) : Python lit `args.dry - run` et cherche d'abord `args.dry`, qui n'existe pas.
+
+## 7. store_true : un drapeau booléen
+- Id : ligne-de-commande-store-true
+- Sous-thème : arguments
+- Type : concept
+- Niveau : 1
+- Profils : débutant, ops
+- Source : data-platform · S1-08
+- Définition : `action="store_true"` fait d'une option un drapeau : `False` si absente, `True` si présente, sans valeur à taper (≈ `--flag` booléen de yargs).
+- Contexte : Le drapeau ne consomme aucun argument : `--dry-run` suffit. `store_false` fait l'inverse (vrai par défaut). Pour un booléen désactivable des deux côtés (`--color` / `--no-color`), `action=argparse.BooleanOptionalAction`.
+- Usage : ✅ modes on/off (`--dry-run`, `--verbose`) · ❌ `type=bool` : `bool("False")` vaut `True`, toute chaîne non vide est vraie.
 
 ```python
 # Exemple 1 : drapeau booléen
@@ -179,9 +233,13 @@ p.parse_args(["--dry-run"]).dry_run
 - [x] `SystemExit` : argument `oui` non reconnu
 - Réponse : `SystemExit` : un drapeau ne prend pas de valeur ; `oui` devient un argument inconnu, refusé avec le code 2.
 
-## 7. if __name__ == "__main__" : lancé ou importé
+## 8. if __name__ == "__main__" : lancé ou importé
+- Id : ligne-de-commande-garde-main
 - Sous-thème : script
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : ligne-de-commande-code-de-sortie, packaging-python-m
 - Source : data-platform · S1-08
 - Définition : `if __name__ == "__main__":` n'exécute son bloc que si le fichier est lancé comme script, pas quand il est importé (≈ `require.main === module`).
 - Contexte : Lancé (`uv run replay.py`), le module s'appelle `"__main__"` ; importé (`import replay` dans un test), il s'appelle `"replay"`. Sans cette garde, importer le fichier pour tester `days()` lancerait le rejeu réel, appels AWS compris. On y met seulement `sys.exit(main())`, le reste vit dans des fonctions.
@@ -206,9 +264,13 @@ garde("replay")    # → 'rien' (import)
 - [ ] `"replay.py"`
 - Réponse : `"replay"` (mesuré) : importé, un module porte son nom ; la garde est fausse, `main()` n'est pas appelée.
 
-## 8. positionnel ou option
+## 9. positionnel ou option
+- Id : ligne-de-commande-positionnel-vs-option
 - Sous-thème : arguments
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : ligne-de-commande-argparse-options
 - Source : data-platform · S1-08
 - Définition : `add_argument("jour")` (sans tiret) déclare un argument positionnel, obligatoire et lu par sa place ; `--jour` déclare une option nommée.
 - Contexte : Les positionnels conviennent à une ou deux valeurs évidentes (`cp source destination`). Dès qu'il y a deux dates, les options nommées évitent l'inversion : `--from 2026-10-01 --to 2026-10-19` se lit sans doc. Les options s'écrivent dans n'importe quel ordre, aussi `--to=2026-10-19`.
@@ -228,16 +290,21 @@ q.parse_args(["--to=2026-10-19"]).to
 # → '2026-10-19'
 ```
 
-- Quiz : `--to a --to b` : que vaut `args.to` ?
-- [ ] `'a'`
-- [x] `'b'`
-- [ ] `['a', 'b']`
-- [ ] `SystemExit` : option répétée
-- Réponse : `'b'` (mesuré) : chaque occurrence écrase la précédente ; `action="append"` garde la liste.
+- Quiz : `add_argument("jour")`, puis `parse_args([])` : résultat ?
+- [ ] `args.jour is None`
+- [ ] `args.jour == ''`
+- [x] `SystemExit` 2 : `jour` est requis
+- [ ] `IndexError`
+- Réponse : `SystemExit` 2 (mesuré) : un positionnel est obligatoire par nature ; `nargs="?"` le rendrait facultatif.
 
-## 9. parser.error : une règle entre deux options
+## 10. parser.error : une règle entre deux options
+- Id : ligne-de-commande-parser-error
 - Sous-thème : erreurs
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : ligne-de-commande-argparse-options
+- Voir aussi : ligne-de-commande-code-de-sortie
 - Source : data-platform · S1-08
 - Définition : `parser.error("…")` affiche l'usage et le message au format argparse, puis quitte avec le code 2, comme une erreur d'option.
 - Contexte : argparse valide chaque option seule ; une règle qui en relie deux (début ≤ fin) s'écrit juste après `parse_args`. Passer par `parser.error` plutôt que `raise ValueError` donne le même rendu et le même code que les autres erreurs de saisie, et refuse avant le moindre appel AWS.
@@ -262,16 +329,19 @@ except SystemExit as e:
 code             # → 2
 ```
 
-- Quiz : Quel code de sortie voit `make` après `parser.error(…)` ?
-- [ ] `1`
-- [x] `2`
-- [ ] `0`
-- [ ] `255`
-- Réponse : `2` (mesuré) : c'est le code des erreurs d'usage ; 1 reste réservé à l'échec du traitement (un jour non ingéré).
+- Quiz : Où `parser.error("--from est après --to")` écrit-il son message ?
+- [ ] Sur stdout, avec l'usage
+- [x] Sur stderr, après l'usage
+- [ ] Dans le message de l'exception, sans rien afficher
+- [ ] Dans les logs (`logging.error`)
+- Réponse : sur stderr : l'usage puis `prog: error: …` ; stdout reste propre pour la sortie utile du script, et `capsys.readouterr().err` le relit en test.
 
-## 10. choices= : une liste fermée
+## 11. choices= : une liste fermée
+- Id : ligne-de-commande-choices
 - Sous-thème : arguments
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-08
 - Définition : `choices=["dev", "prod"]` refuse toute valeur hors liste, avec un message qui rappelle les valeurs permises.
 - Contexte : La vérification a lieu après `type` : avec `type=int`, `choices` contient des entiers. Le message (`invalid choice: 'int' (choose from dev, prod)`) évite d'aller lire le code. Pour un environnement, c'est la garantie qu'une faute de frappe ne vise pas un bucket inexistant.
@@ -299,9 +369,13 @@ code             # → 2
 - [x] `SystemExit` : `1` n'est pas dans `["1", "2"]`
 - Réponse : `SystemExit` : `type` convertit d'abord en `1` (entier), puis `choices` compare à des chaînes.
 
-## 11. type= : quelles exceptions deviennent un message
+## 12. type= : quelles exceptions deviennent un message
+- Id : ligne-de-commande-type-exceptions
 - Sous-thème : erreurs
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : ligne-de-commande-type-conversion, exceptions-typeerror-ou-valueerror
 - Source : data-platform · S1-08
 - Définition : argparse transforme en message d'usage (code 2) les `ValueError`, `TypeError` et `ArgumentTypeError` levées par `type` ; toute autre exception remonte telle quelle.
 - Contexte : `date.fromisoformat` lève `ValueError` : message propre. Une fonction maison qui lève `KeyError` ou une exception métier fait planter le script avec une trace Python. Pour un message lisible, lever `argparse.ArgumentTypeError("pas un SIREN")`.
@@ -334,9 +408,13 @@ code             # → 2
 - [ ] Ignore l'option
 - Réponse : laisse remonter `KeyError` (mesuré) : seules `ValueError`, `TypeError` et `ArgumentTypeError` deviennent un message d'usage.
 
-## 12. sys.exit(main()) : le code de sortie
+## 13. sys.exit(main()) : le code de sortie
+- Id : ligne-de-commande-code-de-sortie
 - Sous-thème : script
+- Type : concept
 - Niveau : 2
+- Profils : ops, data
+- Prérequis : ligne-de-commande-garde-main
 - Source : data-platform · S1-08
 - Définition : `sys.exit(main())` fait de la valeur renvoyée par `main` le code de sortie : 0 succès, 1 échec du traitement, 2 erreur d'usage.
 - Contexte : `make`, le shell (`&&`, `$?`) et la CI ne lisent que ce code. `main` décide donc d'un entier explicite (`return 1 if failed else 0`) au lieu de renvoyer un compte : `sys.exit(3)` signalerait un échec. `sys.exit` lève `SystemExit`, qu'un test attrape pour lire `.code`.
@@ -361,9 +439,13 @@ code             # → 1
 - [ ] `2`
 - Réponse : `0` : `sys.exit(None)` est un succès ; c'est pourquoi un `return` oublié passe inaperçu.
 
-## 13. main(argv=None) : tester le vrai point d'entrée
+## 14. main(argv=None) : tester le vrai point d'entrée
+- Id : ligne-de-commande-main-argv-teste
 - Sous-thème : script
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : ligne-de-commande-parse-args-none
 - Source : data-platform · S1-08
 - Définition : Donner `argv=None` à `main` et le passer à `parse_args` permet d'appeler `main(["--from", …])` dans un test, comme si on tapait la commande.
 - Contexte : Le test exerce alors le vrai chemin : lecture des options, validation, code de sortie. Un `SystemExit` d'argparse s'attrape avec `pytest.raises(SystemExit)` puis `exc.value.code == 2`, et `capsys` lit le message sur stderr. On évite de modifier `sys.argv`, état global partagé par tous les tests.
@@ -387,16 +469,20 @@ except SystemExit as e:
 code             # → 2
 ```
 
-- Quiz : Dans un test, que vérifie `exc.value.code` après `pytest.raises(SystemExit)` sur `--from` après `--to` ?
-- [ ] `1`
-- [x] `2`
-- [ ] `"--from est après --to"`
-- [ ] `None`
-- Réponse : `2` : `parser.error` quitte avec le code d'usage ; le message, lui, se lit dans `capsys.readouterr().err`.
+- Quiz : Dans un test pytest, `main()` est appelée sans liste. Que lit argparse ?
+- [ ] Une liste vide
+- [x] Le `sys.argv` de pytest (ses options et chemins)
+- [ ] Rien : `argv=None` désactive la lecture
+- [ ] Les arguments du dernier `main([...])`
+- Réponse : le `sys.argv` de pytest : `None` veut dire « lire le vrai terminal », donc souvent `SystemExit` 2 sur `-q` ou un chemin ; toujours passer une liste en test.
 
-## 14. import différé : --help sans boto3
+## 15. import différé : --help sans boto3
+- Id : ligne-de-commande-import-differe
 - Sous-thème : script
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : ligne-de-commande-garde-main
 - Source : data-platform · S1-08
 - Définition : Importer une bibliothèque lourde dans `main()` plutôt qu'en haut du fichier évite de la charger pour `--help`, une erreur d'usage ou les tests.
 - Contexte : `import replay` dans les tests n'importe pas boto3 (mesuré : `'boto3' in sys.modules` faux). `--help` répond donc instantanément, et les tests des fonctions pures n'en dépendent pas. Le prix : l'import n'est plus visible en tête, et Ruff (`PLC0415`) le signale si la règle est active ; le commenter.
@@ -420,9 +506,12 @@ main()           # → '{"ok": 1}'
 - [ ] L'import a échoué
 - Réponse : le nom est local à `main` : le module est bien chargé (`sys.modules`), mais le nom n'existe que dans la fonction.
 
-## 15. allow_abbrev : --func vaut --function
+## 16. allow_abbrev : --func vaut --function
+- Id : ligne-de-commande-allow-abbrev
 - Sous-thème : arguments
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
 - Source : data-platform · S1-08
 - Définition : Par défaut argparse accepte tout préfixe non ambigu d'une option longue : `--func f` remplit `--function`.
 - Contexte : Pratique au terminal, piège en script : un ajout d'option `--functions` plus tard rend `--func` ambigu et casse un appel qui marchait. `ArgumentParser(allow_abbrev=False)` exige le nom complet ; à faire dès qu'un script est appelé par `make` ou la CI, où le nom complet ne coûte rien.
@@ -452,9 +541,13 @@ code             # → 2
 - [x] `SystemExit` : option ambiguë
 - Réponse : `SystemExit` : deux options commencent par `--func`, argparse refuse de choisir.
 
-## 16. valeur négative : -1 n'est pas une option
+## 17. valeur négative : -1 n'est pas une option
+- Id : ligne-de-commande-valeur-negative
 - Sous-thème : arguments
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : ligne-de-commande-argparse-options
 - Source : data-platform · S1-08
 - Définition : `--n -1` est lu comme la valeur `-1` tant qu'aucune option déclarée ne ressemble à un nombre négatif.
 - Contexte : argparse distingue `-1` (nombre) de `-v` (option courte) par sa forme. Si le parseur déclare une option courte numérique (`-1`), les nombres négatifs deviennent ambigus et il faut écrire `--n=-1`. La forme `--opt=valeur` lève toute ambiguïté, y compris pour une valeur qui commence par `--`.

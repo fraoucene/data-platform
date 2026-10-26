@@ -2,17 +2,22 @@
 title: "Cartes · Dates Python"
 type: cartes
 langage: Python
+chapitre: Fichiers et formats
 cours: Dates
 created: 2026-10-24
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · Dates Python
-Python · Dates : dates, fuseaux, horloge, heure d'été (format spec v3 de revision-pwa).
+Python · Dates : parser, calcul, horloge, fuseaux, heure d'été (format spec v4 de revision-pwa).
 
 ## 1. date.fromisoformat
-- Sous-thème : dates
+- Id : dates-date-fromisoformat
+- Sous-thème : parser
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
+- Voir aussi : dates-strptime-format
 - Définition : `date.fromisoformat` parse une date ISO `AAAA-MM-JJ` en objet `date`, comparable et triable.
 - Contexte : Une `date` ne porte ni heure ni fuseau. Les objets `date` se comparent et se soustraient directement, alors que des chaînes ne se trient correctement qu'en ISO. `isoformat()` fait l'inverse. `weekday()` compte lundi = 0, alors que `getDay()` en JS compte dimanche = 0. Depuis Python 3.11, la forme compacte `20261023` est aussi acceptée.
 - Usage : ✅ dates de parution BODACC, paramètres `AAAA-MM-JJ` d'une API · ❌ format français ou exotique : `datetime.strptime` ; date avec heure : `datetime.fromisoformat`.
@@ -46,8 +51,12 @@ ds[0] > ds[1]    # → True
 - Réponse : `ValueError` : seul le format ISO est accepté ; une date française se parse avec `strptime("%d/%m/%Y")`.
 
 ## 2. strptime : le format
-- Sous-thème : dates
+- Id : dates-strptime-format
+- Sous-thème : parser
+- Type : recette
 - Niveau : 1
+- Profils : débutant, data
+- Voir aussi : dates-date-fromisoformat
 - Définition : `datetime.strptime` parse une chaîne selon un format explicite (`%d`, `%m`, `%Y`…), `strftime` formate dans l'autre sens.
 - Contexte : Directives courantes : `%d` jour, `%m` mois, `%Y` année sur 4 chiffres, `%y` sur 2, `%H` heure, `%M` minutes. `strptime` renvoie toujours un `datetime` (heure à minuit si absente) : `.date()` pour ne garder que la date. La chaîne doit suivre exactement le format, sinon `ValueError`. Moyen mnémotechnique : p comme parse, f comme format.
 - Usage : ✅ dates françaises `JJ/MM/AAAA`, horodatages de logs · ❌ chaîne déjà ISO : `fromisoformat`, plus simple et plus rapide.
@@ -83,8 +92,12 @@ datetime.strptime("2026-10-23",
 - Réponse : `1` : `%M` signifie minutes ; `10` part dans les minutes et le mois prend sa valeur par défaut, sans erreur.
 
 ## 3. timedelta : l'écart
-- Sous-thème : dates
+- Id : dates-timedelta-ecart
+- Sous-thème : calcul
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : dates-date-fromisoformat
 - Définition : soustraire deux dates donne un `timedelta` ; ajouter un `timedelta` à une date la décale de jours, heures, semaines.
 - Contexte : Un `timedelta` stocke des jours, secondes et microsecondes : `.days` donne les jours entiers, `.total_seconds()` la durée complète. Il peut être négatif. Pas de calcul en millisecondes comme avec `Date` en JS : on manipule des objets, et le passage d'un mois ou d'une année est géré tout seul.
 - Usage : ✅ fenêtre des N derniers jours, délai entre deux annonces · ❌ décaler d'un mois ou d'un an : `date.replace` ou `dateutil.relativedelta`.
@@ -119,44 +132,91 @@ fin = date(2026, 11, 1)
 - [ ] `AttributeError`
 - Réponse : `TypeError` : `timedelta` n'a pas de mois (durée variable) ; il faut `d1.replace(month=11)` ou `dateutil.relativedelta`.
 
-## 4. datetime.now : passer le fuseau
-- Sous-thème : horloge
+## 4. comparer : date contre date
+- Id : dates-comparer-deux-dates
+- Sous-thème : calcul
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
 - Source : data-platform · S1-07
-- Définition : `datetime.now(tz)` renvoie l'instant courant, aware, dans ce fuseau ; sans argument, l'heure murale de la machine, naïve.
-- Contexte : Sur Lambda la machine est en UTC, sur un Mac à Paris : `datetime.now()` change de valeur selon l'hôte, sans le dire (pas de `tzinfo`). `datetime.now(PARIS)` et `datetime.now(timezone.utc)` sont le même instant, affiché différemment. En TS, `new Date()` est toujours un instant absolu ; ici l'instant n'est défini que si on donne le fuseau.
-- Usage : ✅ `now(timezone.utc)` pour horodater, `now(PARIS)` pour calculer un jour métier · ❌ `datetime.now()` nu dans du code déployé : naïf, différent selon la machine.
+- Définition : Deux `date` se comparent avec `<`, `>=`, `==` dans l'ordre chronologique : `resolve_day` refuse ainsi le jour même (`day >= today`).
+- Contexte : Pas besoin de passer par des chaînes : `min`, `max`, `sorted` marchent directement sur des `date`. Comparer une `date` à un `datetime` avec `<` lève en revanche `TypeError`, même si `datetime` hérite de `date` : on ramène d'abord les deux côtés au même type, avec `.date()` sur le `datetime`, dans le bon fuseau.
+- Usage : ✅ bornes d'une plage, refus d'une date future, jour le plus récent · ❌ comparer des chaînes de dates non normalisées : parser d'abord.
 
 ```python
-# Exemple 1 : aware ou naïf
-from datetime import datetime
-from zoneinfo import ZoneInfo
-P = ZoneInfo("Europe/Paris")
-datetime.now().tzinfo     # → None
-datetime.now(P).tzinfo    # → P
+# Exemple 1 : refuser aujourd'hui
+from datetime import date
+today = date(2026, 10, 26)
+date(2026, 10, 25) >= today  # → False
+date(2026, 10, 26) >= today  # → True
+max(date(2026, 10, 2), today)
+# → date(2026, 10, 26)
 ```
 
 ```python
-# Exemple 2 : un instant, deux affichages
+# Exemple 2 : date contre datetime
+from datetime import date, datetime
+
+d = date(2026, 10, 25)
+n = datetime(2026, 10, 25, 1)
+d == n.date()   # → True
+d < n           # ❌ TypeError
+```
+
+- Quiz : Que vaut `"2026-10-9" < "2026-10-10"` ?
+- [ ] `True`
+- [x] `False`
+- [ ] `TypeError`
+- Réponse : `False` : des chaînes se comparent caractère par caractère, et `"9" > "1"` ; seul l'ISO complet (`2026-10-09`) trie juste.
+
+## 5. datetime : naïf ou aware
+- Id : dates-naif-ou-aware
+- Sous-thème : fuseaux
+- Type : concept
+- Niveau : 1
+- Profils : débutant, data
+- Définition : un `datetime` sans `tzinfo` est naïf, avec un fuseau (`ZoneInfo`) il est aware ; les deux ne se comparent pas.
+- Contexte : `datetime.now()` et `strptime` renvoient du naïf ; `datetime.now(timezone.utc)` de l'aware. `ZoneInfo` gère l'heure d'été : Paris est à UTC+2 en octobre, UTC+1 en novembre. Règle : stocker en UTC, convertir à l'affichage avec `astimezone`. Un `Date` JS est toujours un instant UTC ; Python laisse le choix, et donc la confusion.
+- Usage : ✅ horodatages d'ingestion, comparaisons entre sources (UTC partout) · ❌ simple date de parution sans heure : `date`, qui n'a pas de fuseau.
+
+```python
+# Exemple 1 : un fuseau, un décalage
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+paris = ZoneInfo("Europe/Paris")
+d = datetime(2026, 10, 23, 10,
+             tzinfo=paris)
+d.utcoffset().seconds // 3600   # → 2
+```
+
+```python
+# Exemple 2 : convertir en UTC
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-u = datetime.now(timezone.utc)
-p = u.astimezone(ZoneInfo("Europe/Paris"))
-u == p                     # → True
-(p - u).total_seconds()    # → 0.0
+paris = ZoneInfo("Europe/Paris")
+# 2 novembre : heure d'hiver
+d = datetime(2026, 11, 2, 10,
+             tzinfo=paris)
+u = d.astimezone(timezone.utc)
+u.hour   # → 9
+u == d   # → True  (même instant)
 ```
 
-- Quiz : Que vaut `datetime.utcnow().tzinfo` ?
-- [ ] `timezone.utc`
-- [ ] `ZoneInfo("UTC")`
-- [x] `None`
-- [ ] `AttributeError`
-- Réponse : `None` : malgré son nom, `utcnow()` renvoie l'heure UTC en naïf (déprécié depuis 3.12) ; écrire `datetime.now(timezone.utc)`.
+- Quiz : Avec `d` de l'exemple 1, que fait `d < datetime(2026, 10, 23, 12)` ?
+- [ ] `True`
+- [x] `TypeError`
+- [ ] `False`
+- Réponse : `TypeError` : comparer naïf et aware est interdit ; piège en plus, `==` ne lève pas mais renvoie toujours `False`.
 
-## 5. ZoneInfo : un fuseau par son nom
+## 6. ZoneInfo : un fuseau par son nom
+- Id : dates-zoneinfo-nom-iana
 - Sous-thème : fuseaux
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : dates-naif-ou-aware
 - Source : data-platform · S1-07
 - Définition : `ZoneInfo("Europe/Paris")` charge un fuseau IANA avec ses règles d'heure d'été, à passer en `tzinfo` ou à `astimezone`.
 - Contexte : Le nom est une clé IANA `Continent/Ville` (`Europe/Paris`, `UTC`) : `"Paris"` n'existe pas et lève `ZoneInfoNotFoundError`, sous-classe de `KeyError`. Le décalage n'est pas stocké : il est calculé pour chaque instant (CEST l'été, CET l'hiver). On crée le fuseau une fois, en constante de module (`PARIS = ZoneInfo("Europe/Paris")`). Équivalent du `timeZone: "Europe/Paris"` d'`Intl`, mais utilisable dans les calculs.
@@ -188,9 +248,91 @@ ZoneInfo("Paris")  # ❌ ZoneInfoNotFoundError
 - [ ] `TypeError`
 - Réponse : `True` : `ZoneInfo` met ses instances en cache par clé ; deux appels renvoient le même objet, ce qui rend la constante de module peu coûteuse.
 
-## 6. .date() : le jour dans quel fuseau ?
-- Sous-thème : fuseaux
+## 7. datetime.now : passer le fuseau
+- Id : dates-now-avec-fuseau
+- Sous-thème : horloge
+- Type : piège
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : dates-naif-ou-aware
+- Voir aussi : dates-today-jour-machine
+- Source : data-platform · S1-07
+- Définition : `datetime.now(tz)` renvoie l'instant courant, aware, dans ce fuseau ; sans argument, l'heure murale de la machine, naïve.
+- Contexte : Sur Lambda la machine est en UTC, sur un Mac à Paris : `datetime.now()` change de valeur selon l'hôte, sans le dire (pas de `tzinfo`). `datetime.now(PARIS)` et `datetime.now(timezone.utc)` sont le même instant, affiché différemment. En TS, `new Date()` est toujours un instant absolu ; ici l'instant n'est défini que si on donne le fuseau.
+- Usage : ✅ `now(timezone.utc)` pour horodater, `now(PARIS)` pour calculer un jour métier · ❌ `datetime.now()` nu dans du code déployé : naïf, différent selon la machine.
+
+```python
+# Exemple 1 : aware ou naïf
+from datetime import datetime
+from zoneinfo import ZoneInfo
+P = ZoneInfo("Europe/Paris")
+datetime.now().tzinfo     # → None
+datetime.now(P).tzinfo
+# → ZoneInfo("Europe/Paris")
+```
+
+```python
+# Exemple 2 : un instant, deux affichages
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+u = datetime.now(timezone.utc)
+p = u.astimezone(ZoneInfo("Europe/Paris"))
+u == p                     # → True
+(p - u).total_seconds()    # → 0.0
+```
+
+- Quiz : Que vaut `datetime.utcnow().tzinfo` ?
+- [ ] `timezone.utc`
+- [ ] `ZoneInfo("UTC")`
+- [x] `None`
+- [ ] `AttributeError`
+- Réponse : `None` : malgré son nom, `utcnow()` renvoie l'heure UTC en naïf (déprécié depuis 3.12) ; écrire `datetime.now(timezone.utc)`.
+
+## 8. date.today : le jour de la machine
+- Id : dates-today-jour-machine
+- Sous-thème : horloge
+- Type : piège
+- Niveau : 1
+- Profils : débutant, data
+- Voir aussi : dates-now-avec-fuseau
+- Source : data-platform · S1-07
+- Définition : `date.today()` renvoie la date locale de la machine, sans fuseau : sur Lambda, c'est le jour UTC.
+- Contexte : `date.today()` équivaut à `datetime.now().date()` : naïf, il dépend du réglage `TZ` de l'hôte. Pour le jour à Paris quel que soit l'hôte : `datetime.now(PARIS).date()`. Piège typique : le test passe sur le Mac (réglé sur Paris) et la Lambda ingère la mauvaise journée entre minuit et 2 h.
+- Usage : ✅ script local jetable, sans enjeu de fuseau · ❌ code déployé : `datetime.now(fuseau).date()`, et horloge injectée pour tester.
+
+```python
+# Exemple 1 : le jour à Paris, partout
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+P = ZoneInfo("Europe/Paris")
+jour = datetime.now(P).date()
+type(jour) is date     # → True
+```
+
+```python
+# Exemple 2 : today = now naïf coupé
+from datetime import date, datetime
+
+date.today() == datetime.now().date()
+# → True  (même horloge machine)
+```
+
+- Quiz : Que fait `date.today(ZoneInfo("Europe/Paris"))` ?
+- [ ] Renvoie le jour à Paris
+- [ ] Renvoie le jour UTC
+- [x] `TypeError`
+- [ ] Ignore l'argument
+- Réponse : `TypeError` (`date.today() takes no arguments`) : `today` n'accepte pas de fuseau ; passer par `datetime.now(P).date()`.
+
+## 9. .date() : le jour dans quel fuseau ?
+- Id : dates-date-dans-quel-fuseau
+- Sous-thème : fuseaux
+- Type : piège
+- Niveau : 1
+- Profils : débutant, data
+- Prérequis : dates-naif-ou-aware
+- Voir aussi : dates-journee-bornes-utc
 - Source : data-platform · S1-07
 - Définition : `dt.date()` garde le jour tel que le `datetime` l'affiche, donc dans son propre fuseau : convertir avant de couper.
 - Contexte : Le cœur de `resolve_day`. 2026-10-24 22:30 UTC est déjà le 25 à 00:30 à Paris (CEST, UTC+2). `.date()` ne convertit rien : il lit l'année, le mois et le jour de l'objet. Sur Lambda (UTC), `.date()` direct donne donc la veille du jour parisien entre minuit et 2 h. D'où `now.astimezone(PARIS).date()`.
@@ -230,41 +372,13 @@ u.astimezone(P).date() - timedelta(1)
 - [ ] Le 31 octobre
 - Réponse : le 1er novembre : en novembre Paris est à UTC+1 (CET), 00:30 à Paris = 23:30 UTC la veille.
 
-## 7. date.today : le jour de la machine
-- Sous-thème : horloge
+## 10. datetime.fromisoformat : le décalage
+- Id : dates-datetime-fromisoformat-decalage
+- Sous-thème : parser
+- Type : concept
 - Niveau : 1
-- Source : data-platform · S1-07
-- Définition : `date.today()` renvoie la date locale de la machine, sans fuseau : sur Lambda, c'est le jour UTC.
-- Contexte : `date.today()` équivaut à `datetime.now().date()` : naïf, il dépend du réglage `TZ` de l'hôte. Pour le jour à Paris quel que soit l'hôte : `datetime.now(PARIS).date()`. Piège typique : le test passe sur le Mac (réglé sur Paris) et la Lambda ingère la mauvaise journée entre minuit et 2 h.
-- Usage : ✅ script local jetable, sans enjeu de fuseau · ❌ code déployé : `datetime.now(fuseau).date()`, et horloge injectée pour tester.
-
-```python
-# Exemple 1 : le jour à Paris, partout
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
-P = ZoneInfo("Europe/Paris")
-jour = datetime.now(P).date()
-type(jour) is date     # → True
-```
-
-```python
-# Exemple 2 : today = now naïf coupé
-from datetime import date, datetime
-
-date.today() == datetime.now().date()
-# → True  (même horloge machine)
-```
-
-- Quiz : Que fait `date.today(ZoneInfo("Europe/Paris"))` ?
-- [ ] Renvoie le jour à Paris
-- [ ] Renvoie le jour UTC
-- [x] `TypeError`
-- [ ] Ignore l'argument
-- Réponse : `TypeError` (`date.today() takes no arguments`) : `today` n'accepte pas de fuseau ; passer par `datetime.now(P).date()`.
-
-## 8. datetime.fromisoformat : le décalage
-- Sous-thème : dates
-- Niveau : 1
+- Profils : débutant, web, data
+- Prérequis : dates-date-fromisoformat, dates-naif-ou-aware
 - Source : data-platform · S1-07
 - Définition : `datetime.fromisoformat` lit un horodatage ISO ; avec un décalage (`+00:00`) le résultat est aware, sans décalage il est naïf.
 - Contexte : Les horodatages d'API (`data_processed` du BODACC) arrivent ainsi. Une chaîne sans décalage ne dit pas son fuseau : l'interpréter explicitement (`replace(tzinfo=…)` si on le connaît), jamais deviner. Python 3.11 a élargi le format accepté à presque tout ISO 8601. Dans les tests, `fromisoformat("2026-10-24T22:30:00+00:00")` écrit un instant UTC plus lisiblement qu'un constructeur.
@@ -298,43 +412,14 @@ d.tzname()     # → "UTC+02:00"
 - [ ] `ZoneInfo("UTC")`
 - Réponse : `timezone.utc` : depuis 3.11, le suffixe `Z` est accepté et vaut `+00:00` ; avant, `ValueError`.
 
-## 9. comparer : date contre date
-- Sous-thème : dates
-- Niveau : 1
-- Source : data-platform · S1-07
-- Définition : Deux `date` se comparent avec `<`, `>=`, `==` dans l'ordre chronologique : `resolve_day` refuse ainsi le jour même (`day >= today`).
-- Contexte : Pas besoin de passer par des chaînes : `min`, `max`, `sorted` marchent directement sur des `date`. Comparer une `date` à un `datetime` avec `<` lève en revanche `TypeError`, même si `datetime` hérite de `date` : on ramène d'abord les deux côtés au même type, avec `.date()` sur le `datetime`, dans le bon fuseau.
-- Usage : ✅ bornes d'une plage, refus d'une date future, jour le plus récent · ❌ comparer des chaînes de dates non normalisées : parser d'abord.
-
-```python
-# Exemple 1 : refuser aujourd'hui
-from datetime import date
-today = date(2026, 10, 26)
-date(2026, 10, 25) >= today  # → False
-date(2026, 10, 26) >= today  # → True
-max(date(2026, 10, 2), today)
-# → date(2026, 10, 26)
-```
-
-```python
-# Exemple 2 : date contre datetime
-from datetime import date, datetime
-
-d = date(2026, 10, 25)
-n = datetime(2026, 10, 25, 1)
-d == n.date()   # → True
-d < n           # ❌ TypeError
-```
-
-- Quiz : Que vaut `"2026-10-9" < "2026-10-10"` ?
-- [ ] `True`
-- [x] `False`
-- [ ] `TypeError`
-- Réponse : `False` : des chaînes se comparent caractère par caractère, et `"9" > "1"` ; seul l'ISO complet (`2026-10-09`) trie juste.
-
-## 10. astimezone sur un naïf : l'heure de la machine
+## 11. astimezone sur un naïf : l'heure de la machine
+- Id : dates-astimezone-sur-naif
 - Sous-thème : fuseaux
+- Type : piège
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : dates-naif-ou-aware
+- Voir aussi : dates-replace-ou-astimezone
 - Source : data-platform · S1-07
 - Définition : `astimezone(tz)` sur un `datetime` naïf ne lève pas : Python le suppose à l'heure locale de la machine, puis convertit.
 - Contexte : L'erreur évitée dans `resolve_day`. `datetime(2026, 10, 26, 8).astimezone(PARIS)` vaut 08:00 sur un Mac réglé sur Paris, mais 09:00 sur Lambda (UTC) : le même code donne deux résultats selon l'hôte, sans erreur. Seule parade : refuser le naïf à l'entrée (`if now.tzinfo is None: raise ValueError`), ou lui attacher explicitement son fuseau avec `replace(tzinfo=…)`.
@@ -346,7 +431,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 P = ZoneInfo("Europe/Paris")
 n = datetime(2026, 10, 26, 8, 0)
-n.astimezone(P).tzinfo   # → P
+n.astimezone(P).tzinfo
+# → ZoneInfo("Europe/Paris")
 # Mac à Paris : 08:00 ; Lambda : 09:00
 ```
 
@@ -370,9 +456,13 @@ exiger_aware(d)   # ❌ ValueError
 - [ ] `TypeError`
 - Réponse : `date(2026, 10, 25)` : le naïf est pris pour 23:00 UTC (heure de la machine), soit 01:00 le 25 à Paris ; sur un Mac à Paris, ce serait le 24.
 
-## 11. replace(tzinfo) ou astimezone
+## 12. replace(tzinfo) ou astimezone
+- Id : dates-replace-ou-astimezone
 - Sous-thème : fuseaux
+- Type : comparaison
 - Niveau : 2
+- Profils : data
+- Prérequis : dates-zoneinfo-nom-iana
 - Source : data-platform · S1-07
 - Définition : `replace(tzinfo=tz)` colle un fuseau sans toucher l'heure affichée ; `astimezone(tz)` convertit le même instant vers ce fuseau.
 - Contexte : `replace` change l'instant : 22:30 UTC devenu « 22:30 à Paris » a glissé de deux heures. Il sert à **étiqueter** un naïf dont on connaît le fuseau (un log qu'on sait écrit en heure de Paris). `astimezone` sert à **convertir** un instant déjà aware, pour l'afficher ou en extraire le jour. Confondre les deux décale les données en silence.
@@ -397,9 +487,14 @@ u.replace(tzinfo=P) == u   # → False
 - [ ] `21`
 - Réponse : `20` : `replace` déclare 22:30 à Paris (CEST, UTC+2), `astimezone` le convertit en 20:30 UTC.
 
-## 12. now=None : l'horloge lue à l'appel
+## 13. now=None : l'horloge lue à l'appel
+- Id : dates-now-none-injectable
 - Sous-thème : horloge
+- Type : recette
 - Niveau : 2
+- Profils : data
+- Prérequis : dates-now-avec-fuseau
+- Voir aussi : tests-horloge-instants-limites, decorateurs-cache-heure-figee
 - Source : data-platform · S1-07
 - Définition : `def f(now=None)` puis `now = now or datetime.now(PARIS)` : l'horloge est lue à chaque appel, et un test peut imposer l'instant.
 - Contexte : Une valeur par défaut est évaluée **une fois**, à la définition de la fonction (comme un `[]` partagé). `def f(now=datetime.now(PARIS))` figerait l'instant du chargement du module : sur une Lambda dont le conteneur reste chaud des heures, tous les appels verraient la même date. `None` en sentinelle reporte la lecture à l'appel, comme un `const now = new Date()` dans le corps d'une fonction TS.
@@ -438,9 +533,13 @@ stamp() == a    # → True  (figé)
 - [ ] `TypeError`
 - Réponse : `now` : un `datetime` est toujours vrai, même à minuit ; seul `time(0)` était faux, avant Python 3.5.
 
-## 13. journée à Paris : ses bornes en UTC
+## 14. journée à Paris : ses bornes en UTC
+- Id : dates-journee-bornes-utc
 - Sous-thème : fuseaux
+- Type : recette
 - Niveau : 2
+- Profils : data, web
+- Prérequis : dates-zoneinfo-nom-iana, dates-replace-ou-astimezone
 - Source : data-platform · S1-07
 - Définition : `datetime.combine(jour, time(), tzinfo=P)` donne minuit de ce jour à Paris ; converti en UTC, il borne une requête par instant.
 - Contexte : Une API qui filtre par horodatage UTC (`published_at >= …`) ne connaît pas « le 24 à Paris » : il faut lui donner `[minuit du 24, minuit du 25[` convertis, soit 22:00 UTC la veille en été, 23:00 en hiver. Calculer la fin comme minuit du jour suivant (et non `début + 24 h`) reste juste les jours de changement d'heure, qui ne durent pas 24 h.
@@ -481,9 +580,12 @@ str(b)  # → "2026-10-24 22:00:00+00:00"
 - [ ] 23
 - Réponse : 25 : à 3 h, Paris recule à 2 h (CEST → CET) ; de minuit à minuit il s'écoule 25 h réelles.
 
-## 14. timezone fixe ou ZoneInfo
+## 15. timezone fixe ou ZoneInfo
+- Id : dates-timezone-fixe-ou-zoneinfo
 - Sous-thème : fuseaux
+- Type : comparaison
 - Niveau : 2
+- Profils : data
 - Source : data-platform · S1-07
 - Définition : `timezone(timedelta(hours=2))` est un décalage fixe, sans heure d'été ; `ZoneInfo("Europe/Paris")` suit les règles du fuseau toute l'année.
 - Contexte : Paris est à UTC+2 l'été (CEST) et UTC+1 l'hiver (CET). Coder `+02:00` en dur donne un résultat juste en octobre et faux d'une heure en novembre, sans erreur. Les décalages lus par `fromisoformat` sont eux aussi des `timezone` fixes : ils décrivent un instant, pas un fuseau. `timezone.utc` reste le bon choix pour UTC, qui n'a pas d'heure d'été.
@@ -507,9 +609,12 @@ d.astimezone(P).hour   # → 9  (pas 10)
 - [ ] `ValueError`
 - Réponse : 2 h : `fromisoformat` attache un décalage fixe, qui ne suit aucune règle d'heure d'été ; le 3 novembre, Paris est pourtant à UTC+1.
 
-## 15. tzdata : les fuseaux partout
+## 16. tzdata : les fuseaux partout
+- Id : dates-tzdata-dependance
 - Sous-thème : fuseaux
+- Type : recette
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-07
 - Définition : `zoneinfo` lit la base IANA du système ; le paquet `tzdata` la fournit quand l'hôte n'en a pas (Windows, images minimales).
 - Contexte : `ZoneInfo` cherche dans `zoneinfo.TZPATH` (`/usr/share/zoneinfo`…), puis dans le paquet `tzdata` s'il est installé. Sans les deux : `ZoneInfoNotFoundError`, même pour `Europe/Paris`. D'où `tzdata` en dépendance de la Lambda `ingest_bodacc` : le zip embarque la base, le résultat ne dépend plus de l'image. Le paquet suit les mises à jour IANA (règles qui changent) : le tenir à jour.
@@ -538,47 +643,13 @@ uv add --package ingest-bodacc tzdata
 - [ ] Renvoie `None`
 - Réponse : `ZoneInfoNotFoundError` : même `UTC` vient de la base IANA ; seul `datetime.timezone.utc` s'en passe.
 
-## 16. datetime : naïf ou aware
-- Sous-thème : fuseaux
-- Niveau : 3
-- Définition : un `datetime` sans `tzinfo` est naïf, avec un fuseau (`ZoneInfo`) il est aware ; les deux ne se comparent pas.
-- Contexte : `datetime.now()` et `strptime` renvoient du naïf ; `datetime.now(timezone.utc)` de l'aware. `ZoneInfo` gère l'heure d'été : Paris est à UTC+2 en octobre, UTC+1 en novembre. Règle : stocker en UTC, convertir à l'affichage avec `astimezone`. Un `Date` JS est toujours un instant UTC ; Python laisse le choix, et donc la confusion.
-- Usage : ✅ horodatages d'ingestion, comparaisons entre sources (UTC partout) · ❌ simple date de parution sans heure : `date`, qui n'a pas de fuseau.
-
-```python
-# Exemple 1 : un fuseau, un décalage
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-paris = ZoneInfo("Europe/Paris")
-d = datetime(2026, 10, 23, 10,
-             tzinfo=paris)
-d.utcoffset().seconds // 3600   # → 2
-```
-
-```python
-# Exemple 2 : convertir en UTC
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
-
-paris = ZoneInfo("Europe/Paris")
-# 2 novembre : heure d'hiver
-d = datetime(2026, 11, 2, 10,
-             tzinfo=paris)
-u = d.astimezone(timezone.utc)
-u.hour   # → 9
-u == d   # → True  (même instant)
-```
-
-- Quiz : Avec `d` de l'exemple 1, que fait `d < datetime(2026, 10, 23, 12)` ?
-- [ ] `True`
-- [x] `TypeError`
-- [ ] `False`
-- Réponse : `TypeError` : comparer naïf et aware est interdit ; piège en plus, `==` ne lève pas mais renvoie toujours `False`.
-
 ## 17. soustraire dans un même fuseau : l'heure murale
+- Id : dates-soustraction-heure-murale
 - Sous-thème : heure d'été
+- Type : piège
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : dates-timedelta-ecart, dates-zoneinfo-nom-iana
 - Source : data-platform · S1-07
 - Définition : Deux `datetime` de même `tzinfo` se soustraient en heure murale, changement d'heure ignoré ; passer en UTC pour la durée réelle.
 - Contexte : Python ne tient compte des décalages que si les `tzinfo` diffèrent. Le 25 octobre 2026, Paris recule de 3 h à 2 h : de 12:00 le 24 à 12:00 le 25 il s'écoule 25 h, mais la soustraction directe donne `1 day`. L'addition suit la même règle : `+ timedelta(hours=24)` avance l'horloge murale de 24 h. Pour une durée (SLA, latence d'ingestion), convertir les deux en UTC d'abord.
@@ -604,8 +675,13 @@ reel.total_seconds() / 3600     # → 25.0
 - Réponse : `1 day, 1:00:00` : `tzinfo` différents, Python convertit en UTC ; `a` = 10:00 UTC le 24, d'où 25 h.
 
 ## 18. fold : 02:30 existe deux fois
+- Id : dates-fold-heure-ambigue
 - Sous-thème : heure d'été
+- Type : concept
 - Niveau : 3
+- Profils : expert
+- Prérequis : dates-zoneinfo-nom-iana
+- Voir aussi : dates-heure-inexistante
 - Source : data-platform · S1-07
 - Définition : Le 25 octobre 2026, 02:30 à Paris existe deux fois ; `fold=0` désigne le premier passage (CEST), `fold=1` le second (CET).
 - Contexte : Au recul de 3 h à 2 h, les heures murales 02:00 à 02:59 se répètent. Un horodatage `2026-10-25 02:30` sans décalage est donc ambigu, à une heure près. L'attribut `fold` (PEP 495) lève l'ambiguïté ; il vaut 0 par défaut. C'est une raison de plus pour stocker les instants en UTC ou en ISO avec décalage, jamais en heure locale nue.
@@ -641,8 +717,13 @@ b.astimezone(U).hour   # → 1
 - Réponse : `True` : même `tzinfo`, la comparaison se fait en heure murale et ignore `fold` ; pourtant une heure les sépare.
 
 ## 19. heure inexistante : 02:30 le 29 mars
+- Id : dates-heure-inexistante
 - Sous-thème : heure d'été
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : dates-zoneinfo-nom-iana
+- Voir aussi : dates-fold-heure-ambigue
 - Source : data-platform · S1-07
 - Définition : Le 29 mars 2026, Paris saute de 02:00 à 03:00 ; `ZoneInfo` accepte pourtant 02:30 sans erreur, avec un décalage choisi par `fold`.
 - Contexte : Une heure qui n'existe pas ne lève rien. Avec `fold=0`, `ZoneInfo` applique le décalage d'avant la transition (+01:00) ; un aller-retour par UTC « normalise » en 03:30. Un traitement planifié à 02:30 en heure de Paris ne trouve donc pas son créneau ce jour-là : planifier en UTC, ou hors de la plage 02:00 à 03:00.
@@ -667,8 +748,12 @@ d.astimezone(timezone.utc).astimezone(P).hour
 - Réponse : `0` : avec `fold=1`, `ZoneInfo` prend le décalage d'après la transition (+02:00) : 02:30 − 2 h = 00:30 UTC.
 
 ## 20. fromisoformat : plus que AAAA-MM-JJ
-- Sous-thème : dates
+- Id : dates-fromisoformat-formes-acceptees
+- Sous-thème : parser
+- Type : piège
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : dates-date-fromisoformat
 - Source : data-platform · S1-07
 - Définition : Depuis Python 3.11, `date.fromisoformat` accepte aussi `20261020` et la semaine ISO `2026-W43-1` : il ne garantit pas un format précis.
 - Contexte : `resolve_day` annonce « attendu YYYY-MM-DD » mais laisse passer ces formes, qui désignent bien une date : sans conséquence ici. Un contrat strict (clé de partition, paramètre d'API documenté) doit le vérifier en plus : comparer `d.isoformat() == raw` est le plus simple. Avant 3.11, seul `AAAA-MM-JJ` passait : le comportement dépend de la version de Python.
@@ -697,16 +782,21 @@ strict("2026-10-20")  # → date(2026, 10, 20)
 strict("20261020")    # ❌ ValueError
 ```
 
-- Quiz : Que vaut `datetime.strptime("2026-10-9", "%Y-%m-%d").day` ?
-- [ ] `ValueError`
-- [x] `9`
-- [ ] `1`
-- [ ] `90`
-- Réponse : `9` : `strptime` accepte un jour sur un chiffre pour `%d` ; lui non plus ne garantit pas `AAAA-MM-JJ` strict.
+- Quiz : En Python 3.12, que fait `date.fromisoformat("2026-10-9")` ?
+- [x] `ValueError`
+- [ ] Renvoie `date(2026, 10, 9)`
+- [ ] Renvoie `date(2026, 10, 1)`
+- [ ] Renvoie `None`
+- Réponse : `ValueError` : formes élargies ou non, le jour garde 2 chiffres ; `strptime("%Y-%m-%d")`, lui, accepte `9` sans erreur.
 
 ## 21. datetime hérite de date
-- Sous-thème : dates
+- Id : dates-datetime-herite-de-date
+- Sous-thème : calcul
+- Type : piège
 - Niveau : 3
+- Profils : expert
+- Prérequis : dates-date-fromisoformat
+- Voir aussi : dates-date-dans-quel-fuseau
 - Source : data-platform · S1-07
 - Définition : `datetime` est une sous-classe de `date` : `isinstance(dt, date)` est vrai, donc un contrôle par `isinstance` laisse passer un `datetime`.
 - Contexte : Une fonction qui attend un jour (`day: date`) accepte un `datetime` sans broncher, puis se comporte mal : `day - timedelta(1)` garde l'heure, `f"dt={day}"` donne `dt=2026-10-24 22:30:00` dans une clé S3. Pour exiger un vrai jour : `type(x) is date`, ou normaliser avec `.date()` (dans le bon fuseau). Les annotations de type ne protègent pas à l'exécution.

@@ -2,17 +2,22 @@
 title: "Cartes · CloudWatch"
 type: cartes
 langage: AWS
+chapitre: Exploitation
 cours: CloudWatch
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · CloudWatch
-AWS · CloudWatch : métriques, alarmes, données manquantes, actions, diagnostic (format spec v3 de revision-pwa).
+AWS · CloudWatch : métriques, alarmes, actions, graphes, données manquantes, diagnostic (format spec v4 de revision-pwa).
 
 ## 1. métriques Lambda : publiées sans code
+- Id : cloudwatch-metriques-lambda
 - Sous-thème : métriques
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : cloudwatch-errors-vs-throttles
 - Source : data-platform · S1-08
 - Définition : Lambda publie seule dans l'espace `AWS/Lambda` les métriques `Invocations`, `Errors`, `Duration`, `Throttles`, par fonction, sans une ligne de code.
 - Contexte : Rien à installer ni à appeler : chaque invocation alimente ces séries, à la minute. Elles portent la dimension `FunctionName`, et une seconde série `FunctionName` + `Resource` (version ou alias). C'est la base d'une alarme d'exploitation ; une métrique métier (annonces ingérées) demanderait au contraire `PutMetricData` ou un log au format EMF.
@@ -37,8 +42,12 @@ aws cloudwatch list-metrics \
 - Réponse : 0 : `Errors` ne compte que les exceptions sorties du handler et les erreurs du runtime (timeout) ; un retour normal est un succès.
 
 ## 2. Errors : exceptions et timeouts, pas les throttles
+- Id : cloudwatch-errors-vs-throttles
 - Sous-thème : métriques
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : lambda-laisser-echouer
 - Source : data-platform · S1-08
 - Définition : `Errors` compte les invocations terminées par une erreur de fonction : exception du code, ou erreur du runtime comme un timeout.
 - Contexte : Une requête refusée faute de concurrence (`TooManyRequestsException`) ne compte ni dans `Invocations` ni dans `Errors`, seulement dans `Throttles` (doc Lambda). Une alarme sur `Errors` seule ne voit donc pas une fonction bridée. Le taux d'échec se calcule `Errors / Invocations`, et `Invocations` égale le nombre de requêtes facturées.
@@ -65,8 +74,11 @@ aws cloudwatch get-metric-statistics \
 - Réponse : `Throttles` : la requête est refusée avant toute exécution ; elle ne compte ni comme invocation ni comme erreur.
 
 ## 3. Sum ou Average : compter ou mesurer un taux
+- Id : cloudwatch-sum-ou-average
 - Sous-thème : métriques
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-08
 - Définition : Chaque invocation envoie `Errors` = 0 ou 1 ; `Sum` sur une période donne le nombre d'échecs, `Average` le taux d'échec.
 - Contexte : La statistique choisie change le sens du seuil. `Sum >= 1` : au moins un échec dans la période, ce qu'on veut pour un job quotidien. `Average > 0.05` : plus de 5 % d'échecs, utile pour une API très sollicitée où un échec isolé est normal. `Maximum` sur `Errors` vaut toujours 0 ou 1 : peu informatif.
@@ -88,8 +100,12 @@ round(sum(errors) / len(errors), 2)
 - Réponse : `1.0` : la moyenne de trois 1 ; `Average` est une proportion entre 0 et 1, pas un pourcentage.
 
 ## 4. alarme : trois états
+- Id : cloudwatch-alarme-trois-etats
 - Sous-thème : alarmes
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : cloudwatch-treat-missing-data
 - Source : data-platform · S1-08
 - Définition : Une alarme est toujours `OK`, `ALARM` ou `INSUFFICIENT_DATA` ; elle part en `INSUFFICIENT_DATA` à sa création, faute de données évaluées.
 - Contexte : `OK` : la métrique respecte le seuil. `ALARM` : elle le franchit. `INSUFFICIENT_DATA` : l'alarme vient de démarrer, ou pas assez de points pour décider. Juste après `make up`, l'historique montre le premier passage (mesuré : `INSUFFICIENT_DATA` → `OK`). Un état ne dit rien de la livraison du mail : c'est l'abonnement SNS qui décide.
@@ -114,8 +130,12 @@ aws cloudwatch describe-alarms \
 - Réponse : `INSUFFICIENT_DATA` : toute alarme démarre dans cet état, jusqu'à sa première évaluation avec des données ou une règle de données manquantes.
 
 ## 5. period : la taille d'un point
+- Id : cloudwatch-period
 - Sous-thème : alarmes
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : cloudwatch-sum-ou-average
 - Source : data-platform · S1-08
 - Définition : `period` (secondes) découpe la métrique en points : chaque point agrège, avec la statistique choisie, ce qui s'est passé pendant la période.
 - Contexte : Lambda publie en résolution standard, à la minute : `period` vaut 60 ou un multiple. Une période courte réagit vite mais découpe une même panne en plusieurs points ; une période longue regroupe une panne et ses retries en un seul point. Le choix dépend du rythme du job, pas d'une valeur « standard ».
@@ -147,8 +167,12 @@ threshold           = 1
 - Réponse : 1, de valeur 2 : les deux erreurs tombent dans la même minute, `Sum` les additionne dans un seul point.
 
 ## 6. actions : seulement au changement d'état
+- Id : cloudwatch-actions-changement-etat
 - Sous-thème : actions
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : sns-topic-fan-out
 - Source : data-platform · S1-08
 - Définition : `alarm_actions` part quand l'alarme passe en `ALARM`, `ok_actions` quand elle revient à `OK` ; rester dans un état ne renvoie rien.
 - Contexte : Une alarme évaluée chaque minute ne spamme pas : l'action suit la transition, pas l'évaluation. `ok_actions` donne le mail de retour à la normale, utile pour savoir qu'un rejeu a suffi. `insufficient_data_actions` existe aussi, rarement utile pour un job quotidien. Une action est en général un topic SNS ; le même topic peut servir à toutes les alarmes.
@@ -168,8 +192,12 @@ ok_actions    = [aws_sns_topic.alerts.arn]
 - Réponse : 1 : l'action n'est exécutée qu'au passage `OK` → `ALARM`, pas à chaque évaluation.
 
 ## 7. get-metric-widget-image : un graphe sans console
+- Id : cloudwatch-widget-image
 - Sous-thème : graphes
+- Type : recette
 - Niveau : 1
+- Profils : ops
+- Voir aussi : cloudwatch-start-iso-8601
 - Source : data-platform · S1-09
 - Définition : `aws cloudwatch get-metric-widget-image` rend en PNG un graphe décrit en JSON, le même format qu'un widget de tableau de bord.
 - Contexte : Une capture de la console montre le numéro de compte et ne se refait pas à l'identique. La définition JSON se commite à côté du PNG : on relance la commande et on obtient le graphe du jour. Lecture seule : aucun tableau de bord n'est créé. La réponse est du JSON dont le champ `MetricWidgetImage` contient le PNG en base64.
@@ -187,11 +215,11 @@ file invocations.png
 ```
 
 ```json
-# Exemple 2 : invocations.json, minimal
+# Exemple 2 : invocations.json
 {"metrics": [["AWS/Lambda", "Invocations",
   "FunctionName",
   "data-platform-dev-ingest-bodacc"]],
- "start": "-PT24H"}
+ "start": "-PT24H", "width": 1000}
 ```
 
 - Quiz : Sans `width` ni `height` dans le JSON, quelle taille fait le PNG ?
@@ -202,8 +230,11 @@ file invocations.png
 - Réponse : 600 × 400 (mesuré dans l'en-tête du PNG) : taille par défaut d'un widget ; `width` et `height` la changent.
 
 ## 8. start : une durée ISO 8601
+- Id : cloudwatch-start-iso-8601
 - Sous-thème : graphes
+- Type : concept
 - Niveau : 1
+- Profils : ops
 - Source : data-platform · S1-09
 - Définition : `"start": "-PT24H"` fait commencer le graphe 24 heures avant maintenant : une durée ISO 8601 précédée d'un signe moins.
 - Contexte : `P` ouvre la durée, `T` sépare les jours des heures : `-P7D` (7 jours), `-PT3H` (3 heures), `-PT15M` (15 minutes). `M` avant `T` voudrait dire mois, après `T` minutes. Une date absolue (`2026-10-25T00:00:00Z`) fige le graphe ; une durée relative le garde à jour à chaque regénération.
@@ -223,8 +254,11 @@ file invocations.png
 - Réponse : 1 mois : sans `T`, `M` désigne des mois ; 1 minute s'écrit `-PT1M`.
 
 ## 9. treat_missing_data : quatre valeurs
+- Id : cloudwatch-treat-missing-data
 - Sous-thème : données manquantes
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-08
 - Définition : `treat_missing_data` dit comment lire une période sans point : `missing` (défaut), `notBreaching`, `breaching` ou `ignore`.
 - Contexte : `notBreaching` : l'absence vaut « dans le seuil ». `breaching` : elle vaut « hors seuil ». `ignore` : l'alarme garde son état. `missing` : si toute la plage évaluée est vide, l'alarme passe en `INSUFFICIENT_DATA`. Le bon choix dépend de ce que signifie l'absence : une métrique qui n'existe que sur événement (`Errors` d'un job) ou un flux continu qui ne devrait jamais s'arrêter.
@@ -248,8 +282,12 @@ etat["missing"]
 - Réponse : `ALARM` : hors de l'invocation quotidienne, il n'y a aucun point, et chaque absence compte comme un dépassement.
 
 ## 10. Errors : un point seulement s'il y a eu invocation
+- Id : cloudwatch-errors-sans-invocation
 - Sous-thème : données manquantes
+- Type : piège
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : cloudwatch-treat-missing-data
 - Source : data-platform · S1-08
 - Définition : Lambda publie `Errors` = 0 sur les périodes où la fonction a tourné ; sans invocation, aucun point, pas même un zéro.
 - Contexte : Mesuré : `get-metric-statistics` renvoie 0.0 pour les tranches de 15 min avec invocations, et rien pour les autres. Pour une alarme, l'absence de point est donc l'état normal d'un job planifié, 23 h 59 sur 24 : d'où `notBreaching`. Revers : la même alarme ne voit pas un job qui n'a jamais démarré (schedule désactivée), puisqu'il n'y a ni point ni erreur.
@@ -275,8 +313,13 @@ aws cloudwatch get-metric-statistics \
 - Réponse : reste `OK` : sans invocation, pas de point, et l'absence est lue comme normale ; il faut une alarme sur `Invocations` pour voir un job qui ne tourne plus.
 
 ## 11. période et retries : le nombre de mails
+- Id : cloudwatch-retries-un-seul-mail
 - Sous-thème : alarmes
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : cloudwatch-period, cloudwatch-actions-changement-etat
+- Voir aussi : lambda-async-deux-retries
 - Source : data-platform · S1-08
 - Définition : Pour qu'une panne et ses retries donnent un seul mail, la durée regardée (`period × evaluation_periods`) doit couvrir l'étalement des retries.
 - Contexte : En asynchrone, Lambda réessaie après ~1 min puis ~2 min : trois erreurs étalées sur environ 3 min. Si l'alarme ne regardait qu'une minute, une minute sans erreur pourrait la ramener à `OK` entre deux tentatives. Couvrir 15 min suffit ; mais avec une seule période de 900 s, l'alarme est restée bloquée en `ALARM` (dernier vrai point réévalué). La forme qui marche : 15 périodes de 60 s, 1 sur 15.
@@ -308,8 +351,12 @@ alarmes([0, 2, 4], 15)
 - Réponse : 1 : les trois erreurs tombent dans les 15 minutes regardées ; l'alarme reste en `ALARM` jusqu'à la minute 18 (4 + 15 − 1), puis revient à `OK`.
 
 ## 12. evaluation_periods et datapoints_to_alarm : M sur N
+- Id : cloudwatch-m-sur-n
 - Sous-thème : alarmes
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : cloudwatch-period
 - Source : data-platform · S1-08
 - Définition : `evaluation_periods` (N) fixe combien de points récents on regarde ; `datapoints_to_alarm` (M) combien doivent dépasser pour passer en `ALARM`.
 - Contexte : Sans `datapoints_to_alarm`, M vaut N : tous les points évalués doivent dépasser. « 2 sur 3 » tolère un point isolé, utile contre le bruit d'un service continu. Les points en dépassement n'ont pas besoin d'être consécutifs, seulement dans les N derniers. Pour un job quotidien : 1 sur 15 avec des périodes de 60 s (un seul échec est déjà une journée perdue, et 15 périodes courtes laissent l'alarme redescendre).
@@ -333,8 +380,12 @@ etat([0, 1, 0, 0], m=2, n=3)   # → 'OK'
 - Réponse : `OK` : sans `datapoints_to_alarm`, M = N = 3 ; le point à 0 suffit à ne pas déclencher.
 
 ## 13. dimension mal écrite : l'alarme muette
+- Id : cloudwatch-dimension-mal-ecrite
 - Sous-thème : diagnostic
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Voir aussi : cloudwatch-treat-missing-data
 - Source : data-platform · S1-08
 - Définition : Une alarme dont la dimension ne correspond à aucune série surveille une métrique vide : avec `notBreaching`, elle reste `OK` pour toujours.
 - Contexte : CloudWatch ne valide ni le nom de métrique ni la valeur de dimension : `FunctionName = "ingest-bodaccc"` est accepté sans erreur, au `plan` comme à l'`apply`. Avec `missing`, on verrait `INSUFFICIENT_DATA` ; avec `notBreaching`, tout paraît sain. D'où la dimension lue dans l'output du module (`module.lambda[k].function_name`), jamais tapée, et un vrai test de l'alarme.
@@ -357,8 +408,12 @@ dimensions = {
 - Réponse : `OK` : la série surveillée n'a aucun point, lu comme « dans le seuil » ; les erreurs vont dans une autre série.
 
 ## 14. alarm_description : le runbook dans le mail
+- Id : cloudwatch-alarm-description-runbook
 - Sous-thème : actions
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : cloudwatch-actions-changement-etat
 - Source : data-platform · S1-08
 - Définition : `alarm_description` est recopiée telle quelle dans le message envoyé au topic : y écrire quoi regarder et quoi lancer.
 - Contexte : Le message SNS d'une alarme est un JSON qui porte `AlarmName`, `AlarmDescription`, `NewStateValue`, `NewStateReason` et le `Trigger` (métrique, seuil, période). Celui qui reçoit le mail à 7 h n'a pas le code sous les yeux : la description lui donne la commande de logs et le rattrapage (`make replay`). Limite : 1 024 caractères.
@@ -384,8 +439,12 @@ msg["Trigger"]["Period"]      # → 60
 - Réponse : `NewStateValue` : `ALARM` ou `OK` (avec `OldStateValue`) ; la description est fixe, elle ne change pas d'un message à l'autre.
 
 ## 15. describe-alarm-history : qui a changé et quand
+- Id : cloudwatch-historique-alarme
 - Sous-thème : diagnostic
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Voir aussi : cloudwatch-state-reason
 - Source : data-platform · S1-08
 - Définition : `describe-alarm-history` liste les événements d'une alarme : changements d'état, exécutions d'actions, modifications de configuration.
 - Contexte : `--history-item-type StateUpdate` montre les passages `OK` ↔ `ALARM` avec leur date ; `Action` montre si la publication SNS a réussi ou échoué ; `ConfigurationUpdate` trace les `apply`. C'est la première commande quand un mail n'est pas arrivé : l'alarme a-t-elle changé d'état, l'action est-elle partie ? L'historique est gardé 30 jours.
@@ -409,8 +468,12 @@ aws cloudwatch describe-alarm-history \
 - Réponse : `Action` : il dit si la publication vers le topic a réussi ; si oui, chercher du côté de l'abonnement (non confirmé, spams).
 
 ## 16. set-alarm-state : tester le chemin du mail
+- Id : cloudwatch-set-alarm-state
 - Sous-thème : diagnostic
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : cloudwatch-actions-changement-etat
 - Source : data-platform · S1-08
 - Définition : `aws cloudwatch set-alarm-state` force un état pour déclencher ses actions ; l'évaluation suivante remet l'état réel.
 - Contexte : Il teste le seul chemin alarme → SNS → mail, pas la métrique : une dimension fausse passerait ce test. L'état forcé ne dure que jusqu'à la prochaine évaluation (environ une minute) : on reçoit donc souvent `ALARM` puis `OK`. Pour prouver toute la chaîne, provoquer une vraie erreur du handler, puis compléter par ce test si le mail n'arrive pas.
@@ -433,8 +496,12 @@ aws cloudwatch set-alarm-state \
 - Réponse : la bonne série : l'état est forcé sans lire la métrique ; une dimension mal écrite ne se voit qu'avec une vraie erreur.
 
 ## 17. for_each : une alarme par Lambda
+- Id : cloudwatch-alarme-par-lambda
 - Sous-thème : alarmes
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Voir aussi : Terraform/langage-hcl-for-each-map-de-config
 - Source : data-platform · S1-08
 - Définition : `aws_cloudwatch_metric_alarm` avec `for_each = local.lambdas` crée une alarme par fonction, au même endroit que leur déclaration.
 - Contexte : Ajouter une Lambda à `local.lambdas` lui donne fonction, rôle, logs, retries (module) et alarme, sans rien oublier. Le nom suit la clé (`${local.prefix}-<clé>-errors`), la dimension vient de l'output du module. Une alarme coûte environ 0,10 $ par mois en résolution standard : négligeable face au coût d'une journée perdue sans le savoir.
@@ -458,8 +525,13 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
 - Réponse : une alarme à créer : `for_each` ajoute une instance par nouvelle clé, sans toucher à celle d'`ingest-bodacc`.
 
 ## 18. Errors = 0 : une invocation réussie débloque l'alarme
+- Id : cloudwatch-invocation-debloque-alarme
 - Sous-thème : données manquantes
+- Type : piège
 - Niveau : 2
+- Profils : ops, expert
+- Prérequis : cloudwatch-errors-sans-invocation
+- Voir aussi : cloudwatch-alarme-bloquee-alarm
 - Source : data-platform · S1-08
 - Définition : Une invocation réussie publie un point `Errors = 0` ; devenu le point le plus récent, il ramène l'alarme à `OK`.
 - Contexte : `Errors` n'a de points que pendant les minutes où la fonction a tourné : 0 si tout va bien, ≥ 1 sinon. Sans invocation, il n'y a rien. Mesuré : alarme bloquée en `ALARM` depuis 18:17 sur l'erreur, un `make replay` réussi vers 18:40, retour `OK` à 18:41:11 avec la raison « 1 datapoint [0.0] was not greater than or equal to the threshold ». Le temps seul ne l'avait pas fait.
@@ -481,8 +553,11 @@ vrais[-1]                     # → 0
 - Réponse : `Errors = 1` : une invocation en erreur compte dans `Errors` ; l'alarme reste en `ALARM`, sans nouveau mail (pas de changement d'état).
 
 ## 19. StateReason : lire pourquoi l'alarme a changé
+- Id : cloudwatch-state-reason
 - Sous-thème : diagnostic
+- Type : recette
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-08
 - Définition : `StateReason` (dans le mail et `describe-alarms`) dit sur quels points l'alarme a décidé : valeur, date du point, ou points manquants.
 - Contexte : Mesuré : `Threshold Crossed: 1 datapoint [1.0 (17:02:00)]` lors d'une erreur à 17:16 UTC, la date est le début de la période qui contient l'erreur, pas l'heure de l'erreur. `1 datapoint [0.0 …]` : un vrai point sain a ramené `OK`. `no datapoints were received for 15 periods and 15 missing datapoints were treated as [NonBreaching]` : retour `OK` par absence de données.
@@ -507,8 +582,12 @@ aws cloudwatch describe-alarms \
 - Réponse : entre 06:00 et 06:15 : un point est daté du début de sa période ; l'erreur est quelque part dans les 15 minutes qui suivent.
 
 ## 20. tester une alarme : une vraie erreur sans effet de bord
+- Id : cloudwatch-tester-alarme-vraie-erreur
 - Sous-thème : diagnostic
+- Type : recette
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : cloudwatch-set-alarm-state
 - Source : data-platform · S1-08
 - Définition : Tester une alarme de bout en bout : provoquer une vraie erreur du handler, qui échoue avant toute écriture, sans casser source ni droits.
 - Contexte : Ici, une date future (`{"date": "2099-01-01"}`) : `resolve_day` lève `ValueError` à la première ligne, rien n'est lu ni écrit dans S3, et `Errors` compte l'échec comme une vraie panne. En synchrone (`aws lambda invoke`), pas de retry : une erreur, un mail. `set-alarm-state` ne teste que le chemin SNS → mail, pas la métrique ni la dimension. Après le test, ne pas réinvoquer avant le retour à `OK`.
@@ -535,8 +614,11 @@ resolve_day({"date": "2099-01-01"})  # ❌ ValueError
 - Réponse : 3 : en asynchrone, l'essai et ses 2 nouvelles tentatives (`async_retry`) échouent chacun ; les 185 de Scheduler ne concernent que la livraison.
 
 ## 21. widget : "." recopie la ligne du dessus
+- Id : cloudwatch-widget-point-recopie
 - Sous-thème : graphes
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-09
 - Définition : Dans `metrics` d'un widget, `"."` reprend la valeur à la même position dans la ligne précédente : espace de noms, nom de dimension, valeur.
 - Contexte : Deux séries de la même fonction ne diffèrent que par le nom de métrique : `[".", "Errors", ".", "."]` évite de répéter `AWS/Lambda`, `FunctionName` et le nom de la fonction. Le dernier élément d'une ligne peut être un objet d'options (`label`, `color`, `stat`), propre à cette série.
@@ -561,8 +643,11 @@ resolve_day({"date": "2099-01-01"})  # ❌ ValueError
 - Réponse : `"FunctionName"` : chaque `"."` recopie l'élément à la même position de la ligne au-dessus.
 
 ## 22. widget : l'axe en UTC par défaut
+- Id : cloudwatch-widget-utc
 - Sous-thème : graphes
+- Type : piège
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-09
 - Définition : Un graphe rendu par `get-metric-widget-image` affiche ses heures en UTC, sauf si le JSON précise `"timezone": "+0100"`.
 - Contexte : Mesuré : le rejeu lancé vers 17:30 à Paris apparaissait en pic à 16:30 ; avec `"timezone": "+0100"`, l'axe et le pic se recalent. Le fuseau est un décalage fixe, pas `Europe/Paris` : il ne suit pas l'heure d'été, `+0200` en été. La console, elle, affiche souvent l'heure locale du navigateur : les deux ne coïncident pas.
@@ -584,8 +669,12 @@ resolve_day({"date": "2099-01-01"})  # ❌ ValueError
 - Réponse : `"+0200"` : l'heure d'été de Paris est UTC+2 ; `"Europe/Paris"` est refusé (mesuré : `ValidationError`, le champ attend un décalage `+HHMM`).
 
 ## 23. fenêtre glissante : évaluée chaque minute
+- Id : cloudwatch-fenetre-glissante
 - Sous-thème : alarmes
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : cloudwatch-m-sur-n
 - Source : data-platform · S1-08
 - Définition : Une alarme est évaluée chaque minute sur les dernières `period × evaluation_periods` secondes : la fenêtre glisse, sans alignement sur l'horloge.
 - Contexte : Avec 15 périodes de 60 s, l'évaluation de 06:05 regarde 05:50 → 06:05, celle de 06:06 regarde 05:51 → 06:06. Une erreur à 06:00 maintient `ALARM` jusqu'à sa sortie des 15 minutes, puis `OK` (mesuré : 21 min après la dernière erreur, latence comprise). Piège : CloudWatch lit une plage plus large ; avec une seule période de 900 s, la sortie de fenêtre n'a pas suffi. Option : fenêtre « horloge ». Au-delà d'un jour, évaluation horaire.
@@ -608,12 +697,16 @@ fenetre = timedelta(seconds=60) * 15
 - Réponse : une fois par heure (doc CloudWatch) : au-delà d'un jour de fenêtre, l'alarme ne prend en compte les données que jusqu'à l'heure pleine.
 
 ## 24. Errors : daté du début de l'invocation
+- Id : cloudwatch-errors-date-debut
 - Sous-thème : métriques
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : cloudwatch-period
 - Source : data-platform · S1-08
 - Définition : Le point `Errors` d'une invocation porte l'horodatage de son début, pas celui de l'erreur.
-- Contexte : Une invocation lancée à 06:00 qui échoue au bout de 4 min 50 (timeout de 300 s) ajoute son 1 à la minute 06:00. Le point arrive donc « dans le passé » : une alarme à période courte peut l'avoir déjà évaluée sans lui, et ne le voir qu'à l'évaluation suivante. Avec une période de 15 min, le décalage est absorbé.
-- Usage : ✅ période supérieure à la durée maximale de la fonction · ❌ `period = 60` sur une fonction qui tourne plusieurs minutes : alarme en retard ou point compté hors de la fenêtre attendue.
+- Contexte : Une invocation lancée à 06:00 qui échoue au bout de 4 min 50 (timeout de 300 s) ajoute son 1 à la minute 06:00. Le point arrive donc « dans le passé » : une alarme à période courte peut l'avoir déjà évaluée sans lui, et ne le voir qu'à l'évaluation suivante. Une fenêtre regardée de 15 min (60 s × 15) absorbe ce décalage.
+- Usage : ✅ fenêtre regardée (`period × evaluation_periods`) plus longue que la durée maximale de la fonction · ❌ fenêtre d'une minute (60 s × 1) sur une fonction qui tourne plusieurs minutes : point compté hors de la fenêtre attendue.
 
 ```python
 # Exemple 1 : où tombe le point
@@ -633,8 +726,12 @@ debut.replace(second=0).strftime("%H:%M")
 - Réponse : la minute du début : la doc Lambda précise que l'horodatage reflète l'invocation, pas le moment de l'erreur.
 
 ## 25. Duration : sans le démarrage à froid
+- Id : cloudwatch-duration-sans-init
 - Sous-thème : métriques
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Voir aussi : lambda-ligne-report, lambda-cold-start-init
 - Source : data-platform · S1-08
 - Définition : La métrique `Duration` mesure le temps du handler seul ; le démarrage à froid (`Init Duration`) n'y figure pas.
 - Contexte : Une alarme « trop lent » sur `Duration` ignore donc l'init, qui peut pourtant être facturée : mesuré en S1-07, `Billed Duration` 5 520 ms pour `Duration` 4 563 ms et `Init Duration` 956 ms. Pour suivre le vrai coût ou le temps vu par l'appelant, lire les lignes `REPORT`. `Duration` accepte les percentiles (`p95`), plus parlants que `Average`.
@@ -654,8 +751,13 @@ duration < billed        # → True
 - Réponse : non : `Duration` exclut l'init ; seul le temps du handler (279 s) est comparé au seuil.
 
 ## 26. AsyncEventsDropped : l'événement abandonné
+- Id : cloudwatch-async-events-dropped
 - Sous-thème : métriques
+- Type : concept
 - Niveau : 3
+- Profils : data, ops, expert
+- Prérequis : lambda-async-deux-retries
+- Voir aussi : lambda-destinations-ou-dlq
 - Source : data-platform · S1-08
 - Définition : `AsyncEventsDropped` compte les événements asynchrones abandonnés sans exécution réussie : retries épuisés, âge maximal dépassé, ou concurrence réservée à 0.
 - Contexte : `Errors` dit « une tentative a échoué » ; `AsyncEventsDropped` dit « l'événement est perdu », après les retries (2 tentatives, 1 h ici). Pour un job quotidien, c'est la vraie journée manquante. Avec une destination `OnFailure` ou une DLQ, l'événement y part avant d'être abandonné. `AsyncEventAge` qui grimpe signale des retries ou du throttling en cours.
@@ -678,8 +780,12 @@ dropped = int(all(t == "échec"
 - Réponse : 2 et 0 : deux tentatives ont échoué, mais l'événement a fini par réussir, il n'est pas abandonné.
 
 ## 27. plage d'évaluation : plus large que evaluation_periods
+- Id : cloudwatch-plage-evaluation
 - Sous-thème : données manquantes
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : cloudwatch-m-sur-n
 - Source : data-platform · S1-08
 - Définition : À chaque évaluation, CloudWatch lit plus de points que `evaluation_periods` (la plage d'évaluation), pour combler les trous avec de vrais points plus anciens.
 - Contexte : Doc *alarms-and-missing-data* : s'il y a assez de vrais points dans la plage (au moins `evaluation_periods`), l'alarme décide sur les plus récents d'entre eux et `treat_missing_data` est ignoré. Sinon seulement, les trous sont complétés (`notBreaching` → dans le seuil). La taille exacte de la plage dépend de la période et n'est pas réglable. Vaut pour la fenêtre glissante (par défaut), pas pour la fenêtre « horloge ».
@@ -707,8 +813,12 @@ etat([1] + [None] * 15, n=15, plage=20)   # → 'OK'
 - Réponse : `ALARM` : un seul vrai point, donc trous complétés, mais l'erreur est encore dans les 15 derniers points.
 
 ## 28. dernier vrai point réévalué : l'alarme bloquée en ALARM
+- Id : cloudwatch-alarme-bloquee-alarm
 - Sous-thème : données manquantes
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : cloudwatch-plage-evaluation, cloudwatch-treat-missing-data
 - Source : data-platform · S1-08
 - Définition : Sur une métrique qui ne publie plus, une alarme à une seule période peut réévaluer indéfiniment son dernier vrai point, et rester en `ALARM`.
 - Contexte : Mesuré en S1-08 : `period = 900`, `evaluation_periods = 1`, `notBreaching` ; erreur à 18:16, `ALARM` à 18:17, toujours `ALARM` à 18:40 alors que l'erreur était sortie de la période. Le seul vrai point de la plage, l'erreur, suffisait (1 ≥ 1). Doc : « might repeatedly re-evaluate the last set of data points… use shorter periods ». Correctif mesuré : 60 s × 15, 1 sur 15 → `OK` seul en 20 min.

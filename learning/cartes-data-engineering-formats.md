@@ -2,17 +2,22 @@
 title: "Cartes · Formats de fichiers"
 type: cartes
 langage: Data engineering
+chapitre: Stocker
 cours: Formats de fichiers
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Cartes · Formats de fichiers
 Data engineering · Formats de fichiers : formats (format spec v3 de revision-pwa).
 
 ## 1. JSON Lines : un objet par ligne
-- Sous-thème : formats
+- Id : formats-json-lines-un-objet-par-ligne
+- Sous-thème : json lines
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
+- Voir aussi : Python/json-jsonl-lire, formats-gzip-compresser-le-brut
 - Définition : JSON Lines (NDJSON) écrit un objet JSON par ligne, ce qui permet de lire et d'écrire en flux sans tout charger.
 - Contexte : Un tableau JSON doit être lu en entier avant d'avoir le premier élément ; une journée BODACC pèse ~59 Mo. En JSON Lines, chaque ligne est un document autonome : on lit, valide et écrit ligne à ligne, et une ligne corrompue n'empêche pas de lire les autres. C'est le format de l'export `/exports/jsonl` de l'API, et Athena le lit nativement.
 - Usage : ✅ gros volumes, streaming, fichiers `raw` et `processed` · ❌ petit document de config ou réponse d'API unique : JSON classique.
@@ -46,8 +51,12 @@ out  # → '{"ville": "Sète"}\n{"ville": "Lyon"}\n'
 - Réponse : `JSONDecodeError` (Extra data) : un fichier JSON Lines n'est pas un document JSON unique, il se lit ligne par ligne.
 
 ## 2. gzip : compresser le brut
-- Sous-thème : formats
+- Id : formats-gzip-compresser-le-brut
+- Sous-thème : gzip
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
+- Voir aussi : Python/compression-mtime-zero
 - Définition : `gzip` compresse les fichiers bruts avant S3 : stockage et transfert réduits, très efficace sur du JSON répétitif.
 - Contexte : Le JSON répète les mêmes clés à chaque ligne : gzip les factorise et divise souvent la taille par 5 à 10. Athena, Spark et `aws s3 cp` lisent le `.json.gz` directement, et on paie S3 et Athena au volume. Revers : un fichier gzip ne se découpe pas, un seul worker le lit en entier ; viser des fichiers de taille raisonnable.
 - Usage : ✅ `raw` et `processed` en JSON Lines, archives · ❌ fichiers énormes à traiter en parallèle : découper en plusieurs parts, ou Parquet (compressé par colonne).
@@ -83,8 +92,11 @@ ligne  # → '{"id": 1}\n'
 - Réponse : `UnicodeDecodeError` : `loads` accepte des octets mais les décode en UTF-8 ; des octets gzip ne le sont pas, décompresser d'abord.
 
 ## 3. Parquet : colonnaire plutôt que CSV
-- Sous-thème : formats
+- Id : formats-parquet-vs-csv
+- Sous-thème : parquet
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant, data
 - Définition : Parquet stocke les données par colonne, typées et compressées, avec des statistiques : un moteur ne lit que les colonnes demandées.
 - Contexte : Un CSV ou du JSON se relit en entier, toutes colonnes comprises, et tout y est texte. Parquet gagne deux fois : la compression par colonne (souvent 5 à 10 fois plus petit, valeurs semblables côte à côte) et la lecture des seules colonnes citées ; les min / max par bloc font sauter des blocs entiers. Sur un moteur facturé au scanné (Athena, 7 $ par To à Paris), c'est autant d'économie. Revers : binaire, illisible.
 - Usage : ✅ zone `processed` interrogée par Athena ou Spark · ❌ export destiné à un humain ou à Excel : CSV dans `out` ; `raw` : garder le format de la source, pour rejouer à l'identique.

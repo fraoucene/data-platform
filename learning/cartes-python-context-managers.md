@@ -2,17 +2,21 @@
 title: "Cartes · Context managers Python"
 type: cartes
 langage: Python
+chapitre: Python idiomatique
 cours: Context managers
 created: 2026-10-24
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · Context managers Python
 Python · Context managers : with, classes, contextlib, async (format spec v3 de revision-pwa).
 
 ## 1. with open : fermé à la sortie
+- Id : context-managers-with-open-ferme
 - Sous-thème : with
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
 - Définition : `with open(p) as f:` ouvre le fichier et garantit sa fermeture à la fin du bloc, même si une exception survient.
 - Contexte : `with` appelle une méthode d'entrée en début de bloc et une méthode de sortie à la fin, quelle que soit la façon d'en sortir : fin normale, `return`, `break` ou exception. Pour un fichier, la sortie fait `close()`, qui vide aussi le tampon d'écriture sur le disque. Sans `with`, un `open` oublié reste ouvert jusqu'au ramasse-miettes, et ce qui est écrit peut ne pas être encore sur le disque.
 - Usage : ✅ tout fichier, client HTTP, verrou, connexion : toujours dans un `with` · ❌ `f = open(p)` sans `close` ; `Path.read_text()` suffit pour lire un petit fichier d'un coup.
@@ -47,8 +51,13 @@ f.closed      # → True
 - Réponse : `""` : l'écriture est encore dans le tampon de `f` ; elle n'atteint le disque qu'au `close()` de la sortie du `with` (ou à un `f.flush()`).
 
 ## 2. with : l'équivalent de try/finally
+- Id : context-managers-with-try-finally
 - Sous-thème : with
+- Type : concept
 - Niveau : 1
+- Profils : débutant, web
+- Prérequis : context-managers-with-open-ferme
+- Voir aussi : exceptions-else-finally
 - Définition : `with X() as c:` équivaut à un `try/finally` qui nettoie dans le `finally` : impossible de l'oublier (≈ `using` en TS 5.2).
 - Contexte : Sans `with`, chaque ressource demande un `try/finally` à la main ; c'est verbeux et on l'oublie sur le chemin d'erreur. Le `with` déplace ce code dans l'objet : `httpx.Client`, `open`, `threading.Lock`, `tempfile.TemporaryDirectory` savent se fermer. Un objet qui n'a qu'une méthode `close()` sans protocole `with` passe par `contextlib.closing`.
 - Usage : ✅ toute ressource qui a un `with` : l'utiliser · ❌ `try/finally` écrit à la main pour un objet qui sait déjà se fermer seul.
@@ -81,8 +90,12 @@ c.is_closed    # → True
 - Réponse : `True` : un `return` sort du bloc, la sortie du `with` ferme le client avant que l'appelant ne le reçoive.
 
 ## 3. with : plusieurs ressources
+- Id : context-managers-plusieurs-ressources
 - Sous-thème : with
+- Type : concept
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : context-managers-with-open-ferme
 - Définition : Un seul `with` ouvre plusieurs ressources séparées par des virgules ; elles sont fermées dans l'ordre inverse de leur ouverture.
 - Contexte : `with a() as x, b() as y:` équivaut à deux `with` imbriqués : si `b()` échoue, `x` est quand même fermé. Depuis Python 3.10, la liste peut être mise entre parenthèses pour tenir sur plusieurs lignes. L'ordre inverse est voulu : la dernière ressource ouverte, qui dépend souvent de la première, est fermée en premier. Pour un nombre variable de ressources : `ExitStack`.
 - Usage : ✅ lire un fichier et en écrire un autre, client + fichier de sortie · ❌ liste de fichiers dont le nombre dépend des données : `contextlib.ExitStack`.
@@ -124,8 +137,13 @@ log   # → ["fichier", "client"]
 - Réponse : Fermé : c'est l'équivalent de deux `with` imbriqués ; l'échec du second sort du premier, qui ferme `x`.
 
 ## 4. with : pas de portée de bloc
+- Id : context-managers-pas-de-portee
 - Sous-thème : with
+- Type : piège
 - Niveau : 1
+- Profils : débutant
+- Prérequis : context-managers-with-open-ferme
+- Voir aussi : listes-portee-comprehension
 - Définition : Un `with` ne crée pas de portée : la variable du `as` et celles du bloc restent accessibles après, mais la ressource est fermée.
 - Contexte : En TS, `const` dans un bloc `{}` disparaît à la fin ; en Python, seuls les fonctions, classes et modules créent une portée. Après le `with`, `f` existe encore mais pointe sur un fichier fermé : le lire lève `ValueError`. Le bon réflexe : extraire les données dans le bloc (liste, dict) et ne garder que ça.
 - Usage : ✅ lire ou calculer dans le bloc, utiliser le résultat après · ❌ utiliser l'objet du `as` après le bloc (fichier, flux HTTP) : il est fermé.
@@ -158,8 +176,12 @@ lignes        # → ["A1", "A2"]
 - Réponse : `ValueError` (I/O operation on closed file) : le nom `f` existe toujours, mais le fichier a été fermé à la sortie du `with`.
 
 ## 5. suppress : ignorer une exception précise
+- Id : context-managers-suppress
 - Sous-thème : contextlib
+- Type : recette
 - Niveau : 1
+- Profils : débutant, ops
+- Prérequis : context-managers-with-try-finally, exceptions-try-except-type
 - Définition : `with contextlib.suppress(E):` avale l'exception `E` levée dans le bloc et continue après le `with`.
 - Contexte : Équivaut à `try: … except E: pass`, en une ligne et sans ambiguïté sur l'intention. Le bloc s'arrête à la ligne qui lève : ce qui suit dans le bloc ne s'exécute pas. Seuls les types listés sont avalés, les autres remontent normalement. Plusieurs types : `suppress(KeyError, FileNotFoundError)`.
 - Usage : ✅ cas attendu et sans conséquence : supprimer un fichier peut-être absent, lire une clé optionnelle · ❌ `suppress(Exception)` : masque les vrais bugs ; erreur qu'il faut journaliser : `try/except` avec un log.
@@ -193,8 +215,13 @@ log      # → ["avant"]
 - Réponse : Lève `ValueError` : `int` lève `ValueError`, qui n'est pas dans la liste de `suppress` ; seules les exceptions listées sont avalées.
 
 ## 6. with open "wb" : le fichier est vidé à l'ouverture
+- Id : context-managers-wb-tronque
 - Sous-thème : with
+- Type : piège
 - Niveau : 1
+- Profils : débutant, data
+- Prérequis : context-managers-with-open-ferme
+- Voir aussi : context-managers-ecriture-atomique
 - Source : data-platform · S1-07
 - Définition : `with open(p, "wb")` tronque le fichier dès l'entrée du bloc : l'ancien contenu est perdu avant la première écriture, même si le bloc échoue.
 - Contexte : `"w"` et `"wb"` signifient « créer ou vider ». C'est voulu pour un job idempotent (un rejeu écrase la partition) mais dangereux si l'écriture échoue en route : l'ancien fichier, valide, est déjà parti. `"x"` refuse d'écraser un fichier existant (`FileExistsError`), `"a"` ajoute à la fin. Pour garder l'ancien fichier jusqu'au succès : écrire ailleurs puis renommer.
@@ -229,8 +256,12 @@ open(p, "xb")  # ❌ FileExistsError
 - Réponse : Rien : un fichier vide : la troncature a eu lieu à l'ouverture ; l'exception n'annule rien.
 
 ## 7. __enter__ et __exit__ : un with en classe
+- Id : context-managers-enter-exit-classe
 - Sous-thème : classes
+- Type : concept
 - Niveau : 2
+- Profils : web, data
+- Prérequis : context-managers-with-try-finally
 - Source : data-platform · S1-06
 - Définition : Une classe avec `__enter__` et `__exit__` s'utilise dans `with` : `__exit__` est toujours appelé à la sortie (≈ `using` + `Symbol.dispose` en TS).
 - Contexte : `with X() as c` appelle `__enter__()` et lie **sa valeur de retour** à `c`, d'où le `return self`. `__exit__(exc_type, exc, tb)` est appelé même si le bloc lève ; s'il renvoie une valeur vraie, l'exception est avalée. Règle « qui ouvre ferme » : `BodaccClient` ne ferme le `httpx.Client` que s'il l'a créé (`_owns_http`) ; un client injecté reste à l'appelant.
@@ -282,8 +313,12 @@ partage.ouvert   # → True  (à l'appelant)
 - Réponse : `None` : `as` reçoit la valeur renvoyée par `__enter__`, pas l'objet placé après `with`.
 
 ## 8. @contextmanager : un with maison
+- Id : context-managers-contextmanager-generateur
 - Sous-thème : contextlib
+- Type : recette
 - Niveau : 2
+- Profils : data, web
+- Prérequis : context-managers-enter-exit-classe, generateurs-yield-a-la-demande
 - Définition : `contextlib.contextmanager` transforme un générateur en gestionnaire `with` : avant `yield` = entrée, après `yield` = sortie (≈ `try/finally` réutilisable).
 - Contexte : À l'entrée du `with`, le générateur tourne jusqu'au `yield` ; la valeur produite est liée au `as`. À la sortie, il reprend après le `yield`. Si le corps du `with` lève, l'exception est **relancée au point du `yield`** dans le générateur : sans `try/finally` autour, le code de sortie ne s'exécute pas. Évite d'écrire une classe avec `__enter__` et `__exit__`.
 - Usage : ✅ ouvrir / fermer une ressource (lot de traitement, connexion, chrono d'une étape) · ❌ ressource qui a déjà son `with` (`open`, client boto3) : l'utiliser directement.
@@ -333,8 +368,13 @@ log            # → ["ferme"]
 - Réponse : `["ouvre 2026-10-23"]` : l'exception remonte au point du `yield`, la ligne de sortie n'est jamais atteinte.
 
 ## 9. __exit__ : avaler l'exception
+- Id : context-managers-exit-avale-exception
 - Sous-thème : classes
+- Type : piège
 - Niveau : 2
+- Profils : data
+- Prérequis : context-managers-enter-exit-classe
+- Voir aussi : context-managers-suppress
 - Définition : Si `__exit__` renvoie une valeur vraie, l'exception du bloc est avalée ; s'il renvoie `None` ou faux, elle continue de remonter.
 - Contexte : C'est ainsi que `suppress` est écrit. Le piège : un `return` de `__exit__` écrit pour autre chose (un booléen de succès, un objet) avale toutes les erreurs du bloc sans bruit. La règle : ne rien renvoyer (`None`), sauf intention explicite de masquer une erreur précise, testée sur `exc_type`.
 - Usage : ✅ gestionnaire qui ignore volontairement une erreur attendue, en testant son type · ❌ `return True` ou `return self` dans `__exit__` par habitude : toutes les erreurs disparaissent.
@@ -374,8 +414,12 @@ l.vu is ValueError   # → True  (et avalée)
 - Réponse : Elle remonte après `__exit__` : sans `return`, `__exit__` renvoie `None`, faux, donc l'exception continue son chemin une fois le nettoyage fait.
 
 ## 10. __exit__ : commit ou rollback
+- Id : context-managers-exit-commit-rollback
 - Sous-thème : classes
+- Type : recette
 - Niveau : 2
+- Profils : data, web
+- Prérequis : context-managers-enter-exit-classe
 - Définition : `__exit__(exc_type, exc, tb)` reçoit l'exception du bloc, ou trois `None` si le bloc s'est terminé sans erreur : de quoi valider ou annuler.
 - Contexte : C'est le motif transactionnel : succès → commit, erreur → rollback, puis l'exception continue de remonter (aucun `return`). `exc` est l'objet exception, utile pour journaliser. Le même test sert à écrire un marqueur `_SUCCESS` seulement si la partition a été entièrement écrite, ou à supprimer un fichier temporaire à moitié rempli.
 - Usage : ✅ transaction, écriture atomique (fichier temporaire puis renommage), marqueur de fin de lot · ❌ nettoyage identique dans les deux cas : ignorer les arguments (`*exc`).
@@ -417,8 +461,11 @@ except ValueError:
 - Réponse : Oui, avec `KeyboardInterrupt` : `__exit__` reçoit toute `BaseException`, pas seulement les `Exception` ; le rollback a donc lieu.
 
 ## 11. closing : un with pour un objet à close()
+- Id : context-managers-closing
 - Sous-thème : contextlib
+- Type : recette
 - Niveau : 2
+- Profils : data
 - Définition : `contextlib.closing(obj)` donne un `with` à tout objet qui a une méthode `close()` mais pas le protocole `__enter__` / `__exit__`.
 - Contexte : Beaucoup d'objets savent se fermer sans être des context managers : vieilles bibliothèques, connexions maison, et surtout les générateurs (`g.close()` exécute leurs `finally`). `closing` appelle `close()` à la sortie, quoi qu'il arrive, et lie l'objet lui-même au `as`. Mettre un tel objet directement dans un `with` lève `TypeError`.
 - Usage : ✅ générateur qui tient une ressource et peut être abandonné avant la fin, objet tiers avec `close()` · ❌ objet qui a déjà un `with` (`open`, `httpx.Client`) : l'utiliser directement.
@@ -461,8 +508,11 @@ log           # → ["fermé"]
 - Réponse : `TypeError` (does not support the context manager protocol) : `with` exige `__enter__` et `__exit__`, une méthode `close` ne suffit pas.
 
 ## 12. redirect_stdout : capturer les print
+- Id : context-managers-redirect-stdout
 - Sous-thème : contextlib
+- Type : recette
 - Niveau : 2
+- Profils : ops
 - Définition : `with redirect_stdout(buf):` envoie tout ce que `print` écrit vers `buf` (un `io.StringIO`) le temps du bloc.
 - Contexte : Le gestionnaire remplace `sys.stdout` par l'objet donné, puis le remet à la sortie, même sur erreur. Utile pour récupérer la sortie d'une fonction qui imprime au lieu de renvoyer (vieux script, outil tiers). Il ne touche qu'à l'objet Python `sys.stdout` : un sous-processus ou une extension C qui écrit sur le descripteur 1 lui échappe. `redirect_stderr` fait de même pour les erreurs.
 - Usage : ✅ capturer la sortie d'une fonction tierce, faire taire un outil bavard · ❌ dans pytest : la fixture `capsys`, faite pour ça ; journaliser : le module `logging`, pas `print`.
@@ -496,8 +546,12 @@ err.getvalue()   # → "HTTP 429\n"
 - Réponse : Rien : le sous-processus écrit sur le descripteur 1 du système, pas dans l'objet Python `sys.stdout` remplacé ; passer `capture_output=True` à `run`.
 
 ## 13. ExitStack : un nombre variable de with
+- Id : context-managers-exitstack-variable
 - Sous-thème : contextlib
+- Type : recette
 - Niveau : 2
+- Profils : data
+- Prérequis : context-managers-plusieurs-ressources
 - Définition : `contextlib.ExitStack` empile des gestionnaires avec `enter_context()` et des nettoyages avec `callback()` ; tout est défait en ordre inverse à la sortie.
 - Contexte : Un `with` écrit en dur ne gère qu'un nombre fixe de ressources. Quand ce nombre vient des données (un fichier par jour, un client par source), `ExitStack` remplace les `with` imbriqués : `enter_context(cm)` entre dans `cm` et renvoie sa valeur `as`. Si une entrée échoue au milieu, celles déjà ouvertes sont fermées. `callback(f, *args)` enregistre n'importe quelle fonction de nettoyage.
 - Usage : ✅ N fichiers de sortie (une partition par jour), nettoyages conditionnels · ❌ deux ou trois ressources connues : un `with` à plusieurs éléments, plus lisible.
@@ -536,8 +590,11 @@ log  # → ["ferme client", "purge tmp"]
 - Réponse : `TypeError` : `enter_context` exige le protocole `with` ; pour un simple `close()`, `pile.enter_context(closing(obj))` ou `pile.callback(obj.close)`.
 
 ## 14. nullcontext : un with optionnel
+- Id : context-managers-nullcontext-optionnel
 - Sous-thème : contextlib
+- Type : recette
 - Niveau : 2
+- Profils : web, data
 - Définition : `contextlib.nullcontext(x)` est un gestionnaire qui ne fait rien : il renvoie `x` au `as` et ne ferme rien à la sortie.
 - Contexte : Il évite de dupliquer un bloc selon qu'une ressource doit être ouverte ou non. Cas typique : un client injecté par l'appelant ne doit pas être fermé (règle « qui ouvre ferme »), un client créé ici, si. On choisit le gestionnaire, puis un seul `with`. Sans argument, `nullcontext()` lie `None` au `as`.
 - Usage : ✅ ressource tantôt fournie par l'appelant, tantôt créée localement ; verrou optionnel · ❌ toujours la même ressource : la mettre directement dans le `with`.
@@ -574,8 +631,13 @@ lire().is_closed          # → True
 - Réponse : `None` : l'argument `enter_result` vaut `None` par défaut, et c'est lui que `__enter__` renvoie au `as`.
 
 ## 15. with : lire la taille après le bloc
+- Id : context-managers-taille-apres-bloc
 - Sous-thème : with
+- Type : piège
 - Niveau : 2
+- Profils : data
+- Prérequis : context-managers-with-open-ferme
+- Voir aussi : compression-fin-crc-fermeture
 - Source : data-platform · S1-07
 - Définition : Taille, contenu et hash d'un fichier écrit dans un `with` se lisent **après** le bloc : dedans, les tampons ne sont pas encore vidés.
 - Contexte : `f.write` remplit un tampon en mémoire ; un `GzipFile` garde en plus des données dans zlib et n'écrit sa fin (CRC, taille) qu'à la fermeture. Dans le bloc, `path.stat().st_size` peut valoir 0. Le writer BODACC calcule donc `gz_bytes=path.stat().st_size` après le `with`, une fois les deux ressources fermées en ordre inverse.
@@ -612,9 +674,14 @@ dedans, p.stat().st_size > 0   # → (0, True)
 - [ ] `ValueError` : fichier ouvert
 - Réponse : `10` : `flush` vide le tampon Python vers le système ; pour un `GzipFile`, `flush` ne suffit pas à écrire la fin (CRC).
 
-## 16. GzipFile(fileobj=f) ne ferme pas f
+## 16. GzipFile : fileobj=f reste ouvert
+- Id : context-managers-gzipfile-fileobj
 - Sous-thème : with
+- Type : piège
 - Niveau : 2
+- Profils : data
+- Prérequis : compression-gzipfile-en-flux
+- Voir aussi : context-managers-closing
 - Source : data-platform · S1-07
 - Définition : Fermer un `GzipFile` posé sur un fichier déjà ouvert (`fileobj=f`) termine le gzip mais laisse `f` ouvert : il faut fermer les deux.
 - Contexte : Règle générale des enveloppes à `fileobj` : celui qui a ouvert ferme. `GzipFile(fileobj=f)` n'a pas ouvert `f`, il ne le ferme pas ; `gzip.open(chemin)` ouvre lui-même le fichier et le ferme. D'où les deux gestionnaires du writer : `with (path.open("wb") as f, gzip.GzipFile(fileobj=f, ...) as gz):`, fermés en ordre inverse, gzip d'abord.
@@ -651,8 +718,13 @@ gz.closed, f.closed     # → (True, True)
 - Réponse : Le gzip complet : `buf` reste ouvert, et la fermeture du gzip y a écrit la fin (CRC, taille).
 
 ## 17. with : l'exception laisse un fichier partiel
+- Id : context-managers-fichier-partiel
 - Sous-thème : with
+- Type : piège
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : context-managers-with-open-ferme
+- Voir aussi : context-managers-ecriture-atomique
 - Source : data-platform · S1-07
 - Définition : `with` ferme le fichier quand une exception interrompt l'écriture, mais ne l'efface pas : un fichier partiel reste sur le disque.
 - Contexte : Une coupure réseau au milieu de `fetch_day` lève dans la boucle d'écriture : le `with` ferme proprement, le gzip est même valide, mais il ne contient qu'une partie de la journée. Ne jamais publier ce fichier : l'exception doit remonter (pas de `except` qui avale) pour que le manifest ne soit pas écrit, et le rejeu réécrira tout. En Lambda, `/tmp` peut garder ce reste d'une invocation à l'autre.
@@ -698,8 +770,12 @@ p.exists()          # → False
 - Réponse : `b"A1\n"` : gzip valide mais partiel : la sortie du `with` écrit la fin du gzip même sur exception ; seul le contenu permet de voir qu'il manque des lignes.
 
 ## 18. with multiple : chaque __exit__ voit l'exception
+- Id : context-managers-exit-multiples-exception
 - Sous-thème : with
+- Type : concept
 - Niveau : 2
+- Profils : data
+- Prérequis : context-managers-plusieurs-ressources, context-managers-enter-exit-classe
 - Source : data-platform · S1-07
 - Définition : Si le bloc lève, chaque gestionnaire d'un `with` multiple reçoit l'exception dans son `__exit__`, le dernier ouvert d'abord, puis elle remonte.
 - Contexte : `with (a as f, b as gz):` équivaut à deux `with` imbriqués : `gz` sort en premier avec l'exception, puis `f`, qui la reçoit aussi tant que personne ne l'a avalée. Si un `__exit__` renvoie `True`, les gestionnaires extérieurs voient une sortie normale. Chacun peut donc nettoyer selon le cas (annuler, journaliser) sans se soucier des autres.
@@ -732,8 +808,12 @@ log   # → [("gzip", "KeyError"), ("fichier", "KeyError")]
 - Réponse : `[("gzip", "KeyError")]` : l'exception est avalée par le gestionnaire intérieur ; l'extérieur voit une sortie normale et `try` ne voit rien.
 
 ## 19. __enter__ qui lève : pas de __exit__
+- Id : context-managers-enter-qui-leve
 - Sous-thème : classes
+- Type : piège
 - Niveau : 3
+- Profils : expert
+- Prérequis : context-managers-enter-exit-classe
 - Définition : Si `__enter__` lève, le bloc ne s'exécute pas et `__exit__` n'est **pas** appelé : `__enter__` doit nettoyer lui-même ce qu'il a ouvert.
 - Contexte : `__exit__` ne protège que le corps du `with`. Un `__enter__` qui ouvre une socket puis échoue à s'authentifier laisse la socket ouverte, puisque personne n'appellera `__exit__`. Règle : `__enter__` fait tout ou rien, avec son propre `try/except` qui défait ce qu'il a déjà fait avant de relancer. Même logique pour `__init__` : s'il lève, rien du protocole n'est appelé.
 - Usage : ✅ `__enter__` qui acquiert plusieurs choses (connexion + session) : nettoyer en cas d'échec partiel · ❌ compter sur `__exit__` pour défaire un `__enter__` raté.
@@ -786,10 +866,15 @@ log  # → ["socket", "ferme socket"]
 - Réponse : Aucune : l'objet n'existe même pas ; `Client()` est évalué avant que le `with` ne commence.
 
 ## 20. @contextmanager : à usage unique
+- Id : context-managers-contextmanager-usage-unique
 - Sous-thème : contextlib
+- Type : piège
 - Niveau : 3
+- Profils : expert
+- Prérequis : context-managers-contextmanager-generateur
+- Voir aussi : generateurs-une-seule-passe
 - Définition : L'objet renvoyé par une fonction `@contextmanager` ne sert qu'une fois : il enveloppe un générateur, épuisé après le premier `with`.
-- Contexte : `lot()` crée un générateur neuf ; le `with` le consomme jusqu'au bout. Rentrer une seconde fois dans le **même** objet échoue (`AttributeError` en Python 3.12). La règle : appeler la fonction à chaque `with` (`with lot():`), ne pas stocker l'objet. Autre contrainte : le générateur doit faire **exactement un** `yield` ; un second lève `RuntimeError` à la sortie.
+- Contexte : `lot()` crée un générateur neuf ; le `with` le consomme jusqu'au bout. Rentrer une seconde fois dans le **même** objet échoue (`AttributeError` de Python 3.12 à 3.14). La règle : appeler la fonction à chaque `with` (`with lot():`), ne pas stocker l'objet. Autre contrainte : le générateur doit faire **exactement un** `yield` ; un second lève `RuntimeError` à la sortie.
 - Usage : ✅ `with lot(jour):` écrit à chaque utilisation · ❌ `cm = lot()` réutilisé dans une boucle ; gestionnaire réutilisable ou réentrant : une classe à `__enter__` / `__exit__`.
 
 ```python
@@ -830,8 +915,12 @@ len(n)    # → 2
 - Réponse : `RuntimeError` (generator didn't stop) : à la sortie, le générateur doit se terminer ; un second `yield` viole le contrat.
 
 ## 21. @contextmanager : aussi un décorateur
+- Id : context-managers-contextmanager-decorateur
 - Sous-thème : contextlib
+- Type : concept
 - Niveau : 3
+- Profils : expert
+- Prérequis : context-managers-contextmanager-generateur, decorateurs-arobase-raccourci
 - Définition : Un gestionnaire créé par `@contextmanager` s'utilise aussi en décorateur : `@lot()` exécute toute la fonction décorée dans le `with`.
 - Contexte : L'objet renvoyé hérite de `ContextDecorator` : posé avec `@lot()` sur une fonction, il recrée un gestionnaire neuf à chaque appel et y exécute la fonction. Les parenthèses sont obligatoires : `@lot()` crée le gestionnaire, `@lot` passerait la fonction à `lot` comme argument. Limite : la valeur du `yield` n'est pas accessible à la fonction décorée.
 - Usage : ✅ entourer toute une fonction (handler de Lambda, étape de pipeline) d'un chrono ou d'un log · ❌ besoin de la valeur `as` dans la fonction : un `with` dans son corps.
@@ -879,8 +968,13 @@ len(n)    # → 2
 - Réponse : `TypeError` dès la définition (lot() takes 0 positional arguments) : `@lot` appelle `lot(ingerer)`, et `lot` n'attend aucun argument.
 
 ## 22. async with : __aenter__ et __aexit__
+- Id : context-managers-async-with
 - Sous-thème : async
+- Type : concept
 - Niveau : 3
+- Profils : web, expert
+- Prérequis : context-managers-enter-exit-classe
+- Voir aussi : http-asyncclient-await
 - Définition : `async with` est le `with` des coroutines : il attend (`await`) `__aenter__` à l'entrée et `__aexit__` à la sortie (≈ `await using` en TS).
 - Contexte : Ouvrir ou fermer une connexion réseau asynchrone prend du temps : ces méthodes sont des coroutines, que seul `async with` sait attendre. Un objet asynchrone (`httpx.AsyncClient`) refuse le `with` simple, et un objet synchrone refuse `async with` : `TypeError` dans les deux cas. `async with` n'est permis que dans une `async def`.
 - Usage : ✅ `httpx.AsyncClient`, pools de connexions async, verrous `asyncio.Lock` · ❌ code synchrone (Lambda classique, boto3) : `with` simple.
@@ -927,8 +1021,12 @@ asyncio.run(main())   # ❌ TypeError
 - Réponse : `SyntaxError` ('async with' outside async function) : le fichier est refusé avant toute exécution.
 
 ## 23. @asynccontextmanager : la version async
+- Id : context-managers-asynccontextmanager
 - Sous-thème : async
+- Type : recette
 - Niveau : 3
+- Profils : web, expert
+- Prérequis : context-managers-contextmanager-generateur, context-managers-async-with
 - Définition : `contextlib.asynccontextmanager` transforme une `async def` qui fait `yield` en gestionnaire pour `async with`.
 - Contexte : Même règle que `@contextmanager` : avant `yield` = entrée, après = sortie, et `try/finally` autour du `yield` pour nettoyer même sur erreur. Le corps peut faire des `await` des deux côtés. Mélanger les versions ne marche pas : `@contextmanager` posé sur une `async def` donne un objet que ni `with` ni `async with` n'acceptent.
 - Usage : ✅ fabrique d'un `httpx.AsyncClient` configuré, session asynchrone avec ouverture et fermeture · ❌ code synchrone : `@contextmanager`.
@@ -981,8 +1079,12 @@ asyncio.run(main())   # → (200, True)
 - Réponse : `TypeError` (does not support the asynchronous context manager protocol) : `@contextmanager` produit un gestionnaire synchrone, sans `__aenter__`.
 
 ## 24. ExitStack.pop_all : garder si tout réussit
+- Id : context-managers-exitstack-pop-all
 - Sous-thème : contextlib
+- Type : recette
 - Niveau : 3
+- Profils : expert
+- Prérequis : context-managers-exitstack-variable
 - Définition : `pile.pop_all()` transfère les nettoyages enregistrés vers une nouvelle pile : les ressources restent ouvertes à la sortie du `with`, sauf si une erreur survient avant.
 - Contexte : Motif « tout ou rien » : ouvrir N ressources dans un `with ExitStack()` ; si la k-ième échoue, la sortie ferme les k-1 premières ; si tout réussit, `pop_all()` vide la pile courante et rend un `ExitStack` neuf qui porte les nettoyages, à fermer plus tard (`.close()`) par celui qui garde les ressources. C'est ainsi qu'on écrit un `__enter__` sûr qui acquiert plusieurs choses.
 - Usage : ✅ fonction ou `__enter__` qui ouvre plusieurs ressources et les rend à l'appelant · ❌ ressources utilisées et fermées dans le même bloc : un `ExitStack` simple.
@@ -1026,16 +1128,21 @@ except ConnectionError:
 [c.ouverte for c in cs]  # → [False, False]
 ```
 
-- Quiz : Que renvoie `pile.pop_all()` ?
-- [ ] `None`
-- [ ] La liste des ressources
-- [x] Un nouvel `ExitStack`
-- [ ] La pile elle-même, vidée
-- Réponse : Un nouvel `ExitStack` : il porte les nettoyages retirés de la pile courante ; l'appeler (`close()`) ou s'en servir comme `with` ferme tout plus tard.
+- Quiz : Exemple 1 sans la ligne `plus_tard = pile.pop_all()` : que vaut `[c.ouverte for c in cs]` juste après le `with` ?
+- [ ] `[True, True]`
+- [x] `[False, False]`
+- [ ] `[False, True]`
+- [ ] `AttributeError`
+- Réponse : `[False, False]` : sans `pop_all`, la pile garde ses nettoyages et la sortie du `with` ferme les deux connexions aussitôt.
 
 ## 25. __exit__ qui lève : la vraie cause masquée
+- Id : context-managers-exit-qui-leve
 - Sous-thème : classes
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : context-managers-enter-exit-classe
+- Voir aussi : exceptions-context-implicite
 - Source : data-platform · S1-07
 - Définition : Si `__exit__` lève à son tour, sa nouvelle exception remplace celle du bloc ; l'originale n'est plus accessible que par `__context__`.
 - Contexte : Cas typique : une coupure réseau lève dans le bloc, puis la fermeture échoue (disque plein, flush impossible). Le journal ne montre que `OSError` à la fermeture, et la vraie cause, la coupure, n'apparaît que dans « During handling of the above exception… » de la trace. Un `__exit__` doit nettoyer sans lever, ou chaîner explicitement (`raise … from exc`).
@@ -1064,8 +1171,13 @@ type(erreur.__context__).__name__  # → "ValueError"
 - Réponse : `"NoneType"` : `__cause__` n'est rempli que par `raise … from …` ; un enchaînement implicite ne remplit que `__context__`.
 
 ## 26. écriture atomique : écrire ailleurs, puis renommer
+- Id : context-managers-ecriture-atomique
 - Sous-thème : contextlib
+- Type : recette
 - Niveau : 3
+- Profils : data, ops
+- Prérequis : context-managers-contextmanager-generateur
+- Voir aussi : fichiers-temporaires-dir-parent
 - Source : data-platform · S1-07
 - Définition : Un gestionnaire `@contextmanager` qui écrit dans un fichier temporaire puis fait `os.replace` vers la destination ne publie le fichier que si le bloc réussit.
 - Contexte : `os.replace` est atomique sur un même système de fichiers : un lecteur voit l'ancien fichier ou le nouveau, jamais un fichier à moitié écrit. Si le bloc lève, le `yield` lève et `os.replace` n'est jamais exécuté : la destination reste intacte. Sur S3, l'équivalent est naturel : un `PutObject` n'est visible qu'une fois complet, d'où l'écriture locale dans `/tmp` puis envoi.
@@ -1100,8 +1212,13 @@ dest.read_bytes()      # → b"v1"
 - Réponse : Oui : rien ne le nettoie : `with open` ferme sans supprimer ; il faudrait un `try/except` qui fait `tmp.unlink()` avant de relancer.
 
 ## 27. with dans un générateur : ouvert jusqu'au bout
+- Id : context-managers-with-dans-generateur
 - Sous-thème : with
+- Type : piège
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : context-managers-with-open-ferme, generateurs-yield-a-la-demande
+- Voir aussi : generateurs-close-finally, http-stream-with-generateur
 - Source : data-platform · S1-07
 - Définition : Un `with` dans un générateur garde la ressource ouverte tant que le générateur n'est ni épuisé ni fermé, même si l'appelant ne lit plus.
 - Contexte : `def lire(p): with open(p) as f: yield from f` : après un seul `next`, le fichier est ouvert et suspendu au `yield`. Il ne se ferme qu'à l'épuisement, à `gen.close()` (qui lève `GeneratorExit` au `yield`) ou quand le ramasse-miettes détruit le générateur. C'est le cas de `fetch_day` : la connexion HTTP reste ouverte tant que la Lambda n'a pas lu la dernière annonce.

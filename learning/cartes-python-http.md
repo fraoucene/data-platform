@@ -2,17 +2,21 @@
 title: "Cartes · HTTP Python (httpx)"
 type: cartes
 langage: Python
+chapitre: Système et réseau
 cours: HTTP
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Cartes · HTTP Python (httpx)
 Python · HTTP : client, réponses, erreurs, streaming, tests, async (format spec v3 de revision-pwa).
 
 ## 1. httpx.Client : timeout et en-têtes
+- Id : http-client-timeout-defaut
 - Sous-thème : client
+- Type : concept
 - Niveau : 1
+- Profils : débutant, web, data
 - Source : data-platform · S1-06
 - Définition : `httpx.Client(base_url=…, timeout=…, headers=…)` garde configuration et connexion entre les appels (≈ `axios.create`) ; à fermer avec `with` ou `close()`.
 - Contexte : Le timeout par défaut de httpx est de **5 s** pour chaque phase (connexion, lecture, écriture, pool) : trop court pour un export qui streame une journée. `httpx.Timeout(60, connect=5)` sépare une connexion qui doit échouer vite d'une lecture longue. Un `User-Agent` explicite identifie le client auprès d'une API publique partagée. `params={…}` encode la query string.
@@ -54,8 +58,11 @@ vu["q"] == w  # → True  (encodé, décodé)
 - Réponse : `60` : le premier argument s'applique à toutes les phases non précisées (lecture, écriture, pool) ; seule `connect` est à 5.
 
 ## 2. Response : statut, texte, json()
+- Id : http-response-statut-json
 - Sous-thème : réponses
+- Type : piège
 - Niveau : 1
+- Profils : débutant, web, data
 - Définition : Une `httpx.Response` expose `status_code`, `headers`, `text` (corps décodé), `content` (octets) et `json()` (corps parsé) ; un 4xx ou 5xx ne lève rien.
 - Contexte : Comme `fetch` : un 404 ou un 503 est une réponse normale, pas une exception ; il faut tester le statut ou appeler `raise_for_status()`. `json()` est une **méthode**, `text` et `content` des propriétés. `is_success` (2xx) et `is_error` (4xx, 5xx) évitent les comparaisons à la main. `httpx.get(url)` crée un client jetable pour un seul appel.
 - Usage : ✅ lire le statut avant le corps, `json()` sur une réponse JSON d'un seul document · ❌ `r.json()` sans tester le statut : une page d'erreur HTML lève `JSONDecodeError`, loin de la cause.
@@ -90,8 +97,11 @@ r.is_error               # → True
 - Réponse : `TypeError` ('method' object is not subscriptable) : `json` est une méthode, il faut l'appeler ; `text` et `content`, eux, se lisent sans parenthèses.
 
 ## 3. params : construire la query string
+- Id : http-params-query-string
 - Sous-thème : client
+- Type : recette
 - Niveau : 1
+- Profils : débutant, web, data
 - Définition : `params={…}` encode un dict en query string : espaces et guillemets échappés, liste → clé répétée (≈ `URLSearchParams`).
 - Contexte : Ne jamais concaténer la query à la main : un filtre ODSQL comme `dateparution=date'2026-10-23'` contient `=`, `'` et des espaces, que `params` encode correctement. Les valeurs non `str` sont converties (`10` → `"10"`, `True` → `"true"`). Des `params` donnés au `Client` s'ajoutent à ceux de chaque appel. Piège : des `params` passés à l'appel **remplacent** la query déjà écrite dans l'URL.
 - Usage : ✅ toujours `params=` pour filtres, pagination, tri · ❌ f-string `f"{url}?where={w}"` : encodage oublié ; mélanger une query dans l'URL et `params=` : la première disparaît.
@@ -123,8 +133,13 @@ str(q.url)
 - Réponse : `https://b.t/r?where=x` : les `params` de l'appel remplacent la query écrite dans l'URL ; tout mettre dans `params`.
 
 ## 4. raise_for_status : lever sur 4xx et 5xx
+- Id : http-raise-for-status
 - Sous-thème : erreurs
+- Type : recette
 - Niveau : 1
+- Profils : débutant, web, data
+- Prérequis : http-response-statut-json
+- Voir aussi : http-transporterror-vs-statuserror
 - Définition : `r.raise_for_status()` lève `httpx.HTTPStatusError` si le statut n'est pas 2xx, et renvoie la réponse sinon, ce qui permet de chaîner.
 - Contexte : C'est le `if (!res.ok) throw` de `fetch`, en une ligne. L'exception porte `e.response` et `e.request` : statut, en-têtes (`Retry-After`) et corps restent lisibles pour décider (réessayer un 429, lever sur un 400). Chez httpx, toute réponse hors 2xx lève, redirections 3xx comprises. `raise_for_status` renvoie `r` : `c.get(url).raise_for_status().json()`.
 - Usage : ✅ juste après chaque appel dont le corps est utilisé · ❌ statuts qu'on traite différemment (429 réessayé, 404 = absent) : tester `r.status_code` avant.
@@ -161,8 +176,11 @@ code   # → 429
 - Réponse : Lève `HTTPStatusError` : httpx ne tolère que les 2xx ; une redirection non suivie est signalée comme une erreur.
 
 ## 5. json=, data=, content= : le corps envoyé
+- Id : http-corps-json-data-content
 - Sous-thème : client
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant, web
 - Définition : `json=` sérialise un objet en JSON, `data=` encode un formulaire, `content=` envoie des octets bruts ; chacun pose le bon `Content-Type`.
 - Contexte : `json={…}` évite le `JSON.stringify` + en-tête à la main : httpx sérialise et pose `application/json`. `data={…}` donne `application/x-www-form-urlencoded`, comme un formulaire HTML. `content=b"…"` envoie tel quel, sans en-tête de type. La sérialisation passe par `json.dumps` : `date`, `Decimal` ou un modèle pydantic doivent être convertis avant (`model_dump(mode="json")`).
 - Usage : ✅ API JSON : `json=` ; formulaire OAuth : `data=` ; fichier ou corps déjà sérialisé : `content=` · ❌ `data=json.dumps(x)` : mauvais `Content-Type`, et `data=` en chaîne est déprécié.
@@ -196,8 +214,11 @@ q.headers["content-type"]
 - Réponse : `TypeError` (Object of type date is not JSON serializable) : httpx passe par `json.dumps`, qui ne connaît pas `date` ; envoyer `d.isoformat()`.
 
 ## 6. headers : insensibles à la casse
+- Id : http-headers-casse
 - Sous-thème : réponses
+- Type : concept
 - Niveau : 1
+- Profils : débutant, web
 - Définition : `r.headers` est un dict insensible à la casse : `r.headers["content-type"]` et `["Content-Type"]` lisent la même valeur, toujours une `str`.
 - Contexte : HTTP ne distingue pas la casse des noms d'en-têtes, et HTTP/2 les envoie en minuscules : ne jamais comparer à la main. Les valeurs sont des chaînes, à convertir (`int(...)` pour `Retry-After` ou `X-RateLimit-Remaining`). Comme pour un dict, `[...]` lève sur un en-tête absent ; `.get(nom, défaut)` est la lecture sûre pour un en-tête optionnel.
 - Usage : ✅ `.get()` pour les en-têtes optionnels (`Retry-After`, quotas), conversion explicite en `int` · ❌ `r.headers["Retry-After"]` sans test : `KeyError` sur la réponse qui n'en a pas.
@@ -230,8 +251,13 @@ int(s)    # → 7
 - Réponse : `KeyError` : comme un dict, `[...]` lève sur une clé absente ; `.get("retry-after")` renvoie `None`.
 
 ## 7. client.stream : lire ligne à ligne
+- Id : http-stream-iter-lines
 - Sous-thème : streaming
+- Type : recette
 - Niveau : 2
+- Profils : data
+- Prérequis : http-client-timeout-defaut, context-managers-with-open-ferme
+- Voir aussi : http-stream-read-avant-text
 - Source : data-platform · S1-06
 - Définition : `with client.stream("GET", url) as r:` puis `r.iter_lines()` lit le corps au fil de l'eau, sans le charger en mémoire (≈ `ReadableStream` lu par morceaux).
 - Contexte : `client.get` télécharge tout le corps avant de rendre la main : 59 Mo pour une journée BODACC. `stream` rend la réponse dès les en-têtes ; le corps arrive pendant l'itération, et le `with` ferme la connexion à la sortie. `r.json()` attend un seul document : sur du JSONL, même servi en `application/json`, il lève `JSONDecodeError`.
@@ -258,8 +284,12 @@ ids   # → ["A1", "A2"]
 - Réponse : `JSONDecodeError` : `iter_lines()` rend aussi la ligne vide `""`, que `json.loads` refuse ; filtrer avant de décoder.
 
 ## 8. exceptions : HTTPStatusError ou TransportError
+- Id : http-transporterror-vs-statuserror
 - Sous-thème : erreurs
+- Type : comparaison
 - Niveau : 2
+- Profils : web, data
+- Prérequis : http-raise-for-status, exceptions-hierarchie-sous-classes
 - Définition : httpx lève deux familles sous `httpx.HTTPError` : `TransportError` (réseau, timeouts : pas de réponse) et `HTTPStatusError` (réponse reçue, statut d'erreur, via `raise_for_status`).
 - Contexte : `TransportError` regroupe `ConnectError`, `ReadError`, `ConnectTimeout`, `ReadTimeout` (ces deux sous `TimeoutException`) : on n'a pas de réponse, on peut réessayer. `HTTPStatusError` n'apparaît que si on appelle `raise_for_status()` ; elle porte la réponse, pour trier 429 et 5xx (réessayer) de 4xx (lever). C'est le tri de `fetch_day` : `except httpx.TransportError` d'un côté, statut testé de l'autre.
 - Usage : ✅ attraper la famille dont on traite le cas (`TransportError` pour un retry réseau) · ❌ `except httpx.HTTPError` partout : un 400 permanent serait réessayé comme une coupure.
@@ -300,8 +330,11 @@ a_reessayer(httpx.ReadTimeout("lent"))
 - Réponse : Non, rien n'est levé : un 503 est une réponse reçue ; seul `raise_for_status()` lèverait, et ce serait `HTTPStatusError`.
 
 ## 9. follow_redirects : désactivé par défaut
+- Id : http-follow-redirects
 - Sous-thème : réponses
+- Type : piège
 - Niveau : 2
+- Profils : web
 - Définition : httpx ne suit pas les redirections par défaut (≠ `fetch`, ≠ `requests`) : un 301 ou 302 est rendu tel quel, sauf avec `follow_redirects=True`.
 - Contexte : Venant de `fetch`, on s'attend à recevoir la page finale ; httpx rend la redirection elle-même, avec l'en-tête `Location`, et `raise_for_status()` la traite comme une erreur. L'option se règle sur le client ou par appel. Une fois suivies, les réponses intermédiaires sont dans `r.history` et `r.url` donne l'URL finale. Le nombre de sauts est plafonné (20).
 - Usage : ✅ `follow_redirects=True` pour une API qui redirige (http → https, ancien chemin) · ❌ l'activer pour masquer une URL de base fausse : corriger la `base_url`.
@@ -348,8 +381,13 @@ r = c.get("/a")
 - Réponse : `TooManyRedirects` : httpx suit au plus 20 redirections (`max_redirects`), puis lève.
 
 ## 10. timeout : par appel
+- Id : http-timeout-lecture
 - Sous-thème : client
+- Type : piège
 - Niveau : 2
+- Profils : web, data
+- Prérequis : http-client-timeout-defaut
+- Voir aussi : http-transporterror-vs-statuserror
 - Définition : `c.get(url, timeout=…)` remplace le timeout du client pour un seul appel ; un dépassement lève une sous-classe de `httpx.TimeoutException`.
 - Contexte : Le client porte le réglage par défaut ; un appel exceptionnel (export d'une journée) peut le surcharger sans créer un autre client. Le timeout de lecture n'est pas une durée totale : c'est l'attente maximale **entre deux paquets reçus**. Un flux qui envoie un peu de données régulièrement ne déclenche jamais `ReadTimeout`, même s'il dure dix minutes ; la durée totale se borne ailleurs (timeout de la Lambda).
 - Usage : ✅ timeout court par défaut sur le client, plus long sur l'appel lent connu · ❌ croire que `timeout=60` borne la durée totale d'un téléchargement en flux.
@@ -388,8 +426,11 @@ nom      # → "ReadTimeout"
 - Réponse : Il se termine : le timeout de lecture borne l'attente entre deux paquets (ici 10 s), pas la durée totale (doc httpx, « Timeouts »).
 
 ## 11. base_url : le chemin est conservé
+- Id : http-base-url-chemin
 - Sous-thème : client
+- Type : piège
 - Niveau : 2
+- Profils : web, data
 - Définition : Avec `httpx.Client(base_url=…)`, un chemin relatif, même commençant par `/`, est ajouté au chemin de la base, pas à la racine du domaine.
 - Contexte : httpx ajoute toujours un `/` final à la base, puis colle le chemin : `base_url=".../annonces-commerciales"` + `"/records"` donne `.../annonces-commerciales/records`, ce qu'attend `BodaccClient`. C'est l'inverse de `urljoin` et de `new URL("/records", base)` en JS, où un chemin en `/` repart de la racine. Une URL absolue passée à l'appel ignore la base.
 - Usage : ✅ `base_url` = racine de l'API avec son préfixe de version, chemins courts dans les appels · ❌ construire les URL avec `urljoin` en croyant obtenir le même résultat.
@@ -421,8 +462,13 @@ str(q.url)   # → "https://autre.t/x"
 - Réponse : `"https://b.t/records"` : pour `urljoin` (comme `new URL` en JS), un chemin qui commence par `/` repart de la racine ; httpx, lui, le colle à la base.
 
 ## 12. MockTransport : un faux serveur
+- Id : http-mocktransport
 - Sous-thème : tests
+- Type : recette
 - Niveau : 2
+- Profils : web, data
+- Prérequis : http-client-timeout-defaut
+- Voir aussi : http-respx-routes
 - Définition : `httpx.MockTransport(handler)` remplace le réseau d'un client par une fonction : elle reçoit la `Request` et renvoie une `Response`, ou lève.
 - Contexte : Le transport est la couche qui envoie vraiment les octets ; le remplacer garde tout le reste du client réel (params, en-têtes, `base_url`, hooks). Le handler voit la requête construite, donc on peut vérifier ce qui part. Lever `httpx.ConnectError(…, request=req)` simule une coupure. Il ne touche que le client qui le reçoit : d'où l'injection d'un `http=` dans `BodaccClient`.
 - Usage : ✅ tests unitaires d'un client injectable, exemples sans réseau · ❌ code qui crée son propre client en interne, impossible à injecter : `respx`, qui intercepte globalement.
@@ -460,8 +506,13 @@ c.get("https://b.t")   # ❌ ConnectError
 - Réponse : Sur le vrai réseau : le transport n'appartient qu'au client qui l'a reçu ; `httpx.get` crée un client neuf, avec le transport par défaut.
 
 ## 13. respx : router selon la requête
+- Id : http-respx-routes
 - Sous-thème : tests
+- Type : recette
 - Niveau : 2
+- Profils : web, data
+- Prérequis : http-client-timeout-defaut
+- Voir aussi : tests-respx-side-effect
 - Définition : `respx.get(URL, params=…)` crée une route qui ne répond qu'aux requêtes correspondantes ; `route.calls.last.request` montre ce qui est parti.
 - Contexte : Sous `respx.mock`, chaque requête httpx est comparée aux routes dans l'ordre de déclaration : la première qui correspond répond, une requête sans route lève `AllMockedAssertionError`. Le filtre `params=` est une inclusion : la requête doit contenir ces paires, d'autres peuvent s'ajouter. `.respond(…)` est le raccourci de `.mock(return_value=…)`. Le scénario multi-réponses (`side_effect`) est dans le thème Tests.
 - Usage : ✅ vérifier le filtre `where`, le `User-Agent` ou la pagination envoyés · ❌ client injectable dans un test simple : `MockTransport`, sans dépendance de plus.
@@ -501,8 +552,13 @@ ua = req.headers["user-agent"]
 - Réponse : Oui : le filtre `params` vérifie que ces paires sont présentes, pas qu'elles sont les seules.
 
 ## 14. AsyncClient : async with et await
+- Id : http-asyncclient-await
 - Sous-thème : async
+- Type : concept
 - Niveau : 2
+- Profils : web
+- Prérequis : http-client-timeout-defaut
+- Voir aussi : http-asyncio-gather
 - Définition : `httpx.AsyncClient` a la même API que `Client`, mais chaque appel est une coroutine à `await`, et il s'ouvre avec `async with`.
 - Contexte : Utile quand on veut lancer plusieurs requêtes en même temps dans un seul thread (boucle `asyncio`). Tout se fait dans une `async def`, lancée par `asyncio.run(...)`. Oublier `await` ne lève rien sur le moment : `r` est une coroutine, et `r.status_code` lève `AttributeError` plus loin. Un `with` simple sur un `AsyncClient` lève `TypeError`.
 - Usage : ✅ beaucoup d'appels indépendants (une requête par SIREN), framework async (FastAPI) · ❌ un seul appel séquentiel dans une Lambda : `Client` synchrone, plus simple à lire et à tester.
@@ -546,8 +602,11 @@ asyncio.run(main())   # → "coroutine"
 - Réponse : `TypeError` (does not support the context manager protocol) : `AsyncClient` n'a que `__aenter__` / `__aexit__`.
 
 ## 15. Client fermé : plus d'appel
+- Id : http-client-ferme
 - Sous-thème : client
+- Type : piège
 - Niveau : 2
+- Profils : web, data
 - Définition : Après `close()` ou la sortie du `with`, un `httpx.Client` refuse tout appel (`RuntimeError`) : il faut en créer un nouveau.
 - Contexte : Fermer libère le pool de connexions ; le client ne se rouvre jamais. D'où deux formes en Lambda : un client par invocation dans un `with`, ou un client global créé à froid et jamais fermé, réutilisé par les invocations suivantes du même conteneur (connexion TLS gardée). `c.is_closed` dit dans quel état il est.
 - Usage : ✅ Lambda : client au niveau module, réutilisé à chaud ; script : un `with` autour de tout le travail · ❌ fermer un client partagé dans une fonction qui ne l'a pas créé.
@@ -584,8 +643,13 @@ handler({}, None)   # → False  (le même)
 - Réponse : `RuntimeError` (Cannot reopen a client instance) : un client fermé ne se rouvre pas, ni par `with` ni par un appel.
 
 ## 16. stream : le with dans le générateur
+- Id : http-stream-with-generateur
 - Sous-thème : streaming
+- Type : piège
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : http-stream-iter-lines, generateurs-yield-a-la-demande
+- Voir aussi : context-managers-with-dans-generateur
 - Source : data-platform · S1-06
 - Définition : Dans un générateur qui streame, le `with client.stream(...)` doit être dans le générateur, sinon la réponse est fermée avant la première ligne.
 - Contexte : Un `return (gen…)` depuis un `with` quitte le bloc tout de suite : `__exit__` ferme le flux, puis l'appelant itère sur une réponse fermée → `httpx.StreamClosed`. Avec `yield` dans le `with`, la fonction se met en pause **dans** le bloc : la connexion reste ouverte tant que l'appelant itère et se ferme à la fin du flux. Effet secondaire : aucune requête ne part avant le premier `next`.
@@ -635,8 +699,12 @@ appels       # → ["/e"]
 - Réponse : autour de la boucle : l'appel ne fait rien ; la requête, et donc ses erreurs (429, timeout, coupure), partent pendant l'itération.
 
 ## 17. HTTPTransport(retries=) : la connexion seule
+- Id : http-transport-retries
 - Sous-thème : erreurs
+- Type : piège
 - Niveau : 3
+- Profils : data, ops, expert
+- Prérequis : http-transporterror-vs-statuserror
 - Définition : `httpx.HTTPTransport(retries=n)` réessaie jusqu'à `n` fois l'**établissement de la connexion** (`ConnectError`, `ConnectTimeout`) ; jamais un statut 429 ou 5xx, ni une lecture coupée.
 - Contexte : Ces retries sont sûrs parce qu'aucune requête n'est encore partie. Tout ce qui suit, un 503 reçu, un `ReadTimeout`, un flux coupé, reste à la charge du code : boucle de retry avec backoff et `Retry-After`, comme `fetch_day`. Les tentatives sont espacées d'un petit backoff exponentiel (0,5 s, 1 s…). Le transport se passe au client par `transport=`.
 - Usage : ✅ `retries=2` ou `3` contre les coupures DNS ou TCP passagères · ❌ compter dessus pour un 429 de quota ou un 503 : retry applicatif.
@@ -681,8 +749,11 @@ len(vus)   # → 1
 - Réponse : `4` : la tentative initiale plus 3 nouveaux essais ; ensuite `ConnectError` remonte.
 
 ## 18. event_hooks : agir sur chaque échange
+- Id : http-event-hooks
 - Sous-thème : client
+- Type : recette
 - Niveau : 3
+- Profils : web, expert
 - Définition : `event_hooks={"request": [f], "response": [g]}` appelle `f(request)` avant chaque envoi et `g(response)` à chaque réponse reçue, pour tout le client.
 - Contexte : Un point unique pour journaliser, mesurer ou lever : `raise_for_status` dans un hook de réponse applique la règle à tous les appels. Le hook de réponse tourne dès les en-têtes, avant la lecture du corps : sur un flux, `r.text` lève `ResponseNotRead` (appeler `r.read()` avant). Sans réponse (coupure réseau), il n'est pas appelé : l'exception remonte directement.
 - Usage : ✅ log structuré de chaque appel (méthode, chemin, statut, durée), `raise_for_status` systématique · ❌ logique métier ou retry dans un hook : difficile à suivre, la mettre dans le client.
@@ -725,8 +796,12 @@ c.get("https://b.t")   # ❌ HTTPStatusError
 - Réponse : Non : aucun échange n'a eu lieu, il n'y a pas de réponse à passer ; seul le hook `request` a tourné, puis `ConnectError` remonte.
 
 ## 19. stream : read() avant text
+- Id : http-stream-read-avant-text
 - Sous-thème : streaming
+- Type : piège
 - Niveau : 3
+- Profils : data, expert
+- Prérequis : http-stream-iter-lines
 - Définition : Dans `client.stream(...)`, le corps n'est pas chargé : `r.text` ou `r.json()` lèvent `ResponseNotRead` tant que `r.read()` n'a pas été appelé.
 - Contexte : Le flux sert à lire au fil de l'eau ; httpx refuse donc d'en tout charger en douce. Pour un statut d'erreur, le corps est petit et utile au diagnostic : `r.read()` le charge, puis `r.text` et `r.json()` marchent. C'est ce que fait `_error_for` de `BodaccClient`. Un flux ne se lit qu'une fois : itérer deux fois sans `read()` lève `StreamConsumed`.
 - Usage : ✅ dans le `with stream`, `r.read()` avant de lire le corps d'un 4xx ou 5xx · ❌ `r.text` sur un flux de 59 Mo : `iter_lines()`, sinon tout est chargé en mémoire.
@@ -768,8 +843,12 @@ err    # → "X"
 - Réponse : `StreamConsumed` : les octets ont déjà été consommés par la première boucle ; seul `r.read()` les garde en mémoire pour une relecture.
 
 ## 20. asyncio.gather : appels concurrents
+- Id : http-asyncio-gather
 - Sous-thème : async
+- Type : recette
 - Niveau : 3
+- Profils : web, data, expert
+- Prérequis : http-asyncclient-await
 - Définition : `await asyncio.gather(*coros)` lance plusieurs requêtes d'un même `AsyncClient` en même temps et rend leurs résultats dans l'ordre des arguments.
 - Contexte : Les requêtes avancent en parallèle pendant les attentes réseau, dans un seul thread : dix appels de 1 s prennent environ 1 s. Un seul client partagé réutilise le pool de connexions. Sans limite, mille coroutines ouvrent mille requêtes : un `asyncio.Semaphore` borne la concurrence pour respecter le quota. Par défaut, la première exception remonte à l'`await` ; `return_exceptions=True` les rend dans la liste.
 - Usage : ✅ appels indépendants nombreux (une fiche par SIREN), borné par un `Semaphore` · ❌ pages qui dépendent de la précédente (keyset, curseur) : séquentiel ; une seule requête : `Client` synchrone.

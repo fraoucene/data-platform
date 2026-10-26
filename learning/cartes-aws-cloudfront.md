@@ -2,17 +2,22 @@
 title: "Cartes · CloudFront"
 type: cartes
 langage: AWS
+chapitre: Diffusion et livraison
 cours: CloudFront
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Cartes · CloudFront
-AWS · CloudFront : cache, comportements, distribution, origines, sécurité (format spec v3 de revision-pwa).
+AWS · CloudFront : distribution, origines, comportements, sécurité, cache, déploiement (format spec v4 de revision-pwa).
 
 ## 1. distribution : le CDN devant S3
+- Id : cloudfront-distribution-cdn
 - Sous-thème : distribution
+- Type : concept
 - Niveau : 1
+- Profils : débutant, web, ops
+- Voir aussi : cloudfront-oac-signature
 - Définition : Une distribution CloudFront sert des fichiers depuis des caches proches des utilisateurs, en HTTPS, sur un domaine `dxxxx.cloudfront.net` (≈ CDN Vercel).
 - Contexte : Le navigateur ne parle jamais à S3 : il interroge le point de présence (PoP) le plus proche, qui répond depuis son cache ou va chercher l'objet à l'origine. Une seule distribution sert ici l'app et le catalogue sur le même domaine, donc pas de CORS. `price_class` limite les régions de PoP utilisées pour réduire le coût.
 - Usage : ✅ site statique, SPA, fichiers publics servis depuis S3 · ❌ API dynamique à faible trafic : API Gateway ou URL de Lambda suffisent, sans couche de cache.
@@ -44,8 +49,12 @@ curl -sI https://d1non6rpr4vppb\
 - Réponse : la page, depuis un PoP inclus : la classe de prix réduit les PoP utilisés et le coût, elle ne bloque personne ; la latence augmente.
 
 ## 2. default_root_object : servir la racine
+- Id : cloudfront-default-root-object
 - Sous-thème : distribution
+- Type : concept
 - Niveau : 1
+- Profils : débutant, web
+- Voir aussi : cloudfront-functions-viewer-request
 - Définition : `default_root_object` désigne l'objet servi quand on demande la racine `/` du domaine (≈ `index` d'un serveur web).
 - Contexte : Sans lui, `GET /` demande à S3 la clé vide, qui n'existe pas : `403`. CloudFront ne fait que cette substitution, à la racine seulement ; ce n'est pas un vrai serveur web qui chercherait `index.html` dans chaque dossier. L'app n'a qu'une page et se navigue par query string (`/?langage=AWS`), donc la racine suffit.
 - Usage : ✅ SPA à une page servie à la racine · ❌ site statique à sous-dossiers (`/docs/`) : fonction CloudFront qui réécrit `/docs/` en `/docs/index.html`.
@@ -65,8 +74,11 @@ default_root_object = "index.html"
 - Réponse : `403` (mesuré) : `default_root_object` ne vaut que pour la racine ; CloudFront demande la clé `docs/` telle quelle, absente, et S3 répond `403`.
 
 ## 3. viewer_certificate : le certificat par défaut
+- Id : cloudfront-certificat-par-defaut
 - Sous-thème : distribution
+- Type : concept
 - Niveau : 1
+- Profils : débutant, web, ops
 - Définition : `cloudfront_default_certificate = true` utilise le certificat d'AWS pour `*.cloudfront.net` : HTTPS immédiat, sans ACM ni domaine à gérer.
 - Contexte : Le certificat par défaut ne couvre que le domaine généré par AWS. Pour un domaine perso, il faut un certificat ACM, un alias (`aliases`) sur la distribution et un enregistrement DNS. CloudFront est un service global : il ne lit les certificats ACM que dans une seule région, quelle que soit celle des buckets.
 - Usage : ✅ app interne ou personnelle sur `*.cloudfront.net`, zéro configuration · ❌ domaine de marque : certificat ACM et `ssl_support_method = "sni-only"`.
@@ -88,8 +100,11 @@ viewer_certificate {
 - Réponse : `us-east-1` : CloudFront ne lit les certificats ACM que dans cette région, même si tout le reste est à Paris.
 
 ## 4. origin : le domaine régional du bucket
+- Id : cloudfront-origine-bucket-rest
 - Sous-thème : origines
+- Type : concept
 - Niveau : 1
+- Profils : web, ops
 - Définition : Une origine est la source que CloudFront interroge quand l'objet manque au cache ; pour un bucket privé, son domaine régional REST.
 - Contexte : `bucket_regional_domain_name` donne `<bucket>.s3.<région>.amazonaws.com`, l'endpoint REST qui accepte les requêtes signées. `origin_id` est un nom libre, cité par les comportements via `target_origin_id`. La clé S3 demandée garde le chemin entier de l'URL : `/content/catalog.json` lit la clé `content/catalog.json`.
 - Usage : ✅ endpoint régional REST + OAC pour tout bucket privé · ❌ endpoint « site web statique » du bucket : HTTP seulement, bucket forcément public.
@@ -113,8 +128,11 @@ origin {
 - Réponse : non : l'endpoint web est une origine HTTP « custom », sans signature SigV4 ; ni OAC ni OAI ne s'y appliquent, il faudrait un bucket public.
 
 ## 5. ordered_cache_behavior : router par chemin
+- Id : cloudfront-ordered-cache-behavior
 - Sous-thème : comportements
+- Type : concept
 - Niveau : 1
+- Profils : web, ops
 - Définition : `ordered_cache_behavior` envoie les URL qui correspondent à `path_pattern` vers une autre origine ; le reste suit `default_cache_behavior`.
 - Contexte : Chaque comportement porte sa propre origine, sa politique de cache, ses méthodes et ses en-têtes. Ici `/content/*` part vers le bucket `content` (le catalogue), tout le reste vers le bucket `site` (l'app) : un seul domaine pour deux buckets. Les comportements ordonnés sont testés dans l'ordre de la liste ; le défaut ramasse ce qui reste.
 - Usage : ✅ plusieurs origines derrière un domaine (app, données, API) · ❌ un comportement par fichier : un motif par famille de chemins.
@@ -140,8 +158,12 @@ default_cache_behavior {
 - Réponse : `/content/*` : CloudFront prend le premier motif qui correspond dans l'ordre de la liste ; le plus précis doit venir en premier.
 
 ## 6. viewer_protocol_policy : forcer HTTPS
+- Id : cloudfront-forcer-https
 - Sous-thème : sécurité
+- Type : recette
 - Niveau : 1
+- Profils : débutant, web, ops
+- Voir aussi : s3-politique-https
 - Définition : `viewer_protocol_policy` fixe le sort des requêtes HTTP du navigateur : `redirect-to-https` renvoie une redirection 301 vers la même URL en HTTPS.
 - Contexte : La politique se règle par comportement : chacun doit la porter, le défaut comme `/content/*`. Le 301 est mis en cache par le navigateur, et l'en-tête HSTS posé ensuite fait passer les visites suivantes directement en HTTPS, sans aller-retour HTTP. La valeur `allow-all` laisserait servir le site en clair.
 - Usage : ✅ `redirect-to-https` pour toute app publique · ❌ `allow-all` : contenu servi en clair, et service worker refusé hors HTTPS.
@@ -162,8 +184,12 @@ viewer_protocol_policy = "redirect-to-https"
 - Réponse : un `403` : `https-only` refuse le HTTP sans rediriger ; un lien `http://` devient une erreur, d'où `redirect-to-https` pour une app publique.
 
 ## 7. OAC : CloudFront signe ses requêtes
+- Id : cloudfront-oac-signature
 - Sous-thème : sécurité
+- Type : concept
 - Niveau : 1
+- Profils : web, ops
+- Prérequis : cloudfront-origine-bucket-rest
 - Définition : Un Origin Access Control fait signer (SigV4) les requêtes de CloudFront vers S3, pour que le bucket reste privé et n'accepte qu'elles.
 - Contexte : Le bucket bloque tout accès public ; sa politique n'autorise `s3:GetObject` qu'au service CloudFront, et S3 vérifie la signature de chaque requête. Lire le bucket en direct par son URL renvoie donc `403` (mesuré). L'OAC remplace l'ancien OAI (Origin Access Identity), qui ne gérait ni SSE-KMS ni toutes les régions récentes.
 - Usage : ✅ tout bucket servi par CloudFront, gardé privé · ❌ bucket public ou OAI hérité : contournable en direct, ou déprécié.
@@ -194,8 +220,11 @@ curl -sI https://revision-pwa-dev-site\
 - Réponse : `kms:Decrypt` pour `cloudfront.amazonaws.com` (avec `AWS:SourceArn`) dans la politique de la clé ; sans ça, `403`, d'où SSE-S3 ici.
 
 ## 8. Cache-Control : la durée de cache
+- Id : cloudfront-cache-control-ttl
 - Sous-thème : cache
+- Type : concept
 - Niveau : 1
+- Profils : débutant, web
 - Définition : CloudFront garde un objet le temps dit par son `Cache-Control`, borné par les TTL minimum et maximum de la politique de cache.
 - Contexte : `Managed-CachingOptimized` fixe min 1 s, défaut 86 400 s, max 31 536 000 s (mesuré). Le `Cache-Control` est posé sur chaque objet au dépôt S3 par `make deploy` : `immutable` un an pour `assets/` (noms hachés, jamais réécrits), `no-cache` pour `index.html`, `sw.js` et `catalog.json`. Le navigateur suit le même en-tête.
 - Usage : ✅ un an + `immutable` pour les fichiers à nom haché · ❌ un an sur `index.html` : les utilisateurs gardent l'ancienne version, qui pointe vers des assets supprimés.
@@ -224,8 +253,12 @@ data "aws_cloudfront_cache_policy" "optimized" {
 - Réponse : 24 heures : sans en-tête de l'origine, CloudFront applique le TTL par défaut (86 400 s) ; d'où un `Cache-Control` explicite sur chaque fichier.
 
 ## 9. dynamic : un bloc origin par bucket
+- Id : cloudfront-dynamic-origin
 - Sous-thème : origines
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : cloudfront-origine-bucket-rest
 - Définition : `dynamic "origin"` génère un bloc `origin` par élément de `for_each`, dans une seule ressource (≈ `.map()` qui rend des blocs).
 - Contexte : Un `for_each` sur la ressource créerait plusieurs distributions ; on en veut une seule, à plusieurs origines. `dynamic` répète un bloc imbriqué ; dans `content`, l'itérateur porte le nom du bloc (`origin.key`, `origin.value`). Les buckets venant de `aws_s3_bucket.this` (un `for_each`), ajouter un bucket ajoute une origine.
 - Usage : ✅ blocs imbriqués répétés depuis une map (origines, règles, statements) · ❌ deux blocs fixes et différents : les écrire en clair, plus lisible.
@@ -251,8 +284,12 @@ dynamic "origin" {
 - Réponse : erreur `Reference to "each" in context without for_each` (au `plan`, mesuré) : dans un `dynamic`, l'itérateur porte le nom du bloc.
 
 ## 10. path_pattern : sensible à la casse
+- Id : cloudfront-path-pattern-correspondance
 - Sous-thème : comportements
+- Type : piège
 - Niveau : 2
+- Profils : web, ops
+- Prérequis : cloudfront-ordered-cache-behavior
 - Définition : `path_pattern` accepte `*` et `?` et se compare au chemin de l'URL, sans le domaine ni la query string.
 - Contexte : `*` couvre n'importe quelle suite de caractères, `/` compris : `/content/*` attrape aussi `/content/a/b.json`. La comparaison est sensible à la casse : une URL qui ne correspond à aucun motif tombe dans le comportement par défaut, donc vers le bucket `site`. Mesuré : `/Content/catalog.json` renvoie `403`, `/content/catalog.json` renvoie `200`.
 - Usage : ✅ motifs en minuscules, URL générées par le code · ❌ chemins saisis à la main ou casse variable : normaliser en amont (fonction CloudFront).
@@ -273,8 +310,12 @@ path_pattern = "/content/*"
 - Réponse : vers `site` : le motif exige la barre après `content` ; `/content` ne correspond pas et tombe dans le comportement par défaut.
 
 ## 11. no-cache : le TTL minimum gagne
+- Id : cloudfront-no-cache-ttl-minimum
 - Sous-thème : cache
+- Type : piège
 - Niveau : 2
+- Profils : web
+- Prérequis : cloudfront-cache-control-ttl
 - Définition : `Cache-Control: no-cache` demande de revalider l'objet à chaque requête ; on le pose sur `index.html`, `sw.js` et `catalog.json`.
 - Contexte : Pour le navigateur, `no-cache` veut dire « redemande avant de réutiliser ». Pour CloudFront, le TTL minimum de la politique l'emporte : avec `CachingOptimized` (min 1 s), l'objet reste en cache 1 seconde, puis CloudFront le revalide auprès de S3 (`If-None-Match`). D'où `x-cache: RefreshHit` (mesuré) : copie en cache, confirmée par l'origine.
 - Usage : ✅ `no-cache` sur les fichiers à nom fixe qui changent (`index.html`, `sw.js`, catalogue) · ❌ `no-store` « pour être sûr » : plus aucun cache, chaque visite relit S3.
@@ -299,8 +340,12 @@ curl -sI https://d1non6rpr4vppb\
 - Réponse : oui, 1 seconde : un TTL minimum supérieur à 0 l'emporte sur `no-cache` ; il faut une politique à TTL min 0 pour ne rien garder.
 
 ## 12. clé de cache : query string ignorée
+- Id : cloudfront-cle-de-cache-query
 - Sous-thème : cache
+- Type : piège
 - Niveau : 2
+- Profils : web, ops
+- Prérequis : cloudfront-cache-control-ttl
 - Définition : La clé de cache dit quelles parties de la requête distinguent deux objets ; `CachingOptimized` ignore query string, cookies et en-têtes.
 - Contexte : Deux URL qui ne diffèrent que par la query string partagent donc la même entrée de cache : mesuré, `/?zz=<aléatoire>` répond `Hit` dès la première requête. C'est sans danger ici, car l'app lit `location.search` côté client et le même `index.html` convient à toutes les URL. Moins de variantes en cache, plus de hits.
 - Usage : ✅ SPA ou fichiers statiques qui ne dépendent pas de la query string · ❌ origine qui rend une réponse différente selon `?param=` : politique qui inclut ce paramètre dans la clé.
@@ -321,8 +366,13 @@ curl -sI "https://d1non6rpr4vppb\
 - Réponse : la réponse du 1er SIREN : la query string est hors de la clé de cache, tous les appelants partagent la même entrée.
 
 ## 13. invalidation : vider le cache
+- Id : cloudfront-invalidation
 - Sous-thème : cache
+- Type : recette
 - Niveau : 2
+- Profils : web, ops
+- Prérequis : cloudfront-cache-control-ttl
+- Voir aussi : cloudfront-ordre-de-deploiement
 - Définition : Une invalidation retire des chemins des caches CloudFront avant leur expiration, pour servir tout de suite la nouvelle version.
 - Contexte : `make deploy` en lance une sur `/*` après chaque `s3 sync`. Elle met de quelques secondes à quelques minutes à se propager (`InProgress` puis `Completed`). Elle ne touche pas le cache des navigateurs : un fichier servi avec `max-age` d'un an reste chez l'utilisateur, d'où les noms hachés pour les assets.
 - Usage : ✅ `/*` après un déploiement de site statique · ❌ invalidation comme seule stratégie de cache : noms de fichiers hachés et `Cache-Control` adapté d'abord.
@@ -343,8 +393,12 @@ aws cloudfront create-invalidation \
 - Réponse : un seul : un chemin avec joker compte pour un, quel que soit le nombre de fichiers retirés du cache.
 
 ## 14. politique de bucket : AWS:SourceArn
+- Id : cloudfront-bucket-source-arn
 - Sous-thème : sécurité
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : cloudfront-oac-signature, iam-politique-de-ressource
 - Définition : La politique du bucket autorise `s3:GetObject` au service CloudFront, seulement pour les requêtes venant de la distribution désignée par `AWS:SourceArn`.
 - Contexte : Le principal `cloudfront.amazonaws.com` désigne le service entier, toutes distributions et tous comptes confondus. La condition `AWS:SourceArn` restreint à l'ARN de cette distribution : c'est elle qui rend l'OAC sûr. Le compte AWS est partagé avec d'autres projets, donc une autre distribution du compte, même avec un OAC, est refusée.
 - Usage : ✅ condition `AWS:SourceArn` sur toute politique qui ouvre un bucket à un service · ❌ principal de service seul : ouvert à tout client de ce service.
@@ -375,8 +429,13 @@ statement {
 - Réponse : toute distribution CloudFront, même ailleurs : le principal de service ne désigne pas la distribution, seule `AWS:SourceArn` le fait.
 
 ## 15. 403 au lieu de 404
+- Id : cloudfront-403-au-lieu-de-404
 - Sous-thème : sécurité
+- Type : piège
 - Niveau : 2
+- Profils : web, ops
+- Prérequis : cloudfront-oac-signature
+- Voir aussi : s3-cle-absente-403
 - Définition : S3 ne dit qu'un objet est absent (`404`) qu'à qui a le droit `s3:ListBucket` ; sinon il répond `403`, sans rien révéler.
 - Contexte : Sans droit de lister, savoir qu'une clé n'existe pas serait déjà une information : S3 répond donc « accès refusé » pour tout objet absent. CloudFront n'ayant que `s3:GetObject`, une URL inconnue donne `403` (mesuré sur `/absent.js`). Au débogage, un `403` ne veut donc pas forcément dire « problème de droits ».
 - Usage : ✅ lire un `403` comme « absent ou interdit », vérifier la clé S3 d'abord · ❌ ajouter `s3:ListBucket` à CloudFront pour avoir des `404` : il expose la liste des objets.
@@ -397,8 +456,12 @@ curl -sI https://d1non6rpr4vppb\
 - Réponse : non, toujours `403` : `ListBucket` porte sur le bucket (`arn:aws:s3:::nom`), pas sur les objets (`…/*`) ; la ressource ne correspond jamais.
 
 ## 16. en-têtes de sécurité gérés
+- Id : cloudfront-en-tetes-securite
 - Sous-thème : sécurité
+- Type : recette
 - Niveau : 2
+- Profils : web, ops
+- Prérequis : cloudfront-ordered-cache-behavior
 - Définition : Une `response_headers_policy` ajoute des en-têtes à chaque réponse ; `Managed-SecurityHeadersPolicy` pose HSTS, `nosniff`, `SAMEORIGIN` et une `Referrer-Policy` stricte.
 - Contexte : Mesuré : `strict-transport-security: max-age=31536000`, `x-frame-options: SAMEORIGIN`, `x-content-type-options: nosniff`, `referrer-policy: strict-origin-when-cross-origin`, plus `x-xss-protection`. La politique est lue par un `data` (gérée par AWS, jamais recréée) et attachée à chaque comportement, le défaut comme `/content/*`. S3 n'a pas à les poser.
 - Usage : ✅ politique gérée sur toute distribution publique, en une ligne · ❌ en-têtes propres à l'app (CSP, `Permissions-Policy`) : politique d'en-têtes personnalisée.
@@ -424,8 +487,11 @@ curl -sI https://d1non6rpr4vppb\
 - Réponse : non (mesuré) : une CSP dépend des scripts, styles et `fetch` de chaque app ; il faut une politique d'en-têtes personnalisée.
 
 ## 17. compress : Brotli à la volée
+- Id : cloudfront-compression-brotli
 - Sous-thème : cache
+- Type : concept
 - Niveau : 2
+- Profils : web
 - Définition : `compress = true` laisse CloudFront compresser en Brotli ou Gzip les réponses textuelles, selon l'`Accept-Encoding` du navigateur.
 - Contexte : La compression se fait au PoP, une fois par variante, puis la version compressée est mise en cache : S3 garde les fichiers bruts. Mesuré : `content-encoding: br` sur un asset JS et sur `catalog.json` (247 Ko bruts). La politique `CachingOptimized` inclut l'encodage dans la clé de cache, pour ne pas servir du Brotli à un client qui ne le lit pas.
 - Usage : ✅ JS, CSS, JSON, HTML servis depuis S3 · ❌ fichiers déjà compressés (images, `.zip`, vidéos) : aucun gain, CloudFront les ignore.
@@ -448,8 +514,13 @@ curl -s -o /dev/null -D - \
 - Réponse : non : CloudFront ne compresse qu'entre 1 000 et 10 000 000 octets ; un petit fichier gagnerait trop peu.
 
 ## 18. custom_error_response : toute la distribution
+- Id : cloudfront-custom-error-response
 - Sous-thème : comportements
+- Type : piège
 - Niveau : 3
+- Profils : web, expert
+- Prérequis : cloudfront-403-au-lieu-de-404
+- Voir aussi : cloudfront-functions-viewer-request
 - Définition : `custom_error_response` remplace une erreur de l'origine (403, 404) par une autre page, typiquement `/index.html` en `200` pour une SPA.
 - Contexte : Le réglage vaut pour toute la distribution, pas par comportement : il s'appliquerait aussi à `/content/*`. C'est pourquoi `cdn.tf` n'en a pas : l'app se navigue par query string (`/?langage=…`), une seule page, donc aucune URL profonde à rattraper. Une SPA à routes `/cours/python` en aurait besoin, avec ce piège.
 - Usage : ✅ SPA à routes profondes servie depuis S3 · ❌ distribution qui sert aussi des données (JSON) : préférer des routes par query string ou une fonction CloudFront ciblée.
@@ -473,8 +544,12 @@ custom_error_response {
 - Réponse : `SyntaxError` : le `403` du bucket `content` est aussi remplacé par `index.html` en `200`, et `.json()` échoue sur du HTML.
 
 ## 19. politique content : jamais sources/
+- Id : cloudfront-politique-prefixe-content
 - Sous-thème : sécurité
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : cloudfront-bucket-source-arn
 - Définition : La politique du bucket `content` n'autorise CloudFront que sur `content/*` : les `.md` bruts sous `sources/` restent privés même via la distribution.
 - Contexte : Le bucket `content` contient deux choses : `sources/<projet>/cartes-*.md`, déposés par les producteurs, et `content/catalog.json`, écrit par la Lambda. Seul le catalogue doit être public. Le comportement `/content/*` limite déjà le routage, mais la politique de bucket le garantit indépendamment : une erreur de motif ou un comportement ajouté plus tard n'exposerait rien.
 - Usage : ✅ restreindre la politique de bucket au préfixe réellement servi · ❌ `"${arn}/*"` sur un bucket qui mélange public et privé : un seul comportement mal réglé expose tout.
@@ -497,8 +572,13 @@ for_each = {
 - Réponse : `403` : CloudFront demande bien la clé `sources/…`, mais la politique n'accorde `GetObject` que sur `content/*` ; S3 refuse.
 
 ## 20. déploiement : les assets avant index.html
-- Sous-thème : cache
+- Id : cloudfront-ordre-de-deploiement
+- Sous-thème : déploiement
+- Type : recette
 - Niveau : 3
+- Profils : web, ops, expert
+- Prérequis : cloudfront-cache-control-ttl
+- Voir aussi : cloudfront-invalidation
 - Définition : `make deploy` envoie d'abord les nouveaux `assets/`, puis `index.html` en `no-cache`, et ne supprime les anciens assets qu'à la fin.
 - Contexte : `index.html` référence des fichiers à nom haché (`index-RvyxYAT2.js`). Pendant le déploiement, un utilisateur peut charger l'ancien ou le nouvel `index.html` : l'ordre garantit que chacun pointe vers des fichiers présents. Les anciens assets ne disparaissent qu'après la mise en ligne du nouvel `index.html`, puis l'invalidation `/*` vide les caches.
 - Usage : ✅ ordre assets → index → suppression pour tout déploiement S3 sans interruption · ❌ un seul `aws s3 sync --delete` : ordre des envois non garanti, fenêtre de fichiers absents.
@@ -525,8 +605,12 @@ aws s3 sync app/dist/assets/ \
 - Réponse : une page blanche : l'ancien `index.html`, encore servi, demande des assets déjà supprimés, et S3 répond `403`.
 
 ## 21. CloudFront Functions : réécrire au bord
+- Id : cloudfront-functions-viewer-request
 - Sous-thème : comportements
+- Type : concept
 - Niveau : 3
+- Profils : web, expert
+- Prérequis : cloudfront-ordered-cache-behavior
 - Définition : Une CloudFront Function est un petit JavaScript exécuté au point de présence sur la requête ou la réponse : réécrire une URL, poser un en-tête.
 - Contexte : Associée à un seul comportement (`function_association`), elle remplace le repli SPA de `custom_error_response` sans toucher `/content/*`. Elle tourne en moins d'une milliseconde, sans réseau ni accès au corps, à 0,10 $ le million d'appels. Lambda@Edge (Node ou Python) peut appeler une API ou lire le corps, mais coûte 0,60 $ le million plus la durée et se déploie depuis `us-east-1`.
 - Usage : ✅ routes profondes d'une SPA, redirection, en-tête calculé · ❌ appel réseau, lecture du corps, traitement long : Lambda@Edge.
@@ -558,7 +642,7 @@ default_cache_behavior {
     function_arn = aws_cloudfront_function.spa.arn
   }
 }
-# /content/* garde ses vraies 404
+# /content/* garde ses vraies erreurs
 ```
 
 - Quiz : En `viewer-request`, la fonction s'exécute-t-elle quand l'objet est déjà en cache dans le point de présence ?

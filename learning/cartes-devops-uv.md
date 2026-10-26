@@ -2,17 +2,22 @@
 title: "Cartes · uv"
 type: cartes
 langage: DevOps
+chapitre: Outillage Python et JS
 cours: uv
 created: 2026-10-24
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Cartes · uv
-DevOps · uv : ci, dépendances, lock, outils, python, workspace (format spec v3 de revision-pwa).
+DevOps · uv : build, dépendances, lock, outils, python, workspace (format spec v4 de revision-pwa).
 
 ## 1. workspace : members
+- Id : uv-workspace-members
 - Sous-thème : workspace
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : uv-sync-graphe-racine
 - Source : data-platform · S1-03
 - Définition : `[tool.uv.workspace] members` déclare par globs les projets du monorepo : un seul `uv.lock`, un seul `.venv` racine (≈ `pnpm-workspace.yaml`).
 - Contexte : Un seul lock = une seule résolution de versions : pas de `httpx` 0.27 dans un membre et 0.28 dans un autre. Chaque dossier qui correspond à un glob doit avoir son `pyproject.toml`, sinon `uv sync` échoue ; un glob qui ne correspond à rien (`lambdas/*` vide) est accepté. `uv init` lancé dans le workspace y ajoute le nouveau projet.
@@ -47,8 +52,11 @@ grep -A2 'name = "dp-common"' uv.lock
 - Réponse : erreur de parsing : uv valide le schéma de `[tool.uv]` strictement, là où `package.json` avale une clé inconnue ; le message donne ligne et colonne.
 
 ## 2. uv add --dev : dependency-groups
+- Id : uv-dev-dependency-groups
 - Sous-thème : dépendances
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-03
 - Définition : `uv add --dev pytest` écrit dans `[dependency-groups] dev` (PEP 735, ≈ `devDependencies`) : installé en local, jamais publié avec le paquet.
 - Contexte : uv écrit une borne basse (`pytest>=9.1.1`) dans `pyproject.toml` ; la version exacte vit dans `uv.lock`, qui se commite. `uv sync` installe le groupe `dev` par défaut, `--no-dev` l'écarte (image, zip de Lambda). À distinguer de `[project.optional-dependencies]` (`uv add --optional`) : des extras, installables par un consommateur (`pkg[s3]`).
@@ -81,8 +89,11 @@ uv run --no-sync python -c "import pytest"
 - Réponse : `boto3` seul, conditionné à l'extra : les dependency groups ne vont jamais dans les métadonnées publiées, les extras si (`uv build` puis lecture de `METADATA`).
 
 ## 3. uv init : ce qu'il crée
+- Id : uv-init-projet
 - Sous-thème : workspace
+- Type : recette
 - Niveau : 1
+- Profils : débutant
 - Définition : `uv init <nom>` crée un projet : `pyproject.toml`, `main.py`, `README.md`, `.python-version` (≈ `npm init` qui épinglerait aussi la version de Node).
 - Contexte : Le `.venv` et `uv.lock` n'apparaissent qu'au premier `uv run`, `uv add` ou `uv sync`. Hors dépôt git, `uv init` fait aussi `git init` et écrit un `.gitignore` ; dans un dépôt existant, non. `requires-python` reprend la version de Python par défaut d'uv : la plus récente installée par uv, pas forcément celle du runtime Lambda. `--lib` ajoute `src/` et un backend de build, `--bare` n'écrit que `pyproject.toml`.
 - Usage : ✅ nouveau projet ou membre de workspace, avec `--python 3.12` pour coller au runtime · ❌ créer `pyproject.toml` à la main : champs oubliés, nom non normalisé.
@@ -115,8 +126,12 @@ dependencies = []
 - Réponse : ni l'un ni l'autre : uv détecte le dépôt parent et n'y imbrique pas un second dépôt ; le `.gitignore` du dépôt doit déjà couvrir `.venv`.
 
 ## 4. uv run : synchronise puis exécute
+- Id : uv-run-sync-auto
 - Sous-thème : dépendances
+- Type : concept
 - Niveau : 1
+- Profils : débutant
+- Voir aussi : uv-locked-ou-frozen
 - Définition : `uv run <cmd>` met `uv.lock` et `.venv` à jour, puis lance la commande dans le venv, sans l'activer (≈ `pnpm exec`).
 - Contexte : Pas de `source .venv/bin/activate` : chaque `uv run` vérifie que le lock correspond à `pyproject.toml` et que le venv correspond au lock, puis corrige ce qui manque. C'est pour ça que `make lint` écrit `uv run ruff` : le bon ruff, celui du lock, même sur un poste neuf. `--no-sync` saute la vérification, `--frozen` aussi mais sans toucher au lock.
 - Usage : ✅ toute commande du projet : `uv run pytest`, `uv run python -m …`, cibles du Makefile · ❌ lancer `python` ou `pytest` du PATH : autre interpréteur, autres versions.
@@ -139,8 +154,11 @@ python -c "import httpx"
 - Réponse : 4.5.0 : `uv run` relance la résolution, réécrit `uv.lock`, puis synchronise le venv avant d'exécuter (`Uninstalled 1 package`, `Installed 1 package`).
 
 ## 5. uv remove : les transitives aussi
+- Id : uv-remove-transitives
 - Sous-thème : dépendances
+- Type : concept
 - Niveau : 1
+- Profils : débutant
 - Définition : `uv remove httpx` retire la dépendance de `pyproject.toml`, du lock et du venv, avec ses dépendances transitives devenues inutiles (≈ `pnpm remove`).
 - Contexte : Contrairement à `pip uninstall`, qui ne retire que le paquet nommé et laisse ses dépendances orphelines, uv recalcule le graphe : une transitive reste si un autre paquet en a encore besoin. `--dev`, `--group` et `--package` ciblent le bon groupe ou le bon membre, comme pour `uv add`.
 - Usage : ✅ retirer une lib directe qui ne sert plus · ❌ `uv pip uninstall` : le paquet revient au prochain `uv sync`, le lock n'a pas changé.
@@ -164,8 +182,12 @@ uv pip list | grep idna
 - Réponse : erreur (`could not be found in project.dependencies`) : `uv remove` ne connaît que les dépendances directes déclarées ; une transitive part avec le paquet qui la tire.
 
 ## 6. uv.lock : commité et universel
+- Id : uv-lock-universel
 - Sous-thème : lock
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : uv-locked-ou-frozen, Terraform/cli-lock-provider-commite
 - Définition : `uv.lock` fige version exacte et hashes de chaque paquet, pour toutes les plateformes ; commité, jamais édité à la main (≈ `pnpm-lock.yaml`).
 - Contexte : `pyproject.toml` porte des bornes (`httpx>=0.28.1`), le lock la résolution exacte. Contrairement à un `requirements.txt` figé sur la machine qui l'a produit, le lock est universel : une seule résolution valable sur Mac, Linux de la CI et Windows, avec des marqueurs (`sys_platform == 'win32'`) pour ce qui dépend de la plateforme. Il est en TOML, lisible, mais seul `uv lock` l'écrit.
 - Usage : ✅ commité avec chaque changement de `pyproject.toml`, relu en revue (versions qui bougent) · ❌ `.gitignore` sur `uv.lock` ou édition manuelle : builds non reproductibles.
@@ -198,8 +220,12 @@ git status --short
 - Réponse : oui, avec son marqueur : la résolution est universelle, le lock sert tel quel à un collègue sous Windows ; `uv sync` sur Mac ne l'installe pas.
 
 ## 7. uv tree : qui tire quoi
+- Id : uv-tree-qui-tire-quoi
 - Sous-thème : lock
+- Type : recette
 - Niveau : 1
+- Profils : débutant
+- Prérequis : uv-lock-universel
 - Définition : `uv tree` affiche le graphe des dépendances lu dans le lock ; `--invert --package X` montre qui tire X (≈ `pnpm why`).
 - Contexte : Utile avant un `uv remove` ou face à une version inattendue : `--depth 1` donne les dépendances directes, `--package <membre>` un seul membre du workspace, `(*)` signale un sous-arbre déjà affiché. Par défaut l'arbre est filtré pour la plateforme courante ; `--universal` montre tout le lock. `--outdated` ajoute la dernière version disponible.
 - Usage : ✅ comprendre pourquoi un paquet est là, vérifier une version (`uv tree --depth 1`) · ❌ lire `uv.lock` à la main pour suivre une chaîne de dépendances.
@@ -230,8 +256,12 @@ uv tree --package ingest --depth 1
 - Réponse : non : l'arbre est filtré pour la plateforme courante ; `--universal` affiche tout le lock, où `colorama` est bien présent.
 
 ## 8. uvx : un outil sans l'installer
+- Id : uv-uvx-outil-jetable
 - Sous-thème : outils
+- Type : concept
 - Niveau : 1
+- Profils : débutant
+- Voir aussi : uv-tool-install-global
 - Définition : `uvx <outil>` (alias de `uv tool run`) lance une CLI Python dans un environnement jetable, hors du projet (≈ `npx` / `pnpm dlx`).
 - Contexte : uv résout l'outil, l'installe dans son cache et l'exécute : le second lancement est instantané. `uvx ruff@0.17.1` épingle une version. Le nom de l'exécutable doit être celui du paquet ; sinon `--from` : `uvx --from python-dotenv dotenv`. uvx ignore `pyproject.toml` et `uv.lock` : ce n'est pas le ruff du projet.
 - Usage : ✅ outil ponctuel hors projet (`uvx pycowsay`, tester une version) · ❌ outil du projet (ruff, pytest) : `uv add --dev` puis `uv run`.
@@ -255,8 +285,13 @@ uvx --from python-dotenv dotenv --version
 - Réponse : la dernière (0.17.2 ici) : uvx ignore le projet ; `uv run ruff` donne 0.17.1, d'où `uv run` dans le Makefile.
 
 ## 9. uv pip install --target : un dossier à zipper
-- Sous-thème : ci
+- Id : uv-pip-install-target
+- Sous-thème : build
+- Type : recette
 - Niveau : 1
+- Profils : data, ops
+- Prérequis : uv-pip-hors-projet
+- Voir aussi : uv-export-requirements
 - Source : data-platform · S1-07
 - Définition : `uv pip install --target dossier …` installe les paquets à plat dans un dossier, hors de tout venv : le contenu exact du zip Lambda.
 - Contexte : Pas de `site-packages` ni d'interpréteur : chaque paquet arrive en `dossier/<module>/` avec son `.dist-info`, plus un `bin/` pour les commandes et un fichier `.lock` vide laissé par uv (retrouvé dans le zip de l'étape). Rien n'y est importable tant que le dossier n'est pas dans `sys.path` (`/var/task` sur Lambda). Équivalent de `pip install -t`.
@@ -282,8 +317,11 @@ ls -A build/pkg
 - Réponse : il reste : `uv pip install` ajoute et remplace, sans désinstaller ce qui n'est pas demandé ; d'où un dossier temporaire neuf à chaque build.
 
 ## 10. uv pip : sans projet ni lock
+- Id : uv-pip-hors-projet
 - Sous-thème : dépendances
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant
 - Source : data-platform · S1-07
 - Définition : `uv pip install` reprend l'interface de pip : il agit sur un environnement ou un dossier, sans lire ni modifier `pyproject.toml` et `uv.lock`.
 - Contexte : Deux mondes. `uv add`, `uv lock`, `uv sync`, `uv run` gèrent le projet à partir du lock. `uv pip` est bas niveau : on lui dit quoi installer et où. Le build de Lambda fait le pont : `uv export` traduit le lock en requirements figés, puis `uv pip install -r` les installe dans `--target`.
@@ -305,8 +343,12 @@ uv sync               # → retire rich du venv :
 - Réponse : non : `uv pip` ne touche jamais au projet ; c'est `uv add` qui déclare et verrouille.
 
 ## 11. uv sync : le graphe de la racine
+- Id : uv-sync-graphe-racine
 - Sous-thème : workspace
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-workspace-members
 - Source : data-platform · S1-03
 - Définition : `uv sync` aligne le `.venv` sur le graphe de la racine : un membre non cité n'est pas installé, sauf avec `--all-packages`.
 - Contexte : Contrairement à `pnpm install`, être membre ne suffit pas. La racine cite le membre deux fois : `dependencies = ["dp-common"]` et `[tool.uv.sources] dp-common = { workspace = true }` (≈ `"workspace:*"`), écrits ensemble par `uv add dp-common`. Sans l'entrée `sources`, `uv lock` refuse. `make sync` utilise `--all-packages` pour la CI.
@@ -340,8 +382,12 @@ dp-common = { workspace = true }
 - Réponse : désinstallé (`- dp-common==0.1.0`) : `uv sync` est exact, il retire du `.venv` tout ce qui n'est pas dans le graphe demandé.
 
 ## 12. uv add --package : le bon pyproject
+- Id : uv-add-package-membre
 - Sous-thème : dépendances
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-workspace-members
 - Source : data-platform · S1-06
 - Définition : `uv add --package <membre> <dep>` écrit la dépendance dans le `pyproject.toml` du membre du workspace, pas dans celui de la racine (≈ `pnpm add --filter`).
 - Contexte : Sans `--package`, la dépendance part à la racine : tout marche en local (un seul `.venv` pour le workspace), mais le zip Lambda construit depuis le membre n'a pas `httpx` → `ModuleNotFoundError` en production.
@@ -356,16 +402,21 @@ uv add httpx
 # → pyproject.toml racine seulement
 ```
 
-- Quiz : `uv add bodacc-client` lancé **avant** `uv init --lib packages/bodacc-client` : que se passe-t-il ?
-- [ ] uv crée le membre manquant
-- [x] uv cherche sur PyPI et échoue
-- [ ] uv écrit `{ workspace = true }` sans vérifier
-- [ ] uv l'ajoute au groupe `dev`
-- Réponse : uv cherche sur PyPI et échoue : un membre n'est connu que par le `name` de son `pyproject.toml` ; sans lui, le nom part sur PyPI (et s'installerait si quelqu'un l'y avait publié).
+- Quiz : `uv add --package bodacc-client httpx` : quel fichier de lock change ?
+- [x] Le `uv.lock` unique, à la racine
+- [ ] Un `uv.lock` créé dans `packages/bodacc-client/`
+- [ ] Aucun : seul le `pyproject.toml` du membre change
+- [ ] Les deux : racine et membre
+- Réponse : le `uv.lock` racine : un workspace n'a qu'un lock, `--package` ne choisit que le `pyproject.toml` où la dépendance est déclarée.
 
 ## 13. --locked ou --frozen : le lock en CI
-- Sous-thème : ci
+- Id : uv-locked-ou-frozen
+- Sous-thème : lock
+- Type : comparaison
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-lock-universel
+- Voir aussi : ci-cd-lockfile-fige
 - Définition : `uv sync --locked` échoue si `uv.lock` ne correspond plus à `pyproject.toml` ; `--frozen` installe le lock tel quel, sans vérifier (≈ `--frozen-lockfile` de pnpm).
 - Contexte : En CI, on veut détecter un `pyproject.toml` modifié sans `uv lock` : c'est `--locked` (code retour 1, message explicite). `--frozen` ne relit pas les contraintes : il installe en silence l'ancienne version, utile seulement quand on sait le lock à jour (image Docker, étape après un `--locked`). Les deux refusent d'écrire `uv.lock`.
 - Usage : ✅ `uv sync --locked` dans le job de test, `--frozen` dans une étape suivante du pipeline · ❌ `uv sync` nu en CI : il réécrit le lock en silence, le build ne teste pas ce qui est commité.
@@ -397,8 +448,12 @@ test:
 - Réponse : erreur (`Unable to find lockfile at uv.lock, but --frozen was provided`) : `--frozen` et `--locked` exigent un lock, aucun ne le crée.
 
 ## 14. uv lock --upgrade-package : monter une version
+- Id : uv-lock-upgrade-package
 - Sous-thème : lock
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-lock-universel
 - Définition : `uv lock --upgrade-package anyio` remonte ce seul paquet à la plus haute version permise par les contraintes ; `--upgrade` remonte tout (≈ `pnpm update anyio`).
 - Contexte : Par défaut, `uv lock` garde les versions déjà verrouillées tant qu'elles respectent `pyproject.toml` : pas de mise à jour surprise au détour d'un `uv add`. Monter une version est donc un geste explicite, ciblé et relu (le diff de `uv.lock`). `-P` est l'alias court. Une source git suit la même règle : le commit verrouillé reste jusqu'à `--upgrade-package`.
 - Usage : ✅ correctif de sécurité ou de bug sur une lib, un paquet à la fois · ❌ `uv lock --upgrade` la veille d'une démo : tout bouge, régressions difficiles à isoler.
@@ -422,8 +477,12 @@ uv tree --depth 1
 - Réponse : 4.4.0 : la version verrouillée respecte encore `>=4.4`, uv la garde ; il faut `--upgrade-package anyio` pour monter.
 
 ## 15. groupes : --group et default-groups
+- Id : uv-groupes-par-defaut
 - Sous-thème : dépendances
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-dev-dependency-groups
 - Définition : `uv add --group lint ruff` crée un groupe nommé ; `uv sync` n'installe que les groupes de `default-groups` (`dev` seul par défaut).
 - Contexte : Un groupe hors des défauts est désinstallé au `uv sync` suivant, même juste après `uv add --group`. `--group lint` l'ajoute, `--only-group lint` n'installe que lui (sans le projet ni ses dépendances, pratique pour un job de lint), `--all-groups` tout. `[tool.uv] default-groups = ["dev", "lint"]` change les défauts ; `--no-default-groups` les retire tous.
 - Usage : ✅ séparer lint, tests, docs pour des jobs CI légers · ❌ un groupe par outil : trop de drapeaux à retenir, `dev` suffit souvent.
@@ -455,8 +514,11 @@ default-groups = ["dev", "lint"]
 - Réponse : ruff reste : `--no-dev` ne retire que le groupe `dev` ; pour livrer sans aucun groupe, `--no-default-groups`.
 
 ## 16. sources : path et git
+- Id : uv-sources-path-git
 - Sous-thème : dépendances
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Définition : `[tool.uv.sources]` dit où prendre un paquet hors PyPI : dossier local (`path`), dépôt git (`git` + `branch`/`tag`/`rev`) ou membre (`workspace`).
 - Contexte : `uv add ../siren-utils` ou `uv add git+https://… --branch main` écrivent la dépendance et sa source. Le lock fige le commit exact d'une source git : la branche peut avancer, rien ne change avant `uv lock --upgrade-package`. Ces sources sont propres à uv : elles ne partent pas dans les métadonnées d'un wheel publié, où ne reste que le nom.
 - Usage : ✅ lib interne pas encore publiée, correctif d'une lib tierce sur un fork · ❌ dossier local hors du dépôt en CI : le chemin n'existe pas sur le runner.
@@ -484,8 +546,11 @@ sampleproject = { git = "https://github.com/pypa/sampleproject", branch = "main"
 - Réponse : garde le commit du lock (`Audited`) : seul `uv lock --upgrade-package <lib>` déplace le commit verrouillé.
 
 ## 17. uv python pin : .python-version
+- Id : uv-python-pin
 - Sous-thème : python
+- Type : concept
 - Niveau : 2
+- Profils : débutant, ops
 - Définition : `uv python pin 3.12` écrit `.python-version`, l'interpréteur du venv ; `requires-python` reste la plage acceptée par le projet (≈ `.nvmrc` face à `engines`).
 - Contexte : Changer le pin recrée le `.venv` au prochain `uv run` (`Removed virtual environment`). Un pin hors de `requires-python` est refusé par `uv python pin`, et `uv run` échoue si on édite le fichier à la main. Ce fichier est aussi lu par pyenv : un pin vers une version que pyenv ne connaît pas casse ses shims (`pyenv: version 3.13 is not installed`), y compris un `uv` installé par pyenv.
 - Usage : ✅ pin = runtime Lambda (3.12), commité · ❌ pin plus récent que le runtime : le code passe en local, plante en production.
@@ -507,8 +572,11 @@ uv run python --version
 - Réponse : erreur (`is incompatible with the project requires-python value of >=3.12`) : uv vérifie le pin contre la plage du projet avant d'écrire.
 
 ## 18. uv python install : téléchargé à la demande
+- Id : uv-python-install-auto
 - Sous-thème : python
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Définition : uv télécharge l'interpréteur demandé s'il manque : explicitement (`uv python install 3.12`) ou au premier `uv run` (≈ `nvm install` intégré).
 - Contexte : Les Python gérés par uv vivent dans `~/.local/share/uv/python` ; `uv python list --only-installed` montre aussi ceux du système (Homebrew, pyenv). Plus besoin de pyenv : le `.python-version` suffit, sur le poste comme en CI. `UV_PYTHON_DOWNLOADS=never` interdit le téléchargement : uv n'utilise que ce qui est déjà présent.
 - Usage : ✅ runners CI et postes neufs : `uv sync` installe aussi Python · ❌ image Docker figée sans réseau : installer Python au build ou `UV_PYTHON_DOWNLOADS=never` avec un Python de l'image.
@@ -531,8 +599,12 @@ uv python find 3.13
 - Réponse : erreur (`No interpreter found for Python 3.14 … downloads are set to 'never'`) : le pin est une exigence, pas une préférence.
 
 ## 19. uv run --with : une dépendance de passage
+- Id : uv-run-with-temporaire
 - Sous-thème : dépendances
+- Type : recette
 - Niveau : 2
+- Profils : data
+- Prérequis : uv-run-sync-auto
 - Définition : `uv run --with rich python …` ajoute une dépendance le temps d'une commande, sans toucher `pyproject.toml`, `uv.lock` ni le `.venv`.
 - Contexte : uv crée un environnement temporaire superposé au venv du projet : le projet et ses dépendances restent importables, `rich` s'y ajoute. Pratique pour un essai (`ipython`, un profiler) ou un script de diagnostic. `--with` accepte une contrainte (`--with 'rich<14'`) et se répète.
 - Usage : ✅ essai ponctuel, outil d'exploration (`uv run --with ipython ipython`) · ❌ dépendance dont le code a besoin : `uv add`, sinon le build et la CI ne l'ont pas.
@@ -554,8 +626,12 @@ grep -c rich pyproject.toml uv.lock
 - Réponse : `ModuleNotFoundError` : `--with` n'installe pas dans le `.venv`, il superpose un environnement jetable le temps de la commande.
 
 ## 20. uv tool install : une CLI globale
+- Id : uv-tool-install-global
 - Sous-thème : outils
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-uvx-outil-jetable
 - Définition : `uv tool install pre-commit` installe une CLI dans un venv dédié et met son exécutable dans `~/.local/bin` (≈ `pnpm add -g`, isolé).
 - Contexte : Chaque outil a son environnement, sans conflit avec les autres ni avec les projets. `uv tool list` les liste, `uv tool upgrade --all` les met à jour, `--with pre-commit-uv` ajoute un plugin. Un outil installé avec une version exacte (`ruff==0.17.1`) reste épinglé : `upgrade` le refuse. Si `~/.local/bin` n'est pas dans le PATH, uv le signale (`uv tool update-shell`).
 - Usage : ✅ CLI de poste utilisées partout (pre-commit, httpie, aws-sam-cli) · ❌ outil dont la version doit suivre le projet : `uv add --dev` et `uv run`.
@@ -577,8 +653,12 @@ uv tool list
 - Réponse : 0.17.1 : uv retient la contrainte d'installation et l'indique (`pinned to 0.17.1`) ; `uv tool install ruff@latest` la remplace.
 
 ## 21. uv export : un requirements.txt pour la Lambda
-- Sous-thème : ci
+- Id : uv-export-requirements
+- Sous-thème : build
+- Type : recette
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : uv-lock-universel
 - Définition : `uv export` convertit `uv.lock` en `requirements.txt` épinglé avec hashes, pour les outils qui ne lisent pas le lock (zip Lambda, `pip`).
 - Contexte : `--package ingest` part du graphe d'un membre, `--no-dev` écarte le groupe dev, `--no-emit-workspace` retire les lignes `-e ./packages/…`, `--no-hashes` les hashes. On installe ensuite dans un dossier à zipper, pour la plateforme Lambda et non celle du poste : `uv pip install -r … --target build --python-platform x86_64-manylinux2014 --only-binary :all:`. Les marqueurs (`; sys_platform == 'win32'`) sont conservés.
 - Usage : ✅ packager une Lambda ou une image à partir du lock · ❌ un `requirements.txt` maintenu à la main à côté du lock : deux vérités qui divergent.
@@ -602,8 +682,13 @@ ls build   # anyio certifi httpx …
 - Réponse : rien : sans `--package` ni `--all-packages`, l'export part du graphe de la racine, vide ici ; d'où `--package <membre>`.
 
 ## 22. --python-version : celle du runtime, pas du poste
-- Sous-thème : ci
+- Id : uv-python-version-runtime
+- Sous-thème : build
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-pip-install-target
+- Voir aussi : AWS/lambda-architecture-alignee
 - Source : data-platform · S1-07
 - Définition : `--python-version 3.12` fait choisir les roues de CPython 3.12 (tags `cp312`) ; sans elle, uv prend la version de l'interpréteur local.
 - Contexte : `--python-platform` choisit l'OS et le processeur, `--python-version` la version : il faut les deux. Avec un Python 3.13 local et le runtime `python3.12`, uv installerait des binaires `cpython-313`, invisibles pour le runtime. La version change aussi la résolution (marqueurs `python_version`, `requires-python`). Les constantes du script (`PLATFORM`, `PYTHON_VERSION`) suivent `architectures` et `runtime` du Terraform.
@@ -626,8 +711,13 @@ ls /tmp/x86/pydantic_core | grep '\.so$'
 - Réponse : le binaire macOS (mesuré) : sans plateforme, uv vise la machine qui installe ; la version seule ne change que le tag `cp312`.
 
 ## 23. --only-binary :all: : aucune compilation
-- Sous-thème : ci
+- Id : uv-only-binary-sans-compilation
+- Sous-thème : build
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-pip-install-target
+- Voir aussi : uv-only-binary-cache-masque
 - Source : data-platform · S1-07
 - Définition : `--only-binary :all:` interdit d'installer depuis une source (sdist, dossier local) : uv n'accepte que des roues déjà construites.
 - Contexte : Garantie d'un zip multiplateforme : construire une source sur le Mac produirait un binaire macOS. Erreur vue : appliqué aux membres du workspace (`./lambdas/ingest_bodacc`), sources locales à construire, il échoue : `Building source distributions is disabled, but attempted to build ingest-bodacc`. D'où deux installations : les tiers en roues seules, les membres purs Python à part.
@@ -653,8 +743,11 @@ uv pip install --only-binary :all: \
 - Réponse : il échoue : l'option porte sur le format (roue ou source), pas sur le contenu ; un sdist reste une source à construire.
 
 ## 24. --no-deps : installer sans résoudre
-- Sous-thème : ci
+- Id : uv-no-deps-sans-resolution
+- Sous-thème : build
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Source : data-platform · S1-07
 - Définition : `uv pip install --no-deps ./packages/bodacc-client` installe le paquet seul, sans lire ni installer ses dépendances.
 - Contexte : Seconde installation du build : les membres sont purs Python et leurs dépendances tierces déjà dans le dossier, aux versions du lock. Sans `--no-deps`, uv résoudrait de nouveau `httpx`, `pydantic`… à partir des `pyproject.toml` des membres, avec leurs bornes larges, pas les versions exactes du lock (`uv pip` ne lit pas `uv.lock`).
@@ -679,8 +772,12 @@ uv pip install --no-deps --target build/pkg \
 - Réponse : à l'import : `--no-deps` ne vérifie rien ; le manque n'est vu qu'à l'invocation (`ModuleNotFoundError`), d'où l'intérêt d'un test d'import du zip.
 
 ## 25. uv export --no-editable : des chemins, pas des -e
-- Sous-thème : ci
+- Id : uv-export-no-editable
+- Sous-thème : build
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-export-requirements
 - Source : data-platform · S1-07
 - Définition : Par défaut `uv export` écrit les membres en `-e ./packages/…` (éditables) ; `--no-editable` les écrit `./packages/…`, installés comme des paquets ordinaires.
 - Contexte : Un éditable installé avec `--target` n'est qu'un fichier `.pth` contenant le chemin du dépôt sur le poste (`/Users/…/lambdas/ingest_bodacc/src`, mesuré) : aucun code dans le dossier, et `/var/task` n'est pas un dossier où Python lit les `.pth`. L'import échoue à l'invocation. `--no-editable` copie vraiment le code ; le script s'en sert pour lister les membres (lignes `./`).
@@ -707,8 +804,12 @@ uv export --package ingest-bodacc --frozen \
 - Réponse : non (mesuré) : les paquets de l'index ne sont jamais éditables ; l'option ne concerne que les sources locales.
 
 ## 26. --no-emit-workspace ou --no-emit-project
-- Sous-thème : ci
+- Id : uv-no-emit-workspace-ou-project
+- Sous-thème : build
+- Type : comparaison
 - Niveau : 2
+- Profils : ops
+- Prérequis : uv-export-requirements, uv-workspace-members
 - Source : data-platform · S1-07
 - Définition : `--no-emit-workspace` retire de l'export **tous** les membres du workspace ; `--no-emit-project` ne retire que le paquet exporté, les autres membres restent.
 - Contexte : Mesuré sur `ingest-bodacc` : `--no-emit-project` laisse `-e ./packages/bodacc-client`, que `--only-binary :all:` refuserait. Le build exporte donc deux fois : les tiers seuls (`--no-emit-workspace`, 19 lignes épinglées), puis la liste complète `--no-editable`, dont il garde les lignes `./`. `--no-emit-package <nom>` retire un paquet précis.
@@ -723,16 +824,21 @@ uv export --package ingest-bodacc --frozen \
 # avec --no-emit-workspace : aucune ligne
 ```
 
-- Quiz : Lancé depuis `lambdas/ingest_bodacc/`, sans `--package`, que contient `uv export --no-dev --frozen` ?
-- [ ] Rien : la racine du workspace n'a pas de dépendances
-- [x] Le graphe du membre `ingest-bodacc`
-- [ ] Les dépendances de tous les membres
-- [ ] Une erreur : `--package` obligatoire
-- Réponse : le graphe du membre (mesuré : `boto3`, `httpx`, les deux `-e`) : uv prend le projet du dossier courant ; `--package` sert depuis la racine.
+- Quiz : Avec `--no-emit-workspace`, les dépendances tierces de `bodacc-client` (`httpx`) restent-elles dans l'export ?
+- [x] Oui : seules les lignes des membres disparaissent
+- [ ] Non : elles partent avec le membre
+- [ ] Oui, mais sans version épinglée
+- [ ] Non, sauf avec `--no-emit-project`
+- Réponse : oui : l'option retire les membres eux-mêmes, pas leur graphe ; c'est ce qui en fait la liste des tiers à installer en roues.
 
 ## 27. --no-installer-metadata : pas de chemin du poste
-- Sous-thème : ci
+- Id : uv-no-installer-metadata
+- Sous-thème : build
+- Type : recette
 - Niveau : 2
+- Profils : ops, expert
+- Prérequis : uv-pip-install-target
+- Voir aussi : Python/archives-zipinfo-date-fixe
 - Source : data-platform · S1-07
 - Définition : `--no-installer-metadata` n'écrit pas dans `.dist-info` les fichiers propres à l'installation (`INSTALLER`, `REQUESTED`, `direct_url.json`) : l'artefact ne dépend plus du poste.
 - Contexte : Mesuré sur un membre local : `direct_url.json` contient `file:///Users/…/lambdas/ingest_bodacc`, `uv_cache.json` un horodatage. Le zip changerait d'un poste à l'autre et d'un build à l'autre, donc son hash. Restent `METADATA`, `RECORD` et `WHEEL`, assez pour `importlib.metadata.version()`.
@@ -755,8 +861,11 @@ ls build/pkg/ingest_bodacc-0.1.0.dist-info
 - Réponse : non : `direct_url.json` enregistre `file:///…/a/…` ou `file:///…/b/…` ; un octet de différence suffit à changer le hash.
 
 ## 28. bytecode : uv pip ne compile pas par défaut
-- Sous-thème : ci
+- Id : uv-bytecode-non-compile
+- Sous-thème : build
+- Type : piège
 - Niveau : 2
+- Profils : ops, expert
 - Source : data-platform · S1-07
 - Définition : Contrairement à pip, `uv pip install` n'écrit pas de `.pyc` par défaut ; `--compile-bytecode` les crée, `--no-compile-bytecode` rend le défaut explicite.
 - Contexte : Mesuré : sans option, aucun `__pycache__` dans le dossier installé ; avec `--compile-bytecode`, `handler.cpython-312.pyc` apparaît, compilé par l'interpréteur local. Dans une image Docker (`UV_COMPILE_BYTECODE=1`), compiler au build accélère le démarrage. Pour un zip construit sur le poste, le `.pyc` suit la version locale, peut-être pas celle du runtime.
@@ -780,8 +889,11 @@ find /tmp/b -name '*.pyc' | wc -l   # → 4
 - Réponse : erreur (mesuré) : « `--no-compile-bytecode` cannot be used with `--compile-bytecode` » ; uv traite la variable comme l'option, et refuse les deux ensemble.
 
 ## 29. script : dépendances en tête du fichier
+- Id : uv-script-pep-723
 - Sous-thème : outils
+- Type : concept
 - Niveau : 3
+- Profils : data, expert
 - Définition : `uv add --script fetch.py httpx` écrit un bloc `# /// script` (PEP 723) en tête du fichier ; `uv run fetch.py` les installe à part.
 - Contexte : Le script devient autonome : ses dépendances et `requires-python` vivent dans ses commentaires, sans `pyproject.toml`. uv crée un environnement dédié, mis en cache. Dès qu'un script a ce bloc, `uv run` ignore le projet qui l'entoure : ni son venv ni ses dépendances. `uv lock --script fetch.py` écrit un `fetch.py.lock` pour figer les versions.
 - Usage : ✅ script d'exploration ou d'admin partagé seul (rejouer une journée BODACC, purger un préfixe S3) · ❌ code qui importe les libs du monorepo : le mettre dans un membre du workspace.
@@ -808,8 +920,12 @@ print(httpx.__version__)
 - Réponse : `ModuleNotFoundError` : avec des métadonnées inline, le script tourne dans son propre environnement, sans le venv du projet ; sans le bloc, il aurait vu click.
 
 ## 30. cache : partagé, à élaguer en CI
-- Sous-thème : ci
+- Id : uv-cache-ci-prune
+- Sous-thème : build
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Voir aussi : ci-cd-cache-cle-lockfile
 - Définition : uv garde paquets et wheels dans un cache global (`uv cache dir`) et lie les fichiers dans chaque `.venv` au lieu de les copier.
 - Contexte : D'où des `uv sync` en millisecondes. En CI, on met le cache dans le projet (`UV_CACHE_DIR`) pour que GitLab le conserve, avec une clé sur `uv.lock`. `uv cache prune --ci` avant la sauvegarde retire les wheels téléchargées (plus rapides à re-télécharger qu'à restaurer) et garde celles compilées depuis les sources. `uv cache clean` vide tout. Cache sur un autre disque que le venv : copie, avertissement, `UV_LINK_MODE=copy`.
 - Usage : ✅ cache GitLab clé `uv.lock` + `prune --ci` · ❌ mettre le `.venv` en cache : chemins absolus, interpréteur du runner, restauration fragile.
@@ -843,10 +959,14 @@ uv cache prune --ci
 - Réponse : échec : `prune --ci` a retiré les wheels téléchargées et `--offline` interdit le réseau ; le cache ainsi élagué suppose un réseau rapide.
 
 ## 31. uv.lock en conflit : régénérer
+- Id : uv-lock-conflit-git
 - Sous-thème : lock
+- Type : recette
 - Niveau : 3
+- Profils : ops
+- Prérequis : uv-lock-universel, git-conflit-marqueurs
 - Définition : Un conflit git dans `uv.lock` ne se résout pas à la main : régler `pyproject.toml`, reprendre une version du lock, puis `uv lock`.
-- Contexte : Deux branches qui ajoutent chacune une dépendance touchent les mêmes lignes du lock. Avec les marqueurs `<<<<<<<`, le fichier n'est plus du TOML valide : `uv lock` et `uv sync` refusent de le lire. Reprendre la version de `main` (`git checkout --theirs` pendant un rebase) puis `uv lock` réintègre les dépendances du `pyproject.toml` fusionné, en gardant les versions verrouillées de `main`.
+- Contexte : Deux branches qui ajoutent chacune une dépendance touchent les mêmes lignes du lock. Avec les marqueurs `<<<<<<<`, le fichier n'est plus du TOML valide : `uv lock` et `uv sync` refusent de le lire. Reprendre la version de `main` (`git checkout --ours` pendant un rebase sur `main` : `ours` y désigne `main`) puis `uv lock` réintègre les dépendances du `pyproject.toml` fusionné, en gardant les versions verrouillées de `main`.
 - Usage : ✅ résoudre d'abord `pyproject.toml`, puis lock repris et régénéré, puis `uv sync --locked` · ❌ fusionner les blocs du lock à la main : hashes et graphe incohérents.
 
 ```bash
@@ -855,7 +975,7 @@ uv lock
 # 66 | <<<<<<< HEAD
 #    |         ^
 # key with no value, expected `=`
-git checkout --theirs uv.lock
+git checkout --ours uv.lock  # rebase
 uv lock          # Resolved 10 packages
 git add uv.lock
 ```
@@ -868,8 +988,12 @@ git add uv.lock
 - Réponse : tout remonte : sans lock existant, uv ne connaît plus les versions verrouillées et prend la plus récente de chaque paquet (anyio 4.4.0 → 4.15.1).
 
 ## 32. membre : son name, pas son dossier
+- Id : uv-membre-name-pas-dossier
 - Sous-thème : workspace
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : uv-workspace-members, uv-add-package-membre
 - Source : data-platform · S1-07
 - Définition : `uv add <nom>` cherche dans `[tool.uv.sources]`, puis le `name` des membres, puis PyPI : le nom du dossier n'est jamais lu.
 - Contexte : Dossier `libs/siren`, `name = "siren-utils"` : `uv add siren` ne trouve aucun membre et installe sans erreur le paquet PyPI `siren`, un inconnu, avec ses dépendances. C'est la porte de la « dependency confusion » : un nom interne absent du workspace part sur l'index public. Après chaque `uv add` d'un membre, vérifier que `[tool.uv.sources]` a reçu `{ workspace = true }`.
@@ -895,8 +1019,12 @@ uv add siren
 - Réponse : aucune entrée dans `[tool.uv.sources]` (mesuré) : uv n'écrit une source que pour un membre, un `path` ou un `git` ; une dépendance sans source vient de l'index, avec une borne `>=`.
 
 ## 33. --only-binary : le cache qui masque l'erreur
-- Sous-thème : ci
+- Id : uv-only-binary-cache-masque
+- Sous-thème : build
+- Type : piège
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : uv-only-binary-sans-compilation
 - Source : data-platform · S1-07
 - Définition : Un membre local déjà construit est repris du cache de uv : `--only-binary :all:` passe alors sur le poste, et échoue sur un runner neuf.
 - Contexte : Mesuré pendant l'étape, membre passé dans un fichier `-r` : la commande réussit avec le cache du poste, où uv a déjà construit `ingest-bodacc`, et échoue avec `--no-cache` (`Building source distributions is disabled`). Un runner CI démarre souvent sans cache : l'erreur n'apparaît qu'en pipeline. Pour reproduire une CI en local : `--no-cache`, ou `UV_NO_CACHE=1`.

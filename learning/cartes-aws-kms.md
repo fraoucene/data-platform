@@ -2,17 +2,22 @@
 title: "Cartes · KMS"
 type: cartes
 langage: AWS
+chapitre: Identité et sécurité
 cours: KMS
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Cartes · KMS
-AWS · KMS : clés, chiffrement, politique, s3 (format spec v3 de revision-pwa).
+AWS · KMS : clés, chiffrement, politique, s3 (format spec v4 de revision-pwa).
 
 ## 1. clé gérée par AWS ou par le client
+- Id : kms-cle-aws-ou-client
 - Sous-thème : clés
+- Type : comparaison
 - Niveau : 1
+- Profils : débutant, ops
+- Voir aussi : kms-cout-cle-appels
 - Définition : `aws/s3` est une clé gérée par AWS, gratuite au repos ; une clé client (`aws_kms_key`) se paie, mais on écrit sa politique.
 - Contexte : La clé `aws/s3` est utilisable par tout le compte, mais seulement à travers S3, jamais en direct ni par un autre compte ; AWS la fait tourner chaque année. La clé du projet (`KeyManager: CUSTOMER`) permet de choisir qui chiffre et déchiffre, de la désactiver, de la partager. Les clés détenues par AWS, celles de SSE-S3, n'apparaissent même pas dans le compte.
 - Usage : ✅ clé client pour les données du projet (accès bornés, audit, partage possible) · ❌ `aws/s3` pour des données à partager avec un autre compte : sa politique l'interdit.
@@ -46,11 +51,14 @@ aws kms get-key-policy --key-id "$AWS_S3" \
 - Réponse : personne : une clé gérée par AWS ne se supprime, ne se désactive ni ne se modifie ; seules les clés client ont un cycle de vie à la main.
 
 ## 2. alias KMS : le nom, l'ARN pour les ressources
+- Id : kms-alias-ou-arn
 - Sous-thème : clés
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Source : data-platform · S1-04
 - Définition : Une clé KMS est désignée par un ARN opaque ; l'alias `alias/<nom>` est un nom lisible et stable qui pointe vers elle.
-- Contexte : On ne voit jamais la clé : on demande à KMS de chiffrer ou déchiffrer, chaque appel est autorisé par IAM et tracé dans CloudTrail. L'ARN change à chaque recréation, l'alias reste : les humains utilisent l'alias, les ressources Terraform l'ARN (`module.kms.key_arn`), qui crée la dépendance. Une clé coûte 1 $/mois plus les appels ; `enable_key_rotation` renouvelle le matériel chaque année sans changer l'ARN.
+- Contexte : On ne voit jamais la clé : on demande à KMS de chiffrer ou déchiffrer, chaque appel est autorisé par IAM et tracé dans CloudTrail. L'ARN change à chaque recréation, l'alias reste : les humains utilisent l'alias, les ressources Terraform l'ARN (`module.kms.key_arn`), qui crée la dépendance.
 - Usage : ✅ une clé par projet et environnement, alias `alias/<projet>-<env>`, ARN passé aux modules · ❌ ARN recopié en dur : il change au prochain `make down` / `make up`.
 
 ```hcl
@@ -87,8 +95,11 @@ K=$(aws kms describe-key \
 - Réponse : `InvalidArnException` (« Key Aliases are not supported for this operation », mesuré) : `get-key-rotation-status` et `get-key-policy` exigent l'id ou l'ARN de la clé, d'où le `$K` de l'exemple 2.
 
 ## 3. coût KMS : la clé et les appels
+- Id : kms-cout-cle-appels
 - Sous-thème : clés
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Définition : Une clé client coûte 1 $ par mois, plus 0,03 $ les 10 000 appels (`Decrypt`, `GenerateDataKey`) au-delà de 20 000 gratuits par mois.
 - Contexte : Le poste qui surprend est celui des appels : en SSE-KMS sans bucket key, S3 en fait un par objet écrit ou lu. Les clés gérées par AWS ne coûtent rien au repos, mais leurs appels se paient. La rotation automatique ajoute aussi un coût par version de matériel conservée, plafonné.
 - Usage : ✅ une clé par projet et environnement, bucket key sur les buckets · ❌ une clé par bucket ou par table « pour isoler » : 1 $/mois chacune, et autant de politiques à tenir.
@@ -110,8 +121,11 @@ round(1 + payants / 10_000 * 0.03, 2)
 - Réponse : 3 $ (grille tarifaire KMS) : chaque rotation ajoute 1 $/mois pour les deux premières seulement ; au-delà, le prix ne bouge plus.
 
 ## 4. KMS : la clé ne sort jamais
+- Id : kms-cle-ne-sort-jamais
 - Sous-thème : chiffrement
+- Type : concept
 - Niveau : 1
+- Profils : débutant, ops
 - Définition : KMS garde la clé dans ses HSM : on lui envoie les données (`Encrypt`, 4 096 octets au plus), il renvoie le texte chiffré.
 - Contexte : Aucune API ne rend le matériel d'une clé symétrique : c'est ce qui permet de couper un accès en retirant un droit, et de tracer chaque usage dans CloudTrail. La contrepartie : chaque opération est un appel réseau, limité à 4 Ko en entrée. Pour un fichier BODACC, on chiffre localement avec une clé de données : le chiffrement d'enveloppe.
 - Usage : ✅ `Encrypt` direct pour un petit secret (jeton, mot de passe) · ❌ `Encrypt` sur un fichier : `ValidationException` au-delà de 4 Ko ; clé de données, ou SSE-KMS côté S3.
@@ -144,8 +158,11 @@ chiffrable(b"x" * 5000)        # → False
 - Réponse : non : la limite compte des octets, et `é` en prend 2 en UTF-8 ; `len("é" * 3000)` vaut 3 000, `len(("é" * 3000).encode())` 6 000.
 
 ## 5. rotation : même ARN, nouveau matériel
+- Id : kms-rotation-meme-arn
 - Sous-thème : clés
+- Type : concept
 - Niveau : 2
+- Profils : ops
 - Définition : `enable_key_rotation` génère un nouveau matériel de clé chaque année (ou tous les `rotation_period_in_days`) sans changer l'ARN ni rechiffrer les données.
 - Contexte : KMS garde toutes les versions du matériel : les nouveaux chiffrements prennent la dernière, les anciens blobs se déchiffrent avec la leur. Rien à changer dans le code. La rotation ne protège donc pas ce qui a déjà été chiffré avec un matériel compromis : elle limite seulement le volume chiffré par version. `rotate-key-on-demand` force une rotation immédiate.
 - Usage : ✅ rotation automatique sur toute clé client symétrique (365 jours par défaut) · ❌ créer une nouvelle clé « pour tourner » : nouvel ARN, et l'ancienne doit rester pour lire l'existant.
@@ -177,8 +194,12 @@ resource "aws_kms_key" "this" {
 - Réponse : `validate` échoue (`expected rotation_period_in_days to be in the range (90 - 2560), got 30`, mesuré) : KMS ne tourne pas plus souvent que tous les 90 jours.
 
 ## 6. clé désactivée : tout s'arrête
+- Id : kms-cle-desactivee
 - Sous-thème : clés
+- Type : concept
 - Niveau : 2
+- Profils : ops
+- Voir aussi : kms-suppression-differee, dynamodb-cle-kms-desactivee
 - Définition : `disable-key` suspend une clé : chiffrer et déchiffrer échouent (`DisabledException`) jusqu'à `enable-key`, sans rien perdre.
 - Contexte : C'est l'interrupteur d'urgence : en cas de fuite, désactiver la clé rend illisibles d'un coup tous les objets SSE-KMS de `raw` et `processed`, même pour l'administrateur, sans toucher aux données ni aux politiques. Contrairement à la suppression, c'est réversible. Une clé désactivée reste facturée 1 $/mois.
 - Usage : ✅ couper l'accès en incident, vérifier ce qui dépend d'une clé avant de la supprimer · ❌ supprimer d'emblée une clé qu'on croit inutile : la désactiver d'abord, puis guetter les erreurs.
@@ -200,11 +221,15 @@ aws kms enable-key --key-id "$K"
 - Réponse : oui : le listage lit les métadonnées du bucket, en clair ; seuls `GetObject` et `PutObject` passent par KMS.
 
 ## 7. clé KMS : suppression différée
+- Id : kms-suppression-differee
 - Sous-thème : clés
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Voir aussi : kms-cle-desactivee
 - Source : data-platform · S1-04
 - Définition : Supprimer une clé KMS la place en `PendingDeletion` pendant 7 à 30 jours (`deletion_window_in_days`) ; elle n'est détruite qu'à l'échéance.
-- Contexte : Une clé détruite rend illisible tout ce qu'elle chiffre, d'où le délai : pendant la fenêtre, la clé ne chiffre ni ne déchiffre plus, mais `cancel-key-deletion` la récupère. L'alias, lui, est supprimé tout de suite. Après `make down` puis `make up`, Terraform crée donc une nouvelle clé (nouvel ARN) sous le même alias ; les objets encore chiffrés par l'ancienne seront perdus à l'échéance.
+- Contexte : Une clé détruite rend illisible tout ce qu'elle chiffre, d'où le délai : pendant la fenêtre, la clé ne chiffre ni ne déchiffre plus, mais `cancel-key-deletion` la récupère. Avec Terraform, l'alias (ressource à part) est supprimé tout de suite. Après `make down` puis `make up`, Terraform crée donc une nouvelle clé (nouvel ARN) sous le même alias ; les objets encore chiffrés par l'ancienne seront perdus à l'échéance.
 - Usage : ✅ 7 jours en dev (environnement jetable, buckets vidés au `down`) · ❌ 7 jours en prod : 30 jours, et `prevent_destroy` sur la clé.
 
 ```bash
@@ -235,8 +260,12 @@ aws kms enable-key --key-id "$K"
 - Réponse : `validate` échoue (`expected deletion_window_in_days to be in the range (7 - 30), got 0`, mesuré) : KMS n'offre aucune suppression immédiate.
 
 ## 8. chiffrement d'enveloppe : la clé de données
+- Id : kms-chiffrement-enveloppe
 - Sous-thème : chiffrement
+- Type : concept
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : kms-cle-ne-sort-jamais
 - Définition : `GenerateDataKey` renvoie une clé de données en clair (pour chiffrer localement) et la même clé chiffrée par la clé KMS (à stocker avec les données).
 - Contexte : On chiffre le fichier en AES-256 avec `Plaintext`, on l'efface de la mémoire, on garde `CiphertextBlob` à côté du fichier. Pour relire : `Decrypt` sur le blob rend la clé de données, qui déchiffre le fichier. Un seul appel KMS par fichier, quelle que soit sa taille. C'est ce que fait S3 en SSE-KMS, et l'AWS Encryption SDK.
 - Usage : ✅ chiffrer côté client un export `out/` avant de l'envoyer · ❌ stocker la clé de données en clair à côté du fichier : on ne garde que `CiphertextBlob`.
@@ -278,8 +307,12 @@ xor(fichier, cle2)  # → b"SIREN 552100554"
 - Réponse : 32 octets : AES-256 désigne une clé de 256 bits, soit 32 octets ; `AES_128` en donne 16.
 
 ## 9. Decrypt : pas besoin de KeyId
+- Id : kms-decrypt-sans-keyid
 - Sous-thème : chiffrement
+- Type : piège
 - Niveau : 2
+- Profils : ops
+- Prérequis : kms-chiffrement-enveloppe
 - Définition : Pour une clé symétrique, `Decrypt` retrouve seul la clé KMS : son identifiant est inscrit dans le `CiphertextBlob`, `--key-id` est facultatif.
 - Contexte : Le blob porte en métadonnées la clé et la version du matériel : après rotation, les anciens blobs se déchiffrent toujours. Préciser `--key-id` reste la bonne pratique : KMS refuse alors un blob d'une autre clé, ce qui évite de déchiffrer, avec les droits du rôle, un texte forgé sur une clé que le projet ne maîtrise pas. Le droit vérifié est `kms:Decrypt` sur la clé d'origine.
 - Usage : ✅ `--key-id` explicite dans le code de production · ❌ croire qu'un `Decrypt` réussi prouve que la donnée vient du projet : sans `key-id`, toute clé accessible convient.
@@ -301,8 +334,11 @@ aws kms decrypt \
 - Réponse : `IncorrectKeyException` (selon la doc) : la clé demandée n'est pas celle qui a chiffré ; le blob est intact, d'où une erreur distincte d'`InvalidCiphertext`.
 
 ## 10. SSE-KMS : la seconde serrure
+- Id : kms-sse-kms-double-droit
 - Sous-thème : s3
+- Type : piège
 - Niveau : 2
+- Profils : data, ops
 - Source : data-platform · S1-04
 - Définition : Sur un bucket `aws:kms`, lire ou écrire exige deux droits : l'action S3 et l'action KMS sur la clé (`kms:Decrypt`, `kms:GenerateDataKey`).
 - Contexte : S3 appelle KMS au nom de l'appelant : `GetObject` déchiffre la clé de données (`kms:Decrypt`), `PutObject` en génère une (`kms:GenerateDataKey`). Un rôle qui a `s3:GetObject` sans droit KMS reçoit `AccessDenied`, alors que sa politique S3 paraît juste. C'est voulu : la clé est une serrure indépendante, tracée dans CloudTrail, révocable d'un geste en la désactivant.
@@ -338,8 +374,12 @@ aws s3 cp "s3://$RAW/bodacc/p.gz" .
 - Réponse : non : dans une politique IAM, un ARN d'alias ne désigne que l'alias, jamais la clé ; il faut l'ARN de la clé (ou la condition `kms:ResourceAliases`).
 
 ## 11. bucket key : SSE-KMS moins cher
+- Id : kms-bucket-key
 - Sous-thème : s3
+- Type : recette
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : kms-sse-kms-double-droit, kms-cout-cle-appels
 - Source : data-platform · S1-04
 - Définition : `bucket_key_enabled = true` : S3 dérive une clé de bucket depuis la clé KMS et appelle KMS bien moins souvent qu'une fois par objet.
 - Contexte : En SSE-KMS (`aws:kms`), chaque `PutObject` demande une clé de données à KMS et chaque `GetObject` la déchiffre : sur des milliers de petits fichiers, la facture KMS (0,03 $ les 10 000 appels) et le quota d'appels montent vite. La bucket key réduit ces appels jusqu'à 99 %. CloudTrail trace alors le bucket, plus chaque objet. Les droits ne changent pas : `kms:Decrypt` et `kms:GenerateDataKey`.
@@ -379,8 +419,13 @@ aws s3api get-bucket-encryption --bucket "$RAW" \
 - Réponse : `Unsupported argument` (mesuré, provider 6) : l'argument appartient au bloc `rule`, frère de `apply_server_side_encryption_by_default`.
 
 ## 12. multipart SSE-KMS : Decrypt pour écrire
+- Id : kms-multipart-decrypt
 - Sous-thème : s3
+- Type : piège
 - Niveau : 2
+- Profils : data, ops
+- Prérequis : kms-sse-kms-double-droit
+- Voir aussi : iam-multipart-putobject
 - Définition : Un upload multipart vers un bucket SSE-KMS exige `kms:Decrypt` en plus de `kms:GenerateDataKey`, alors que l'appel ne fait qu'écrire.
 - Contexte : S3 génère une clé de données au début de l'upload, puis doit la déchiffrer pour chaque part et pour assembler l'objet. Un rôle qui n'a que `GenerateDataKey` réussit les petits `PutObject` et échoue sur les gros fichiers, ceux que la CLI ou boto3 découpent seuls : le bug n'apparaît qu'en production, sur une grosse journée.
 - Usage : ✅ `kms:Decrypt` et `kms:GenerateDataKey` pour tout rôle qui écrit (comme `kms_actions` du module `iam`) · ❌ « écriture seule = `GenerateDataKey` seul » : faux dès le multipart.
@@ -390,7 +435,7 @@ aws s3api get-bucket-encryption --bucket "$RAW" \
 locals {
   kms_actions = [
     "kms:Decrypt",          # multipart
-    "kms:Encrypt",
+    "kms:Encrypt",          # inutile en SSE-KMS
     "kms:GenerateDataKey",  # PutObject
     "kms:DescribeKey",
   ]
@@ -414,8 +459,12 @@ aws s3 cp jour.jsonl.gz "s3://$RAW/t/"
 - Réponse : réussi : la CLI ne passe en multipart qu'au-delà de `multipart_threshold`, 8 Mo par défaut ; sous ce seuil, `GenerateDataKey` suffit.
 
 ## 13. kms:ViaService : la clé, seulement via S3
+- Id : kms-viaservice
 - Sous-thème : politique
+- Type : recette
 - Niveau : 2
+- Profils : ops
+- Prérequis : kms-sse-kms-double-droit
 - Définition : La condition `kms:ViaService` n'autorise une clé que si l'appel passe par un service donné (`s3.eu-west-3.amazonaws.com`), jamais en appel direct.
 - Contexte : Le rôle Lambda a besoin de `kms:Decrypt` pour lire `raw`, mais rien ne l'empêche alors d'appeler `kms decrypt` lui-même sur n'importe quel blob de la clé. Avec `ViaService`, la clé ne sert qu'aux lectures et écritures S3. C'est le verrou de la clé `aws/s3`, avec `kms:CallerAccount`. Le nom du service inclut la région.
 - Usage : ✅ rôles qui n'utilisent la clé qu'à travers S3 (Lambda, EMR) · ❌ `ViaService` sur un rôle qui chiffre lui-même (enveloppe côté client) : ses appels directs échouent.
@@ -442,8 +491,12 @@ statement {
 - Réponse : non : S3 appelle KMS sous le nom `s3.eu-west-3.amazonaws.com` ; la valeur sans région ne correspond jamais, la condition est fausse.
 
 ## 14. politique de clé : déléguer à IAM
+- Id : kms-politique-de-cle-iam
 - Sous-thème : politique
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : iam-politique-de-ressource
 - Source : data-platform · S1-04
 - Définition : Sans `policy`, une clé KMS reçoit la politique par défaut : `kms:*` au compte (`root`), ce qui délègue l'accès aux politiques IAM du compte.
 - Contexte : Pour KMS, la politique de clé fait autorité : un rôle n'utilise une clé que si elle le permet, directement ou en déléguant à IAM par le principal `arn:aws:iam::<id>:root`. Avec la politique par défaut, `kms:Decrypt` dans la politique du rôle suffit. Une politique écrite à la main sans cette clause coupe ce relais : seuls les principaux listés passent, et l'admin peut perdre la main sur la clé.
@@ -479,8 +532,12 @@ data "aws_iam_policy_document" "lambda" {
 - Réponse : refusé (`MalformedPolicyDocumentException`) : le contrôle anti-verrouillage rejette une politique qui empêche l'appelant de la modifier ensuite ; `bypass_policy_lockout_safety_check` le contourne, à ne jamais faire.
 
 ## 15. clé KMS : partager avec un autre compte
+- Id : kms-partage-autre-compte
 - Sous-thème : politique
+- Type : recette
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : kms-politique-de-cle-iam
 - Définition : Un autre compte n'utilise une clé client que si la politique de clé l'autorise et si ce compte accorde lui-même l'action à son rôle.
 - Contexte : Même règle que toute politique de ressource entre comptes : les deux côtés. La politique de clé nomme le compte (`arn:aws:iam::<autre>:root`) ; le compte étranger ajoute `kms:Decrypt` sur l'ARN complet de la clé, un alias ne se résolvant pas d'un compte à l'autre. La politique de bucket ne donne aucun droit sur la clé : il faut les deux.
 - Usage : ✅ partenaire qui lit des exports `out/` chiffrés, compte d'analytique séparé · ❌ ouvrir la clé à `Principal: "*"` sans condition : tout compte AWS pourrait s'en servir avec un simple droit IAM.
@@ -506,8 +563,12 @@ statement {
 - Réponse : non : la politique de `aws/s3` exige `kms:CallerAccount` = ce compte et ne se modifie pas ; partager des objets SSE-KMS demande une clé client.
 
 ## 16. grant : un droit délégué
+- Id : kms-grant
 - Sous-thème : politique
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : kms-politique-de-cle-iam
 - Définition : Un grant autorise un principal à utiliser une clé pour des opérations précises (`Decrypt`), sans toucher à la politique de clé.
 - Contexte : Les services AWS en créent pour agir au nom de l'appelant : un volume EBS chiffré, RDS ou les variables d'environnement d'une Lambda posent un grant sur la clé. Un grant ne permet que des opérations cryptographiques, jamais d'administrer la clé, et ne connaît pas de `Deny`. Il se retire par `retire-grant` ou `revoke-grant`, et peut mettre quelques secondes à se propager.
 - Usage : ✅ accès temporaire et programmatique (un job EMR le temps d'un traitement), délégation à un service · ❌ accès permanent d'un rôle connu : politique IAM ou de clé, lisibles dans le code.
@@ -537,8 +598,12 @@ aws kms list-grants --key-id "$K" \
 - Réponse : `validate` échoue (`expected operations to be one of ["Decrypt" "Encrypt" …], got kms:Decrypt`, mesuré) : un grant liste des opérations, pas des actions IAM.
 
 ## 17. contexte de chiffrement : la donnée liée
+- Id : kms-contexte-chiffrement
 - Sous-thème : chiffrement
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : kms-chiffrement-enveloppe
 - Définition : Le contexte de chiffrement est un jeu de paires clé-valeur non secrètes lié au texte chiffré : `Decrypt` échoue s'il ne reçoit pas le même.
 - Contexte : Il sert de donnée authentifiée additionnelle (AAD) : un blob déplacé d'un usage à un autre devient indéchiffrable. Il apparaît en clair dans CloudTrail, d'où l'audit et les conditions de politique (`kms:EncryptionContext:…`). S3 en SSE-KMS l'utilise : `aws:s3:arn` vaut l'ARN de l'objet, ou du bucket avec une bucket key. Jamais de donnée sensible dedans.
 - Usage : ✅ contexte qui nomme l'usage (`projet`, `table`) en chiffrement direct ou d'enveloppe · ❌ y mettre un nom de dirigeant ou un secret : il est journalisé en clair.
@@ -581,8 +646,12 @@ t == tag(b"blob", {"projet": "rp"})  # → False
 - Réponse : déchiffré (selon la doc) : le contexte est un ensemble de paires, comparé sans ordre ; clés et valeurs restent sensibles à la casse.
 
 ## 18. clé multi-région : même clé, deux régions
+- Id : kms-cle-multi-region
 - Sous-thème : clés
+- Type : concept
 - Niveau : 3
+- Profils : ops, expert
+- Prérequis : kms-alias-ou-arn
 - Définition : Une clé multi-région a des répliques dans d'autres régions, même id `mrk-…`, même matériel : un blob chiffré à Paris se déchiffre à Dublin.
 - Contexte : Une clé normale ne quitte jamais sa région : un blob chiffré à Paris est indéchiffrable ailleurs, même si l'on copie les données. La réplique (`aws_kms_replica_key`) partage le matériel et la rotation, mais a sa propre politique, ses alias et ses grants. Chaque réplique est facturée comme une clé, 1 $/mois.
 - Usage : ✅ données chiffrées côté client et répliquées entre régions, reprise après sinistre · ❌ « au cas où » : la réplication S3 rechiffre déjà avec une clé de la région de destination.
@@ -608,8 +677,13 @@ resource "aws_kms_replica_key" "dublin" {
 - Réponse : remplacement (`-/+`, selon la doc) : une clé régionale ne devient jamais multi-région ; nouvelle clé, nouvel ARN, et l'ancienne passe en `PendingDeletion`.
 
 ## 19. quotas KMS : ThrottlingException
+- Id : kms-quotas-throttling
 - Sous-thème : chiffrement
+- Type : piège
 - Niveau : 3
+- Profils : data, ops, expert
+- Prérequis : kms-cout-cle-appels
+- Voir aussi : kms-bucket-key
 - Définition : KMS limite les opérations cryptographiques par compte et par région (10 000 par seconde à Paris pour les clés symétriques) ; au-delà, `ThrottlingException`.
 - Contexte : Le quota est commun à toutes les clés symétriques du compte : `Decrypt`, `GenerateDataKey`, `Encrypt`, y compris ceux que S3 fait pour chaque objet en SSE-KMS. Un job Spark qui lit 100 000 petits fichiers `raw` d'un coup, sans bucket key, peut le saturer et faire échouer d'autres applications. Les SDK réessaient avec backoff ; le quota se relève par Service Quotas.
 - Usage : ✅ bucket key, cache des clés de données (Encryption SDK), retries avec backoff · ❌ un appel KMS par enregistrement : une clé de données par fichier ou par lot.
