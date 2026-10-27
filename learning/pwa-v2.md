@@ -115,5 +115,4 @@ Doc : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.h
 Pourquoi un certificat calculé à partir de la table `progress` actuelle ne vaudrait rien, et qu'est-ce qui change avec `events` + `aggregates` ?
 
 ## Journal
-- 2026-10-27 : étude, contrat, Trello, branches ; 4 agents lancés en parallèle (P0, Tailwind, Web, API). Agent P0 arrêté après 2 min (cause inconnue), relancé. API (19 min), Web (32 min), Tailwind (38 min) terminés et intégrés sur `v2` ; `make up` ×2 (28 puis 20 ressources) ; site en ligne ; test de bout en bout de l'API avec un utilisateur Cognito de test. P2a (registre compétences, 6 min), P3 (22 min), P4 (25 min), intégration P0 (14 min) ;
-  correctif createRequire ; 3e et 4e `make up` ; PWA v2, site et API en ligne sur dev. Lot 2 lancé (3 agents).
+- 2026-10-27 : étude, contrat, Trello, branches ; 4 agents lancés en parallèle (P0, Tailwind, Web, API). Agent P0 arrêté après 2 min (cause inconnue), relancé. API (19 min), Web (32 min), Tailwind (38 min) terminés et intégrés sur `v2` ; `make up` ×2 (28 puis 20 ressources) ; site en ligne ; test de bout en bout de l'API avec un utilisateur Cognito de test. P2a (registre compétences, 6 min), P3 (22 min), P4 (25 min), intégration P0 (14 min) ; correctif createRequire ; 3e et 4e `make up` ; PWA v2, site et API en ligne sur dev. Lot 2 lancé (3 agents).
