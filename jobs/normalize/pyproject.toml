@@ -1,0 +1,19 @@
+[project]
+name = "bodacc-normalize"
+version = "0.1.0"
+description = "Job Spark de normalisation BODACC : JSONL de raw vers événements typés"
+readme = "README.md"
+authors = [
+    { name = "Fraoucene GUEZOUT", email = "fraoucene.guezout@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "platform-schema",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+platform-schema = { workspace = true }

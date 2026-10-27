@@ -6,7 +6,12 @@ Langue du dépôt : français (code, commentaires, docs, messages de commit).
 
 ## Structure
 
-- `packages/<nom>/src/<module>/` : libs partagées (`bodacc-client`, `dp-common`), tests dans `packages/<nom>/tests/`.
+- `packages/<nom>/src/<module>/` : libs partagées (`bodacc-client`, `dp-common`, `platform-schema` = contrat
+  `Event` des jobs et de l'agent), tests dans `packages/<nom>/tests/`.
+- `jobs/<dossier>/` : un job Spark = un membre uv, rangé par couches : `schemas.py` (forme de la source), `raw.py`
+  (lecture), `transform.py` (cœur pur, sans I/O ni horloge), `main.py` (point d'entrée `spark-submit`) ; tests dans
+  `jobs/<dossier>/tests/`, fixture `spark` partagée dans `jobs/conftest.py` (prérequis : JDK 17, `make spark-jars`).
+  Pas de dossier hors membre sous `jobs/` : le glob `jobs/*` du workspace en ferait un membre.
 - `lambdas/<dossier>/` : une Lambda = un membre uv (`name` du `pyproject.toml` = identifiant partout : zip,
   clé de `local.lambdas`, nom `data-platform-<env>-<name>`), tests dans `lambdas/<dossier>/tests/`.
 - `infra/` : root Terraform (`main.tf`, `lambdas.tf`, `schedules.tf`, `alerts.tf`…), `modules/` (un module par
@@ -91,12 +96,14 @@ Les skills `/tuteur` et `/cartes` et le dépôt revision-pwa sont locaux au post
   après chaque modification, ne jamais éditer Notion à la main.
 - **Cartes de révision** : `learning/cartes-<domaine>-<thème>.md`, une notion par fichier (un thème = un fichier),
   format v3 de l'app revision-pwa (spec : `~/Desktop/workspace/revision-pwa/spec/cartes.md`, registre des domaines
-  `spec/domaines.json`). Générées par le skill `/cartes` en mode étape, à chaque étape validée, sans question :
-  notions de l'étape classées en domaine / thème, nouvelles cartes sans doublon, `- Source : data-platform · <id>`,
-  exemples Python exécutés, propositions fausses vérifiées fausses.
-- **Exécution des cartes** : par des agents en arrière-plan, sur des fichiers disjoints (validation isolée avec
-  `CARDS_DIR=<dossier temporaire>`), pour ne jamais bloquer le travail principal ; une seule publication à la fin :
-  `make cards-validate` (format + exécution des exemples, 0 erreur exigée) puis `make cards-publish`.
+  `spec/domaines.json`). Générées par le skill `/cartes` en mode étape : notions de l'étape classées en domaine /
+  thème, nouvelles cartes sans doublon, `- Source : data-platform · <id>`, exemples Python exécutés, propositions
+  fausses vérifiées fausses.
+- **File d'attente des cartes** : une étape validée **n'en fabrique pas** ; elle ajoute une ligne `[ ]` dans
+  `learning/.cartes-attente.md` (cours, étape, date, notions) et note `- Cartes : en attente` dans l'étape. La
+  fabrication se lance à la demande de l'humain (« lance la fabrication des cartes en attente »), ou proposée en une
+  ligne à une pause naturelle, jamais d'office : un agent en arrière-plan traite toutes les entrées, puis une seule
+  publication : `make cards-validate` (format + exécution des exemples, 0 erreur exigée) puis `make cards-publish`.
 - Dans `learning/` comme ailleurs : aucun numéro de compte, aucun secret, aucun identifiant personnel.
 
 ## Ajouter une Lambda

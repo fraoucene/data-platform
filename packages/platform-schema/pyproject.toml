@@ -1,0 +1,17 @@
+[project]
+name = "platform-schema"
+version = "0.1.0"
+description = "Contrat de données partagé : l'événement normalisé (Pydantic) et son schéma Spark dérivé"
+readme = "README.md"
+authors = [
+    { name = "Fraoucene GUEZOUT", email = "fraoucene.guezout@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.14.1",
+    "sparkdantic>=2.9.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"

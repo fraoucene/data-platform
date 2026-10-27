@@ -29,6 +29,7 @@ infrastructure : [infra/README.md](infra/README.md) ; source : [docs/source-boda
 |---|---|---|
 | Python | 3.12 (`.python-version`) | runtime du code et de la Lambda |
 | [uv](https://docs.astral.sh/uv/) | récent | dépendances et environnement (≈ pnpm) |
+| JDK ([Temurin](https://adoptium.net/)) | 17 | Spark local des tests des jobs (`brew install --cask temurin@17`, `JAVA_HOME`) |
 | make, git | | toutes les commandes passent par le `Makefile` |
 | [Terraform](https://developer.hashicorp.com/terraform/install) | ≥ 1.10 | infrastructure (verrou d'état natif S3) |
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | v2 | identifiants, vérifications, invocations |
@@ -62,6 +63,7 @@ git clone https://github.com/fraoucene/data-platform.git && cd data-platform
 # 1. Dépendances de tout le workspace (pas `uv sync` seul : il n'installe pas les Lambdas et les packages)
 make sync
 uv run pre-commit install          # hooks git (ruff, uv-lock, gros fichiers)
+make spark-jars                    # jar Iceberg pour Spark local (build/jars/, vérifié par SHA-1)
 make check                         # → lint vert, N passed
 
 # 2. Bootstrap, une fois par compte AWS : bucket d'état Terraform + bucket des artefacts
@@ -100,6 +102,7 @@ Ensuite, la planification ingère chaque matin la veille sans intervention. Reco
 | | `make fmt` | corrige formatage et imports |
 | | `make test-integration` | tests qui appellent la vraie API BODACC (réseau) |
 | | `make cov` | couverture |
+| Spark | `make spark-jars` | télécharge le jar Iceberg (une fois par poste) ; les tests des jobs le lisent sur disque |
 | Lambdas | `make lambdas-build [LAMBDA=…]` | zip reproductible dans `build/` |
 | | `make lambdas-publish [LAMBDA=…]` | envoi du zip (clé = hash) + pointeur dans le bucket artefacts |
 | | `make deploy` | `lambdas-publish` puis `up` (ce que fera la CI) |
@@ -113,9 +116,9 @@ Ensuite, la planification ingère chaque matin la veille sans intervention. Reco
 
 ```
 .
-├── packages/   # libs Python partagées (src layout) : dp-common, bodacc-client
+├── packages/   # libs Python partagées (src layout) : dp-common, bodacc-client, platform-schema (contrat Event)
 ├── lambdas/    # fonctions AWS Lambda, une par dossier (membre uv), ex. ingest_bodacc
-├── jobs/       # jobs batch (Spark / Python), à partir de S2
+├── jobs/       # jobs Spark, un membre uv par dossier (ex. normalize) ; conftest.py : fixture `spark` partagée
 ├── steps/      # définitions des étapes de pipeline (Step Functions, S2)
 ├── infra/      # Terraform : bootstrap/, modules/, envs/<env>/, scripts/ (build, rejeu, audit des tags)
 ├── evals/      # jeux de test et scénarios d'évaluation de l'agent (S6)

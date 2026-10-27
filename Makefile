@@ -1,4 +1,4 @@
-.PHONY: sync lint fmt test test-integration cov check tf-init tf-fmt tf-validate plan up down lambdas-build lambdas-publish deploy replay duckdb cards-validate cards-publish
+.PHONY: sync lint fmt test test-integration cov check spark-jars tf-init tf-fmt tf-validate plan up down lambdas-build lambdas-publish deploy replay duckdb cards-validate cards-publish
 
 # ---------- Python ----------
 
@@ -27,6 +27,32 @@ cov:
 	uv run pytest packages/bodacc-client --cov=bodacc_client --cov-branch --cov-report=term-missing --cov-fail-under=80
 
 check: lint test
+
+# ---------- Spark ----------
+# Jar Iceberg pour Spark 3.5 / Scala 2.12 (même Spark qu'EMR 7.14), téléchargé une fois dans build/jars/ :
+# la fixture `spark` des tests le charge depuis le disque, jamais depuis Maven (pas de réseau dans les tests).
+# Idempotent : jar présent et SHA-1 conforme au .sha1 de Maven Central → rien n'est téléchargé.
+# Écrit dans un .part renommé seulement après vérification : un téléchargement coupé ne laisse pas de jar corrompu.
+ICEBERG_VERSION ?= 1.11.0
+SPARK_SCALA      = 3.5_2.12
+ICEBERG_JAR      = iceberg-spark-runtime-$(SPARK_SCALA)-$(ICEBERG_VERSION).jar
+ICEBERG_URL      = https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-$(SPARK_SCALA)/$(ICEBERG_VERSION)/$(ICEBERG_JAR)
+JARS_DIR         = build/jars
+
+spark-jars:
+	@mkdir -p $(JARS_DIR)
+	@expected=$$(curl -fsSL "$(ICEBERG_URL).sha1" | cut -c1-40) || { echo "sha1 introuvable : $(ICEBERG_URL).sha1"; exit 1; }; \
+	jar="$(JARS_DIR)/$(ICEBERG_JAR)"; \
+	if [ -f "$$jar" ] && [ "$$(shasum -a 1 "$$jar" | cut -c1-40)" = "$$expected" ]; then \
+		echo "déjà présent : $$jar"; exit 0; \
+	fi; \
+	echo "téléchargement : $(ICEBERG_URL)"; \
+	curl -fsSL -o "$$jar.part" "$(ICEBERG_URL)" || { rm -f "$$jar.part"; exit 1; }; \
+	actual=$$(shasum -a 1 "$$jar.part" | cut -c1-40); \
+	if [ "$$actual" != "$$expected" ]; then \
+		echo "sha1 KO : attendu $$expected, obtenu $$actual"; rm -f "$$jar.part"; exit 1; \
+	fi; \
+	mv "$$jar.part" "$$jar" && echo "sha1 OK : $$jar"
 
 # ---------- Lambdas ----------
 # Une Lambda = un membre uv dans lambdas/<dossier>/ (son `name` est son identifiant partout).

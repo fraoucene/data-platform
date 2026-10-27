@@ -9,6 +9,9 @@ dependencies = [
 
 [tool.uv.workspace]
 members = ["packages/*", "lambdas/*", "jobs/*"]
+# jobs/conftest.py (fixture `spark`) fait écrire jobs/__pycache__ par pytest : sans cette exclusion, le glob
+# jobs/* le prend pour un membre et uv échoue (« missing a pyproject.toml »).
+exclude = ["jobs/__pycache__"]
 
 [tool.uv.sources]
 dp-common = { workspace = true }
@@ -16,8 +19,10 @@ bodacc-client = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "chispa>=0.12.0",
     "moto[s3]>=5.2.4",
     "pre-commit>=4.7.0",
+    "pyspark==3.5.8",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "respx>=0.23.1",
