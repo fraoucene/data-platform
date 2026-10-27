@@ -56,8 +56,12 @@ Doc : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.h
 - Vérifier : `git -C ~/Desktop/workspace/revision-pwa worktree list` → 5 lignes.
 - Résultat : fait le 2026-10-27 (commit `v2: étude d'architecture v2 et contrat du contenu publié`).
 
-### [ ] Étape 1 — P0 : catalogue en tranches et monorepo `packages/shared`
+### [x] Étape 1 — P0 : catalogue en tranches et monorepo `packages/shared`
 - À faire : voir carte Trello v2-P0.
+- Vérifier : `make cards` → 1 804 cartes, 103 fichiers de `content/` ; `make test` → shared 58, app 141.
+- Cours : le gain ne vient pas d'un cache plus malin mais d'un **découpage** : l'app n'a besoin que de la hiérarchie pour s'ouvrir (`index.json`, 33 Ko) et d'un thème à la fois (une tranche, ≤ 322 Ko, lue en < 100 ms : le Web Worker devient inutile). Les tranches portent un hash dans leur nom → `CacheFirst` dans le SW, jamais revalidées ; l'index → `NetworkFirst`. Ordre d'écriture tranches → `catalog.json` → `index.json` : un lecteur ne voit un index que si ses tranches existent. Les orphelines vivent 7 jours (un client qui tient un vieil index les trouve encore) : une tranche inchangée est réécrite si sa date a plus d'un jour pour ne pas passer pour orpheline. Un paquet workspace consommé en source TypeScript (`@revision/shared`) évite un build intermédiaire, mais le chargeur de `vite.config.ts` ne lit pas le `.ts` d'un autre paquet : le plugin de dev passe par `ssrLoadModule`.
+- Cartes : en attente
+- Résultat : 2026-10-27, branche `v2-p0` (0522608) ; ouverture 3,92 Mo → 33 Ko, premier écran 1,47 s → 0,95 s, chunk principal 466 → 271 Ko ; intégration sur `v2` en cours.
 
 ### [x] Étape 2 — Tailwind sur la PWA et `packages/ui` (lot 1 : composants)
 - À faire : voir carte Trello v2-UI.
@@ -81,10 +85,25 @@ Doc : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.h
 - Cartes : en attente
 - Résultat : 2026-10-27, `make plan` 28 ajouts / 0 changement / 0 destruction, `make up` OK, test de bout en bout avec un utilisateur Cognito de test : maîtrise 0,032 sur Python/Listes après 1 ok + 1 ko sur 31 cartes.
 
-### [ ] Étape 5 — Intégration sur `v2`, `make up`, déploiement dev
+### [x] Étape 5 — Intégration sur `v2`, `make up`, déploiement dev
+- À faire : merges P0 (agent dédié), P3, P4 ; publication des Lambdas ; plan ; apply ; registres ; déploiement app et site.
+- Vérifier : `curl -sI https://d1non6rpr4vppb.cloudfront.net/content/index.json | grep -i cache-control` → `no-cache` ; `curl -s -o /dev/null -w "%{http_code}" https://d1non6rpr4vppb.cloudfront.net/content/premium/x.json` → `403`.
+- Cours : un plan Terraform lancé depuis une branche qui n'a pas les ressources déjà appliquées par une autre branche propose de les **détruire** : on ne planifie que sur la branche d'intégration, jamais sur une branche de phase. Les pointeurs `current.json` des Lambdas doivent exister avant le plan (`make lambdas-publish` d'abord). Un bundle ESM esbuild qui embarque une dépendance CommonJS (`yaml`, `qrcode`, `firebase-admin`) n'a pas de vrai `require` : l'erreur « Dynamic require of "fs" is not supported » n'apparaît qu'au chargement dans Lambda, pas au build → bannière `createRequire` par défaut et contrôle de chargement du bundle sous Node après chaque build (la CI l'attrape avant publication).
+- Erreur vue : `Dynamic require of "process" is not supported … yaml/dist/compose/composer.js` → `catalog-build` bundlé sans bannière `createRequire` après le passage par `packages/shared`.
+- Cartes : en attente
+- Résultat : 2026-10-27, apply 35 ajouts / 14 changements / 0 destruction puis 5 Lambdas mises à jour ; app, site et API v2 en ligne sur dev.
 ### [ ] Étape 6 — P2 : compétences
-### [ ] Étape 7 — P3 : premium et Stripe
-### [ ] Étape 8 — P4 : examens et certificat
+### [x] Étape 7 — P3 : premium et Stripe (serveur)
+- À faire : voir carte Trello v2-P3.
+- Cours : CloudFront **cookies signés** = politique JSON (ressource, expiration) signée RSA par une clé privée dont la clé publique est enregistrée dans un *key group* ; CloudFront vérifie à chaque requête sans lire le bucket (403 sinon) et sert ensuite la tranche du cache. La clé privée ne passe ni par le dépôt ni par l'état Terraform (`tls_private_key` l'y laisserait) : SSM SecureString posé à la main, `ignore_changes`. Piège : l'API répond depuis `execute-api.amazonaws.com`, un autre domaine que l'app → `Set-Cookie` inutile, l'app recopie les cookies du corps (`document.cookie`). Stripe : Checkout (session, `client_reference_id = sub`) → webhook signé (`constructEvent`) → entitlement ; idempotence par marqueur `STRIPE#<event.id>` en transaction ; l'abonnement est relu chez Stripe, l'ordre des webhooks n'importe pas.
+- Cartes : en attente
+- Résultat : 2026-10-27, branche `v2-p3` intégrée et appliquée ; clé privée dev en SSM ; clés Stripe à poser par Fraoucene.
+### [x] Étape 8 — P4 : examens et certificat (serveur)
+- À faire : voir carte Trello v2-P4.
+- Vérifier : `curl -s "$(terraform -chdir=infra output -raw api_url)/certificates/01JBQ3XK7M2N4P6R8T0V2W4Y6Z"` → `{"erreur":"certificat-inconnu"}`.
+- Cours : un examen crédible garde `bonne` **côté serveur** (session DynamoDB avec l'ordre mélangé), horodate les réponses à la réception, refuse après `expiresAt`, corrige à `finish` dans une transaction (session + événement + certificat). Tirage reproductible : graine = `examId`. Certificat = ligne `CERT#` + PDF (`pdf-lib`, QR) sous une clé non devinable, lue par URL **présignée** (SigV4 embarqué : le runtime Lambda ne garantit pas `@aws-sdk/s3-request-presigner`) ; vérification publique par une GSI qui ne projette que les champs publics. Limite connue : les quiz sont aussi dans le catalogue public.
+- Cartes : en attente
+- Résultat : 2026-10-27, branche `v2-p4` intégrée et appliquée (table `exams`, 8 routes) ; page `/verify/` en ligne.
 
 ## Critères de validation
 - Ouverture de l'app : moins de 100 Ko téléchargés hors tranches, indépendant du nombre de cartes.
@@ -96,4 +115,5 @@ Doc : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.h
 Pourquoi un certificat calculé à partir de la table `progress` actuelle ne vaudrait rien, et qu'est-ce qui change avec `events` + `aggregates` ?
 
 ## Journal
-- 2026-10-27 : étude, contrat, Trello, branches ; 4 agents lancés en parallèle (P0, Tailwind, Web, API). Agent P0 arrêté après 2 min (cause inconnue), relancé. API (19 min), Web (32 min), Tailwind (38 min) terminés et intégrés sur `v2` ; `make up` ×2 (28 puis 20 ressources) ; site en ligne ; test de bout en bout de l'API avec un utilisateur Cognito de test.
+- 2026-10-27 : étude, contrat, Trello, branches ; 4 agents lancés en parallèle (P0, Tailwind, Web, API). Agent P0 arrêté après 2 min (cause inconnue), relancé. API (19 min), Web (32 min), Tailwind (38 min) terminés et intégrés sur `v2` ; `make up` ×2 (28 puis 20 ressources) ; site en ligne ; test de bout en bout de l'API avec un utilisateur Cognito de test. P2a (registre compétences, 6 min), P3 (22 min), P4 (25 min), intégration P0 (14 min) ;
+  correctif createRequire ; 3e et 4e `make up` ; PWA v2, site et API en ligne sur dev. Lot 2 lancé (3 agents).
