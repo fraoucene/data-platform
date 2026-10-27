@@ -92,7 +92,12 @@ Doc : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.h
 - Erreur vue : `Dynamic require of "process" is not supported … yaml/dist/compose/composer.js` → `catalog-build` bundlé sans bannière `createRequire` après le passage par `packages/shared`.
 - Cartes : en attente
 - Résultat : 2026-10-27, apply 35 ajouts / 14 changements / 0 destruction puis 5 Lambdas mises à jour ; app, site et API v2 en ligne sur dev.
-### [ ] Étape 6 — P2 : compétences
+### [x] Étape 6 — P2 : compétences, parcours automatiques, `GET /me/next`
+- À faire : voir cartes Trello v2-P2 ; registre (`spec/competences.json`, tags `competences` sur domaines et chapitres) puis code (`publishContent`, écran Compétences, route `/me/next`).
+- Vérifier : `curl -s "$(terraform -chdir=infra output -raw api_url)/me/next?competence=backend-python" -H "Authorization: Bearer $TOKEN"` → `{"competence":"backend-python","maitrise":…,"etapes":[…],"etape":0,"cartes":[…]}` ; sans jeton → `401`.
+- Cours : une **compétence est une règle**, pas une liste de cartes : tags posés sur le registre (domaine, chapitre, thème), résolus à la publication par `catalog-build` en tranches `competences/<id>.<hash>.json` ; la carte ne porte rien, un chapitre retagué déplace ses cartes partout. Les parcours « par domaine » (débutant / praticien / expert) se **génèrent** depuis le registre au lieu de s'écrire à la main. `GET /me/next` lit l'index à chaque appel (`no-cache`) mais garde les tranches en mémoire de la Lambda (nom haché = immuable) ; maîtrise d'une étape calculée sur les lignes `CARD#` de ses seules cartes au niveau visé (seuils 0,6 / 0,7 / 0,8), prochaines cartes = première étape non acquise, ordre niveau → échéance → prérequis.
+- Cartes : en attente
+- Résultat : 2026-10-27, `v2-p2` (registre, 8 compétences, 31 chapitres tagués) et `v2-p2b` (21 parcours auto, index 61 Ko, écran `/competences`, `GET /me/next`) intégrés et appliqués ; smoke test `/me/next` → maîtrise 0, 3 étapes, cartes proposées.
 ### [x] Étape 7 — P3 : premium et Stripe (serveur)
 - À faire : voir carte Trello v2-P3.
 - Cours : CloudFront **cookies signés** = politique JSON (ressource, expiration) signée RSA par une clé privée dont la clé publique est enregistrée dans un *key group* ; CloudFront vérifie à chaque requête sans lire le bucket (403 sinon) et sert ensuite la tranche du cache. La clé privée ne passe ni par le dépôt ni par l'état Terraform (`tls_private_key` l'y laisserait) : SSM SecureString posé à la main, `ignore_changes`. Piège : l'API répond depuis `execute-api.amazonaws.com`, un autre domaine que l'app → `Set-Cookie` inutile, l'app recopie les cookies du corps (`document.cookie`). Stripe : Checkout (session, `client_reference_id = sub`) → webhook signé (`constructEvent`) → entitlement ; idempotence par marqueur `STRIPE#<event.id>` en transaction ; l'abonnement est relu chez Stripe, l'ordre des webhooks n'importe pas.
@@ -105,6 +110,15 @@ Doc : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.h
 - Cartes : en attente
 - Résultat : 2026-10-27, branche `v2-p4` intégrée et appliquée (table `exams`, 8 routes) ; page `/verify/` en ligne.
 
+### [x] Étape 9 — Lot 2 : l'app parle à l'API, le site sur `@revision/ui`
+- À faire : outbox → `POST /events`, réconciliation `GET /me/progress`, `POST /me/identity` + script `migrate-progress-to-events`, cookies premium côté app, `ExamScreen` ; site : composants `@revision/ui`, pages `/k/`, `/premium/`, contrôle des liens (`make web-links`).
+- Vérifier : `POST /me/identity` deux fois le même id → `200` puis `200`, un autre id → `409` ; `POST /events` rejoué avec le même `clientId` → `statut: "doublon"` ; `curl -s -o /dev/null -w "%{http_code}" https://d1urszngzycgqo.cloudfront.net/k/backend-python/` → `200`.
+- Cours : **réconciliation** = le local ne recule jamais (max par compteur, union des cartes vues) ; un événement déjà envoyé ne se modifie plus jamais (le renvoi doit rester identique pour que le serveur reconnaisse le doublon) ; migration d'une table d'état vers un journal = événements **datés d'origine** avec un `clientId` déterministe (rejeu sans doublon) et un marqueur `migre: true` ignoré par l'agrégateur si besoin. Fusion de branches parallèles : deux agents qui ajoutent chacun une route dans le même `switch` / la même map Terraform / le même tableau de la spec se résolvent par **union** ; un composant déplacé par l'un (`Quiz` → `quiz.tsx`) et étendu par l'autre (`ExamQuestion` à côté) se résout en suivant le déplacement. Dette assumée : `QG#`/`X#`/`N#` restent sur la table `progress` en accès direct tant que l'API n'a pas d'événements palier/reset (lot 3).
+- Erreur vue : `Expected } but found EOF` (oxc, `handler.ts`) → union de deux fonctions en conflit sans la `}` fermante de la première.
+- Erreur vue : `Argument of type 'string' is not assignable to parameter of type '{ id: string; domaine: string; theme: string; }'` → `markCardSeen` a changé de signature dans le lot 2, un test P2b appelait l'ancienne.
+- Cartes : en attente
+- Résultat : 2026-10-27, `v2-lot2-app` (4 commits) et `v2-web2` fusionnés (e39c796) ; apply 1 ajout / 4 changements / 0 destruction ; PWA et site redéployés ; tests shared 69, ui 24, web 26, app 335.
+
 ## Critères de validation
 - Ouverture de l'app : moins de 100 Ko téléchargés hors tranches, indépendant du nombre de cartes.
 - `make check` vert sur `v2` ; `make plan` sans destruction de ressource stateful.
@@ -115,4 +129,4 @@ Doc : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.h
 Pourquoi un certificat calculé à partir de la table `progress` actuelle ne vaudrait rien, et qu'est-ce qui change avec `events` + `aggregates` ?
 
 ## Journal
-- 2026-10-27 : étude, contrat, Trello, branches ; 4 agents lancés en parallèle (P0, Tailwind, Web, API). Agent P0 arrêté après 2 min (cause inconnue), relancé. API (19 min), Web (32 min), Tailwind (38 min) terminés et intégrés sur `v2` ; `make up` ×2 (28 puis 20 ressources) ; site en ligne ; test de bout en bout de l'API avec un utilisateur Cognito de test. P2a (registre compétences, 6 min), P3 (22 min), P4 (25 min), intégration P0 (14 min) ; correctif createRequire ; 3e et 4e `make up` ; PWA v2, site et API en ligne sur dev. Lot 2 lancé (3 agents).
+- 2026-10-27 : étude, contrat, Trello, branches ; 4 agents lancés en parallèle (P0, Tailwind, Web, API). Agent P0 arrêté après 2 min (cause inconnue), relancé. API (19 min), Web (32 min), Tailwind (38 min) terminés et intégrés sur `v2` ; `make up` ×2 (28 puis 20 ressources) ; site en ligne ; test de bout en bout de l'API avec un utilisateur Cognito de test. P2a (registre compétences, 6 min), P3 (22 min), P4 (25 min), intégration P0 (14 min) ; correctif createRequire ; 3e et 4e `make up` ; PWA v2, site et API en ligne sur dev. Lot 2 lancé (3 agents). P2b (36 min) intégré, 5e `make up` ; lot2-app (90 min) et web2 (89 min) fusionnés avec 7 conflits (union), 6e `make up`, app et site redéployés, smoke test API (identity, events, progress, next). Lot 3 lancé (2 agents : API palier/reset + types partagés ; écrans Tailwind + maîtrise + lien `?competence=`).
